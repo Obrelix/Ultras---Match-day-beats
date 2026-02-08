@@ -75,12 +75,20 @@ function drawPixelRect(ctx, x, y, w, h, color, px) {
     ctx.fillRect(Math.floor(x), Math.floor(y), w * px, h * px);
 }
 
-function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now) {
+function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType) {
     const px = s.px;
     const baseX = Math.floor(s.x);
     const y = Math.floor(s.baseY + jumpOffset);
 
-    const rockX = frenzy ? Math.sin(now / 120 + s.jumpPhase) * 3 : 0;
+    // Coreo types 1-3: synchronized sway; type 0: individual rocking
+    let rockX;
+    if (coreoType >= 1) {
+        rockX = Math.sin(now / 200) * 5;
+    } else if (frenzy) {
+        rockX = Math.sin(now / 120 + s.jumpPhase) * 3;
+    } else {
+        rockX = 0;
+    }
     const x = Math.floor(baseX + rockX);
 
     if (frenzy) {
@@ -109,9 +117,22 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now) {
         drawPixelRect(ctx, x + 6 * px, y + 11 * px, 2, 3, '#222244', px);
     }
 
-    drawPixelRect(ctx, x + 2 * px, y + 6 * px, 6, 5, s.shirtColor, px);
+    // Tifo coreo (type 3): coordinated shirt color wave
+    let shirtColor = s.shirtColor;
+    if (coreoType === 3) {
+        const primary = state.selectedClub ? state.selectedClub.colors.primary : '#006633';
+        const secondary = state.selectedClub ? state.selectedClub.colors.secondary : '#FFFFFF';
+        shirtColor = Math.sin(now / 400 + s.x / 40 + s.row * 1.5) > 0 ? primary : secondary;
+    }
+    drawPixelRect(ctx, x + 2 * px, y + 6 * px, 6, 5, shirtColor, px);
 
-    if (frenzy) {
+    if (coreoType === 2 && !s.hasFlag && !s.hasFlare) {
+        // Scarf coreo: arms straight up holding scarf taut
+        drawPixelRect(ctx, x - px, y + 1 * px, 2, 5, s.skinColor, px);
+        drawPixelRect(ctx, x + 9 * px, y + 1 * px, 2, 5, s.skinColor, px);
+        drawPixelRect(ctx, x - px, y, 2, 1, s.skinColor, px);
+        drawPixelRect(ctx, x + 9 * px, y, 2, 1, s.skinColor, px);
+    } else if (frenzy) {
         const armPhase = Math.sin(now / 150 + s.jumpPhase);
         if (armPhase > 0.3) {
             drawPixelRect(ctx, x - px, y + 1 * px, 2, 3, s.skinColor, px);
@@ -138,8 +159,8 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now) {
     drawPixelRect(ctx, x + 3 * px, y + 2 * px, 4, 4, s.skinColor, px);
 
     if (s.hasHat) {
-        drawPixelRect(ctx, x + 2 * px, y + 1 * px, 6, 1, s.shirtColor, px);
-        drawPixelRect(ctx, x + 3 * px, y, 4, 1, s.shirtColor, px);
+        drawPixelRect(ctx, x + 2 * px, y + 1 * px, 6, 1, shirtColor, px);
+        drawPixelRect(ctx, x + 3 * px, y, 4, 1, shirtColor, px);
     } else {
         drawPixelRect(ctx, x + 3 * px, y + 1 * px, 4, 1, '#222222', px);
     }
@@ -159,7 +180,16 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now) {
         ctx.fillRect(x + 6 * px + 1, y + 3 * px + 1, Math.max(1, px - 1), Math.max(1, px - 1));
     }
 
-    if (s.hasScarf && s.scarfColor) {
+    if (coreoType === 2 && !s.hasFlag && !s.hasFlare) {
+        // Scarf-up coreo: supporters hold scarves stretched above heads
+        const primary = state.selectedClub ? state.selectedClub.colors.primary : '#006633';
+        const secondary = state.selectedClub ? state.selectedClub.colors.secondary : '#FFFFFF';
+        const scarfColor = s.row % 2 === 0 ? primary : secondary;
+        const scarfWave = Math.sin(now / 300 + s.x / 40) * 2;
+        const scarfY = y - px + Math.floor(scarfWave);
+        drawPixelRect(ctx, x - 2 * px, scarfY, 14, 1, scarfColor, px);
+        drawPixelRect(ctx, x - px, scarfY - px, 12, 1, scarfColor, px);
+    } else if (s.hasScarf && s.scarfColor) {
         drawPixelRect(ctx, x + 2 * px, y + 5 * px, 6, 1, s.scarfColor, px);
         if (frenzy) {
             const scarfWave = Math.sin(now / 100 + s.jumpPhase) > 0 ? 1 : -1;
@@ -399,7 +429,10 @@ export function drawGameVisuals() {
     const h = canvas.height;
     const ctx = state.gameVisualCtx;
     const now = performance.now();
+    const multiplier = getComboMultiplier();
     const frenzy = state.playerCombo > 5;
+    // Coreo cycles every 10 combos: 0=base, 1=sway+row-wave, 2=scarf-up, 3=tifo
+    const coreoType = state.playerCombo >= 10 ? Math.floor(state.playerCombo / 10) % 4 : 0;
 
     if (state.supporters.length === 0) {
         initSupporters(w, h);
@@ -431,9 +464,10 @@ export function drawGameVisuals() {
     const timeSinceBeat = (now - state.crowdBeatTime) / 1000;
     const beatDecay = Math.max(0, 1 - timeSinceBeat * 4);
 
-    const baseJump = frenzy ? 28 : 18;
+    // Jump height scales with combo multiplier
+    const baseJump = 18 + (multiplier - 1) * 13;
     const jumpHeight = beatDecay * baseJump;
-    const frenzyBounce = frenzy ? Math.abs(Math.sin(now / 150)) * 8 : 0;
+    const frenzyBounce = frenzy ? Math.abs(Math.sin(now / 150)) * (4 + multiplier * 2) : 0;
 
     const sway = Math.sin(now / 400) * 2;
 
@@ -449,8 +483,15 @@ export function drawGameVisuals() {
     for (let i = 0; i < state.supporters.length; i++) {
         const s = state.supporters[i];
 
-        const phaseOffset = Math.sin(timeSinceBeat * 12 + s.jumpPhase) * 0.3;
-        const personalJump = jumpHeight * s.jumpStrength * (1 + phaseOffset);
+        let personalJump;
+        if (coreoType === 1) {
+            // Row-wave coreo: rows bounce in coordinated sequence
+            const rowWave = Math.abs(Math.sin(now / 250 + s.row * (Math.PI / 2.5))) * multiplier * 3;
+            personalJump = jumpHeight * s.jumpStrength + rowWave;
+        } else {
+            const phaseOffset = Math.sin(timeSinceBeat * 12 + s.jumpPhase) * 0.3;
+            personalJump = jumpHeight * s.jumpStrength * (1 + phaseOffset);
+        }
         const jumpY = -(personalJump + frenzyBounce + (beatDecay < 0.01 && !frenzy ? sway * 0.5 : 0));
 
         const armsUp = !frenzy && timeSinceBeat < 0.3 && s.jumpStrength > 0.7;
@@ -459,7 +500,7 @@ export function drawGameVisuals() {
             drawFlag(ctx, s, jumpY, now);
         }
 
-        drawSupporter(ctx, s, jumpY, armsUp, frenzy, now);
+        drawSupporter(ctx, s, jumpY, armsUp, frenzy, now, coreoType);
 
         if (frenzy && s.hasFlare) {
             drawFlare(ctx, s, jumpY, now);
