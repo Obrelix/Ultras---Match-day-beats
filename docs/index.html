@@ -15,6 +15,24 @@
             <button id="start-btn" class="btn-primary">START GAME</button>
         </div>
 
+        <!-- Mode Select Screen -->
+        <div id="mode-select-screen" class="screen">
+            <h2>Select Mode</h2>
+            <div id="mode-grid">
+                <div class="mode-card" id="mode-practice">
+                    <div class="mode-icon">&#9835;</div>
+                    <div class="mode-title">Practice</div>
+                    <div class="mode-desc">Pick a chant and perfect your rhythm</div>
+                </div>
+                <div class="mode-card" id="mode-matchday">
+                    <div class="mode-icon">&#9917;</div>
+                    <div class="mode-title">Match Day</div>
+                    <div class="mode-desc">Play a full match — 6 chants, 2 halves, goals on the line</div>
+                </div>
+            </div>
+            <button id="back-to-title-from-mode" class="btn-secondary">Back</button>
+        </div>
+
         <!-- Club Selection Screen -->
         <div id="club-select-screen" class="screen">
             <h2>Choose Your Club</h2>
@@ -30,8 +48,35 @@
             <button id="back-to-clubs" class="btn-secondary">Back</button>
         </div>
 
+        <!-- Match Day Intro Screen -->
+        <div id="matchday-intro-screen" class="screen">
+            <h2>MATCH DAY</h2>
+            <div id="matchup-display">
+                <div class="matchup-team">
+                    <div class="matchup-badge" id="matchup-player-badge"></div>
+                    <div class="matchup-name" id="matchup-player-name"></div>
+                </div>
+                <div class="matchup-vs">VS</div>
+                <div class="matchup-team">
+                    <div class="matchup-badge" id="matchup-rival-badge"></div>
+                    <div class="matchup-name" id="matchup-rival-name"></div>
+                </div>
+            </div>
+            <button id="kickoff-btn" class="btn-primary">KICK OFF</button>
+        </div>
+
         <!-- Gameplay Screen -->
         <div id="gameplay-screen" class="screen">
+            <div id="match-scoreboard" class="hidden">
+                <span id="match-score-player">0</span>
+                <span class="match-score-sep">-</span>
+                <span id="match-score-ai">0</span>
+                <span class="match-score-divider">|</span>
+                <span id="match-half-label">1st Half</span>
+                <span class="match-score-divider">|</span>
+                <span id="match-chant-progress">Chant 1/3</span>
+            </div>
+
             <div id="chant-display">
                 <span id="current-chant-name"></span>
             </div>
@@ -54,7 +99,7 @@
             <div id="input-hint">Press SPACEBAR on the beat!</div>
         </div>
 
-        <!-- Results Screen -->
+        <!-- Results Screen (Practice) -->
         <div id="results-screen" class="screen">
             <h2 id="result-title">RESULTS</h2>
             <div id="final-scores">
@@ -77,6 +122,43 @@
             </div>
             <button id="play-again-btn" class="btn-primary">Play Again</button>
             <button id="change-chant-btn" class="btn-secondary">Change Chant</button>
+        </div>
+
+        <!-- Chant Result Screen (Match Day transition) -->
+        <div id="chant-result-screen" class="screen">
+            <div id="chant-result-scoreline">
+                <span id="chant-result-player-goals">0</span>
+                <span class="chant-result-sep">-</span>
+                <span id="chant-result-ai-goals">0</span>
+            </div>
+            <div id="chant-result-message"></div>
+            <div id="chant-result-detail"></div>
+        </div>
+
+        <!-- Halftime Screen -->
+        <div id="halftime-screen" class="screen">
+            <h2>HALF TIME</h2>
+            <div id="halftime-scoreline">
+                <span id="halftime-player-goals">0</span>
+                <span class="halftime-sep">-</span>
+                <span id="halftime-ai-goals">0</span>
+            </div>
+            <div id="halftime-summary"></div>
+            <button id="second-half-btn" class="btn-primary">SECOND HALF</button>
+        </div>
+
+        <!-- Fulltime Screen -->
+        <div id="fulltime-screen" class="screen">
+            <h2>FULL TIME</h2>
+            <div id="fulltime-scoreline">
+                <span id="fulltime-player-goals">0</span>
+                <span class="fulltime-sep">-</span>
+                <span id="fulltime-ai-goals">0</span>
+            </div>
+            <div id="fulltime-result-message"></div>
+            <div id="fulltime-summary"></div>
+            <button id="fulltime-play-again-btn" class="btn-primary">Play Again</button>
+            <button id="fulltime-main-menu-btn" class="btn-secondary">Main Menu</button>
         </div>
     </div>
 

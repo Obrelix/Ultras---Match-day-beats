@@ -65,6 +65,16 @@ export const state = {
 
     // AI stats
     aiScore: 0,
+
+    // Match Day
+    gameMode: null,
+    rivalClub: null,
+    matchChants: [],
+    currentChantIndex: 0,
+    currentHalf: 1,
+    playerGoals: 0,
+    aiGoals: 0,
+    chantResults: [],
 };
 
 export function resetGameState() {
@@ -98,4 +108,15 @@ export function resetGameState() {
     state.comboBumpTime = 0;
     state.frenzyStartTime = 0;
     state.wasFrenzy = false;
+}
+
+export function resetMatchState() {
+    state.gameMode = null;
+    state.rivalClub = null;
+    state.matchChants = [];
+    state.currentChantIndex = 0;
+    state.currentHalf = 1;
+    state.playerGoals = 0;
+    state.aiGoals = 0;
+    state.chantResults = [];
 }

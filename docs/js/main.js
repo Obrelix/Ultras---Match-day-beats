@@ -2,17 +2,21 @@
 // main.js — Entry point, game loop, event wiring
 // ============================================
 
-import { GameState, TIMING } from './config.js';
-import { state, resetGameState } from './state.js';
+import { GameState, TIMING, MATCHDAY, clubs } from './config.js';
+import { state, resetGameState, resetMatchState } from './state.js';
 import { initAudio, loadAudio, playAudio } from './audio.js';
 import { analyzeBeats } from './beatDetection.js';
 import { handleInput, registerMiss, simulateAI } from './input.js';
 import { initVisualizer, computeWaveformPeaks, buildWaveformCache, drawVisualizer } from './renderer.js';
 import { drawGameVisuals } from './crowd.js';
-import { showScreen, applyClubTheme, renderClubSelection, renderChantSelection, endGame, elements, screens } from './ui.js';
+import {
+    showScreen, applyClubTheme, renderClubSelection, renderChantSelection,
+    renderMatchdayIntro, updateMatchScoreboard, setMatchdayChantStarter,
+    endGame, elements, screens
+} from './ui.js';
 
 // ============================================
-// Club & Chant Selection
+// Club & Chant Selection (Practice)
 // ============================================
 
 function selectClub(club) {
@@ -28,11 +32,100 @@ function selectChant(chant) {
 }
 
 // ============================================
-// Game Logic
+// Club Selection (Match Day)
+// ============================================
+
+function selectClubMatchday(club) {
+    state.selectedClub = club;
+    applyClubTheme(club);
+    resetMatchState();
+    state.gameMode = 'matchday';
+
+    // Pick random rival (exclude player's team, must have >= MIN_CHANTS_FOR_MATCHDAY unique chants)
+    const eligible = Object.values(clubs).filter(c => {
+        if (c.id === club.id) return false;
+        const uniqueChants = new Set(c.chants.map(ch => ch.audio));
+        return uniqueChants.size >= MATCHDAY.MIN_CHANTS_FOR_MATCHDAY;
+    });
+
+    state.rivalClub = eligible[Math.floor(Math.random() * eligible.length)];
+
+    // Deduplicate player's chants by audio path, then shuffle and pick 6
+    const seen = new Set();
+    const uniqueChants = club.chants.filter(c => {
+        if (seen.has(c.audio)) return false;
+        seen.add(c.audio);
+        return true;
+    });
+
+    // Fisher-Yates shuffle
+    for (let i = uniqueChants.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [uniqueChants[i], uniqueChants[j]] = [uniqueChants[j], uniqueChants[i]];
+    }
+
+    state.matchChants = uniqueChants.slice(0, MATCHDAY.CHANTS_PER_HALF * 2);
+
+    renderMatchdayIntro();
+    showScreen('matchdayIntro');
+}
+
+// ============================================
+// Start a Match Day chant
+// ============================================
+
+async function startMatchdayChant() {
+    const chant = state.matchChants[state.currentChantIndex];
+    state.selectedChant = chant;
+
+    showScreen('gameplay');
+
+    // Show & update match scoreboard
+    elements.matchScoreboard.classList.remove('hidden');
+    updateMatchScoreboard();
+
+    resetGameState();
+
+    // Update UI
+    elements.playerScore.textContent = '0';
+    elements.aiScore.textContent = '0';
+    elements.currentChantName.textContent = chant.name;
+
+    // Clear canvas effects
+    elements.gameCanvas.classList.remove('beat-pulse', 'hit-perfect', 'hit-good', 'hit-ok', 'hit-miss');
+
+    // Initialize audio and visualizer
+    await initAudio();
+    initVisualizer();
+    await loadAudio(chant.audio);
+
+    // Pre-analyze beats and waveform
+    state.detectedBeats = analyzeBeats(state.audioBuffer);
+    computeWaveformPeaks();
+    buildWaveformCache();
+
+    // Start countdown then game
+    await countdown();
+
+    playAudio(endGame);
+    state.audioStartTime = state.audioContext.currentTime;
+    state.gameStartTime = performance.now();
+
+    gameLoop();
+}
+
+// Register the chant starter with ui.js so it can auto-advance
+setMatchdayChantStarter(startMatchdayChant);
+
+// ============================================
+// Game Logic (Practice)
 // ============================================
 
 async function startGame() {
     showScreen('gameplay');
+
+    // Hide match scoreboard in practice mode
+    elements.matchScoreboard.classList.add('hidden');
 
     resetGameState();
 
@@ -151,19 +244,60 @@ function triggerBeat() {
 // Event Listeners
 // ============================================
 
+// Title → Mode Select
 elements.startBtn.addEventListener('click', () => {
+    showScreen('modeSelect');
+});
+
+// Mode Select → Back to Title
+elements.backToTitleFromMode.addEventListener('click', () => {
+    showScreen('title');
+});
+
+// Practice mode
+elements.modePractice.addEventListener('click', () => {
+    state.gameMode = 'practice';
     renderClubSelection(selectClub);
     showScreen('clubSelect');
 });
 
+// Match Day mode
+elements.modeMatchday.addEventListener('click', () => {
+    state.gameMode = 'matchday';
+    renderClubSelection(selectClubMatchday, MATCHDAY.MIN_CHANTS_FOR_MATCHDAY);
+    showScreen('clubSelect');
+});
+
+// Club select → Back (returns to mode select now)
 elements.backToTitle.addEventListener('click', () => {
-    showScreen('title');
+    showScreen('modeSelect');
 });
 
 elements.backToClubs.addEventListener('click', () => {
     showScreen('clubSelect');
 });
 
+// Match Day intro → Kick Off
+elements.kickoffBtn.addEventListener('click', () => {
+    startMatchdayChant();
+});
+
+// Halftime → Second Half
+elements.secondHalfBtn.addEventListener('click', () => {
+    startMatchdayChant();
+});
+
+// Fulltime buttons
+elements.fulltimePlayAgainBtn.addEventListener('click', () => {
+    // Restart match with same club
+    selectClubMatchday(state.selectedClub);
+});
+
+elements.fulltimeMainMenuBtn.addEventListener('click', () => {
+    showScreen('title');
+});
+
+// Practice results buttons
 elements.playAgainBtn.addEventListener('click', () => {
     startGame();
 });

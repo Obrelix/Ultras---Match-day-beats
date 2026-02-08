@@ -106,6 +106,54 @@ body {
     color: var(--primary-color);
 }
 
+/* Mode Selection */
+#mode-select-screen h2 {
+    margin-bottom: 30px;
+    font-size: 2rem;
+}
+
+#mode-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+    width: 100%;
+    max-width: 500px;
+    margin-bottom: 20px;
+}
+
+.mode-card {
+    background: linear-gradient(135deg, var(--bg-dark), var(--bg-darker));
+    border: 3px solid transparent;
+    border-radius: 15px;
+    padding: 30px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.mode-card:hover {
+    transform: translateY(-5px);
+    border-color: var(--primary-color);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.mode-icon {
+    font-size: 3rem;
+    margin-bottom: 10px;
+}
+
+.mode-title {
+    font-size: 1.3rem;
+    font-weight: bold;
+    margin-bottom: 8px;
+}
+
+.mode-desc {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+
 /* Club Selection */
 #club-select-screen h2,
 #chant-select-screen h2 {
@@ -459,6 +507,210 @@ body {
 @keyframes countdownPulse {
     0%, 100% { transform: scale(1); opacity: 1; }
     50% { transform: scale(1.2); opacity: 0.8; }
+}
+
+/* Match Day Intro */
+#matchday-intro-screen h2 {
+    font-size: 2.5rem;
+    margin-bottom: 30px;
+    color: var(--accent-gold);
+    text-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+}
+
+#matchup-display {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 40px;
+    margin-bottom: 40px;
+}
+
+.matchup-team {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.matchup-badge {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5rem;
+}
+
+.matchup-name {
+    font-size: 1.3rem;
+    font-weight: bold;
+}
+
+.matchup-vs {
+    font-size: 2rem;
+    font-weight: bold;
+    color: var(--accent-gold);
+}
+
+/* Match Scoreboard (in-game) */
+#match-scoreboard {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid var(--accent-gold);
+    border-radius: 25px;
+    padding: 6px 20px;
+    font-size: 0.95rem;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+#match-scoreboard.hidden {
+    display: none;
+}
+
+#match-score-player,
+#match-score-ai {
+    font-size: 1.3rem;
+    color: var(--accent-gold);
+}
+
+.match-score-sep {
+    color: var(--text-muted);
+}
+
+.match-score-divider {
+    color: rgba(255, 255, 255, 0.2);
+    margin: 0 4px;
+}
+
+#match-half-label,
+#match-chant-progress {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+/* Chant Result Screen */
+#chant-result-screen {
+    justify-content: center;
+}
+
+#chant-result-scoreline {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+#chant-result-player-goals,
+#chant-result-ai-goals {
+    font-size: 5rem;
+    font-weight: bold;
+}
+
+.chant-result-sep {
+    font-size: 3rem;
+    color: var(--text-muted);
+}
+
+#chant-result-message {
+    font-size: 2rem;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+#chant-result-message.goal {
+    color: var(--perfect-color);
+    text-shadow: 0 0 20px var(--perfect-color);
+}
+
+#chant-result-message.no-goal {
+    color: var(--text-muted);
+}
+
+#chant-result-message.ai-goal {
+    color: var(--miss-color);
+    text-shadow: 0 0 20px var(--miss-color);
+}
+
+#chant-result-detail {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+}
+
+/* Halftime Screen */
+#halftime-screen h2 {
+    font-size: 2.5rem;
+    margin-bottom: 20px;
+    color: var(--accent-gold);
+}
+
+#halftime-scoreline,
+#fulltime-scoreline {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+#halftime-player-goals,
+#halftime-ai-goals,
+#fulltime-player-goals,
+#fulltime-ai-goals {
+    font-size: 5rem;
+    font-weight: bold;
+}
+
+.halftime-sep,
+.fulltime-sep {
+    font-size: 3rem;
+    color: var(--text-muted);
+}
+
+#halftime-summary,
+#fulltime-summary {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin-bottom: 30px;
+    text-align: center;
+    line-height: 1.8;
+}
+
+/* Fulltime Screen */
+#fulltime-screen h2 {
+    font-size: 2.5rem;
+    margin-bottom: 20px;
+    color: var(--accent-gold);
+}
+
+#fulltime-result-message {
+    font-size: 2rem;
+    font-weight: bold;
+    margin-bottom: 20px;
+    padding: 10px 30px;
+    border-radius: 10px;
+}
+
+#fulltime-result-message.win {
+    background: linear-gradient(135deg, var(--perfect-color), transparent);
+    color: var(--perfect-color);
+}
+
+#fulltime-result-message.lose {
+    background: linear-gradient(135deg, var(--miss-color), transparent);
+    color: var(--miss-color);
+}
+
+#fulltime-result-message.draw {
+    background: linear-gradient(135deg, var(--accent-gold), transparent);
+    color: var(--accent-gold);
+}
+
+#fulltime-screen .btn-primary {
+    margin-bottom: 10px;
 }
 
 /* Responsive */

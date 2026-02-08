@@ -17,7 +17,6 @@ export const clubs = {
             { id: 'prasine_thee', name: 'prasine_thee', audio: 'chants/Panathinaikos/prasine_thee.mp3', duration: 15 },
             { id: 'mia_zwi_gemati_alitia', name: 'mia_zwi_gemati_alitia', audio: 'chants/Panathinaikos/mia_zwi_gemati_alitia.mp3', duration: 15 },
             { id: 'horto_magiko', name: 'horto_magiko', audio: 'chants/Panathinaikos/horto_magiko.mp3', duration: 15 },
-            { id: 'eisai_i_zwi_mou', name: 'eisai_i_zwi_mou', audio: 'chants/Panathinaikos/eisai_i_zwi_mou.mp3', duration: 15 },
         ]
     },
     AEK: {
@@ -57,10 +56,15 @@ export const clubs = {
 
 export const GameState = {
     TITLE: 'title',
+    MODE_SELECT: 'modeSelect',
     CLUB_SELECT: 'clubSelect',
     CHANT_SELECT: 'chantSelect',
+    MATCHDAY_INTRO: 'matchdayIntro',
     PLAYING: 'gameplay',
-    RESULTS: 'results'
+    CHANT_RESULT: 'chantResult',
+    HALFTIME: 'halftime',
+    RESULTS: 'results',
+    FULLTIME: 'fulltime'
 };
 
 export const TIMING = {
@@ -114,3 +118,11 @@ export const BEAT_RESULT_COLORS = {
 };
 
 export const AI_ACCURACY = 0.75;
+
+export const MATCHDAY = {
+    CHANTS_PER_HALF: 3,
+    MIN_CHANTS_FOR_MATCHDAY: 6,
+    GOAL_COMBO_THRESHOLD: 0.40,
+    AI_GOAL_CHANCE: 0.45,
+    CHANT_TRANSITION_MS: 3000,
+};
