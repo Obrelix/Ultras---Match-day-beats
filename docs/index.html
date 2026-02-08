@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chant Wars - Football Rhythm Game</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <!-- Title Screen -->
+        <div id="title-screen" class="screen active">
+            <h1>⚽ CHANT WARS ⚽</h1>
+            <p class="subtitle">Match the rhythm. Outsing the opposition.</p>
+            <button id="start-btn" class="btn-primary">START GAME</button>
+        </div>
+
+        <!-- Club Selection Screen -->
+        <div id="club-select-screen" class="screen">
+            <h2>Choose Your Club</h2>
+            <div id="club-grid"></div>
+            <button id="back-to-title" class="btn-secondary">Back</button>
+        </div>
+
+        <!-- Chant Selection Screen -->
+        <div id="chant-select-screen" class="screen">
+            <h2>Select a Chant</h2>
+            <div id="selected-club-banner"></div>
+            <div id="chant-list"></div>
+            <button id="back-to-clubs" class="btn-secondary">Back</button>
+        </div>
+
+        <!-- Gameplay Screen -->
+        <div id="gameplay-screen" class="screen">
+            <div id="chant-display">
+                <span id="current-chant-name"></span>
+            </div>
+
+            <canvas id="game-canvas"></canvas>
+            <canvas id="game-visual-canvas"></canvas>
+
+            <div id="scoreboard">
+                <div id="player-score-box" class="score-box">
+                    <span class="score-label">YOU</span>
+                    <span id="player-score" class="score-value">0</span>
+                </div>
+                <div id="vs-divider">VS</div>
+                <div id="ai-score-box" class="score-box">
+                    <span class="score-label">RIVAL</span>
+                    <span id="ai-score" class="score-value">0</span>
+                </div>
+            </div>
+
+            <div id="input-hint">Press SPACEBAR on the beat!</div>
+        </div>
+
+        <!-- Results Screen -->
+        <div id="results-screen" class="screen">
+            <h2 id="result-title">RESULTS</h2>
+            <div id="final-scores">
+                <div class="final-score-box">
+                    <span class="final-label">YOUR SCORE</span>
+                    <span id="final-player-score" class="final-value">0</span>
+                </div>
+                <div class="final-score-box">
+                    <span class="final-label">RIVAL SCORE</span>
+                    <span id="final-ai-score" class="final-value">0</span>
+                </div>
+            </div>
+            <div id="result-message"></div>
+            <div id="stats-display">
+                <div class="stat">Perfect: <span id="stat-perfect">0</span></div>
+                <div class="stat">Good: <span id="stat-good">0</span></div>
+                <div class="stat">OK: <span id="stat-ok">0</span></div>
+                <div class="stat">Miss: <span id="stat-miss">0</span></div>
+                <div class="stat">Max Combo: <span id="stat-max-combo">0</span></div>
+            </div>
+            <button id="play-again-btn" class="btn-primary">Play Again</button>
+            <button id="change-chant-btn" class="btn-secondary">Change Chant</button>
+        </div>
+    </div>
+
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
