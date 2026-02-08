@@ -6,10 +6,17 @@ import { GameState, TIMING, SCORE, BEAT_RESULT_COLORS, AI_ACCURACY } from './con
 import { state } from './state.js';
 import { elements } from './ui.js';
 
+const INPUT_COOLDOWN_MS = 80;
+let lastInputTime = 0;
+
 export function handleInput() {
     if (state.currentState !== GameState.PLAYING) return;
 
     const now = performance.now();
+
+    // Prevent duplicate hits from touch + click firing on the same tap
+    if (now - lastInputTime < INPUT_COOLDOWN_MS) return;
+    lastInputTime = now;
 
     let bestBeat = null;
     let bestDiff = Infinity;

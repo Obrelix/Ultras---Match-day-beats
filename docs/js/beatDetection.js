@@ -86,23 +86,25 @@ function computeSpectralFlux(buffer) {
         hannWindow[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (fftSize - 1)));
     }
 
-    // Precompute frequency band weights per bin
+    // Precompute frequency band weights per bin (vocal-focused 5-band scheme)
     const binHz = sampleRate / fftSize;
-    const lowBandEnd = Math.floor(BEAT_DETECTION.LOW_BAND_HZ / binHz);
-    const midBandStart = Math.floor(BEAT_DETECTION.MID_BAND_HZ / binHz);
-    const midBandEnd = Math.floor(BEAT_DETECTION.MID_BAND_CEILING_HZ / binHz);
-    const highBandStart = Math.floor(BEAT_DETECTION.HIGH_BAND_HZ / binHz);
+    const bassCutoffBin = Math.floor(BEAT_DETECTION.BASS_CUTOFF_HZ / binHz);
+    const lowVocalBin = Math.floor(BEAT_DETECTION.LOW_VOCAL_HZ / binHz);
+    const vocalCoreBin = Math.floor(BEAT_DETECTION.VOCAL_CORE_HZ / binHz);
+    const sibilanceBin = Math.floor(BEAT_DETECTION.SIBILANCE_HZ / binHz);
 
     const binWeights = new Float32Array(numBins);
     for (let bin = 0; bin < numBins; bin++) {
-        if (bin <= lowBandEnd) {
-            binWeights[bin] = BEAT_DETECTION.LOW_BAND_WEIGHT;
-        } else if (bin >= midBandStart && bin <= midBandEnd) {
-            binWeights[bin] = BEAT_DETECTION.MID_BAND_WEIGHT;
-        } else if (bin >= highBandStart) {
-            binWeights[bin] = BEAT_DETECTION.HIGH_BAND_WEIGHT;
+        if (bin <= bassCutoffBin) {
+            binWeights[bin] = 0.0;                              // bass/kicks/stomps — eliminate
+        } else if (bin <= lowVocalBin) {
+            binWeights[bin] = BEAT_DETECTION.LOW_VOCAL_WEIGHT;  // low vocal (150–250 Hz)
+        } else if (bin <= vocalCoreBin) {
+            binWeights[bin] = BEAT_DETECTION.VOCAL_CORE_WEIGHT; // vocal core (250–3500 Hz)
+        } else if (bin <= sibilanceBin) {
+            binWeights[bin] = BEAT_DETECTION.SIBILANCE_WEIGHT;  // consonants/sibilance (3500–6000 Hz)
         } else {
-            binWeights[bin] = 1.0;
+            binWeights[bin] = 0.0;                              // noise/hiss — eliminate
         }
     }
 
@@ -139,6 +141,32 @@ function computeSpectralFlux(buffer) {
     return spectralFlux;
 }
 
+function smoothFlux(flux, windowSize) {
+    const half = Math.floor(windowSize / 2);
+    const smoothed = new Float32Array(flux.length);
+    for (let i = 0; i < flux.length; i++) {
+        const start = Math.max(0, i - half);
+        const end = Math.min(flux.length - 1, i + half);
+        let sum = 0;
+        for (let j = start; j <= end; j++) {
+            sum += flux[j];
+        }
+        smoothed[i] = sum / (end - start + 1);
+    }
+    return smoothed;
+}
+
+function refineOnsetTime(spectralFlux, peakFrame, frameDuration) {
+    const prev = spectralFlux[peakFrame - 1];
+    const curr = spectralFlux[peakFrame];
+    const next = spectralFlux[peakFrame + 1];
+    const offset = 0.5 * (prev - next) / (prev - 2 * curr + next);
+    if (Math.abs(offset) < 1) {
+        return (peakFrame + offset) * frameDuration;
+    }
+    return peakFrame * frameDuration;
+}
+
 function pickOnsets(spectralFlux, hopSize, sampleRate) {
     const numFrames = spectralFlux.length;
     const frameDuration = hopSize / sampleRate;
@@ -148,12 +176,13 @@ function pickOnsets(spectralFlux, hopSize, sampleRate) {
     for (let i = 0; i < numFrames; i++) {
         const start = Math.max(0, i - medianWindow);
         const end = Math.min(numFrames - 1, i + medianWindow);
-        let sum = 0;
+        const window = [];
         for (let j = start; j <= end; j++) {
-            sum += spectralFlux[j];
+            window.push(spectralFlux[j]);
         }
-        const localMean = sum / (end - start + 1);
-        threshold[i] = localMean * BEAT_DETECTION.ONSET_THRESHOLD_MULTIPLIER
+        window.sort((a, b) => a - b);
+        const localMedian = window[Math.floor(window.length / 2)];
+        threshold[i] = localMedian * BEAT_DETECTION.ONSET_THRESHOLD_MULTIPLIER
                       + BEAT_DETECTION.ONSET_THRESHOLD_OFFSET;
     }
 
@@ -166,7 +195,7 @@ function pickOnsets(spectralFlux, hopSize, sampleRate) {
         if (spectralFlux[i] <= spectralFlux[i - 1] || spectralFlux[i] <= spectralFlux[i + 1]) continue;
         if ((i - lastOnsetFrame) < minGapFrames) continue;
 
-        onsets.push(i * frameDuration);
+        onsets.push(refineOnsetTime(spectralFlux, i, frameDuration));
         lastOnsetFrame = i;
     }
 
@@ -274,6 +303,19 @@ function estimateTempo(spectralFlux, hopSize, sampleRate) {
         }
     }
 
+    // Octave-up correction: if BPM > 160, check if double-period is a better fit
+    const currentBpm = 60 / (bestLag * frameDuration);
+    if (currentBpm > 160) {
+        const doubleLag = bestLag * 2;
+        if (doubleLag <= maxLag) {
+            const doubleCorr = autocorr[doubleLag - minLag];
+            if (doubleCorr >= bestCorr * 0.8) {
+                bestLag = doubleLag;
+                bestCorr = doubleCorr;
+            }
+        }
+    }
+
     return {
         bpm: 60 / (bestLag * frameDuration),
         beatPeriodSec: bestLag * frameDuration,
@@ -359,9 +401,11 @@ export function analyzeBeats(buffer) {
         for (let i = 0; i < numFrames; i++) {
             const start = Math.max(0, i - medianWindow);
             const end = Math.min(numFrames - 1, i + medianWindow);
-            let sum = 0;
-            for (let j = start; j <= end; j++) sum += spectralFlux[j];
-            threshold[i] = (sum / (end - start + 1)) * lowerThreshold
+            const window = [];
+            for (let j = start; j <= end; j++) window.push(spectralFlux[j]);
+            window.sort((a, b) => a - b);
+            const localMedian = window[Math.floor(window.length / 2)];
+            threshold[i] = localMedian * lowerThreshold
                           + BEAT_DETECTION.ONSET_THRESHOLD_OFFSET;
         }
         const minGapFrames = Math.floor(BEAT_DETECTION.ONSET_MIN_GAP_SEC / frameDuration);
@@ -371,7 +415,7 @@ export function analyzeBeats(buffer) {
             if (spectralFlux[i] <= threshold[i]) continue;
             if (spectralFlux[i] <= spectralFlux[i - 1] || spectralFlux[i] <= spectralFlux[i + 1]) continue;
             if ((i - lastOnsetFrame) < minGapFrames) continue;
-            onsets.push(i * frameDuration);
+            onsets.push(refineOnsetTime(spectralFlux, i, frameDuration));
             lastOnsetFrame = i;
         }
         console.log(`Beat detection: Retried with lower threshold, found ${onsets.length} onsets`);
