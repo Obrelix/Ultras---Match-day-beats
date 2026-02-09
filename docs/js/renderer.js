@@ -2,7 +2,7 @@
 // renderer.js — Beat track visualizer (top canvas)
 // ============================================
 
-import { TIMING, SCROLL_VIS, BEAT_RESULT_COLORS } from './config.js';
+import { SCROLL_VIS, BEAT_RESULT_COLORS } from './config.js';
 import { state } from './state.js';
 import { elements } from './ui.js';
 
@@ -207,9 +207,9 @@ export function drawVisualizer() {
     }
 
     // --- Timing zone bands around hit line (gradient-edged) ---
-    const okHalfW = (TIMING.OK / 1000) * pxPerSec;
-    const goodHalfW = (TIMING.GOOD / 1000) * pxPerSec;
-    const perfectHalfW = (TIMING.PERFECT / 1000) * pxPerSec;
+    const okHalfW = (state.activeTiming.OK / 1000) * pxPerSec;
+    const goodHalfW = (state.activeTiming.GOOD / 1000) * pxPerSec;
+    const perfectHalfW = (state.activeTiming.PERFECT / 1000) * pxPerSec;
 
     function drawZoneBand(centerX, halfW, r, g, b, maxAlpha) {
         const edgeFade = Math.min(halfW * 0.3, 15);

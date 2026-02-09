@@ -157,6 +157,18 @@ export const BEAT_RESULT_COLORS = {
 
 export const AI_ACCURACY = 0.75;
 
+export const AI_RUBBER_BAND = {
+    SCORE_DIFF_THRESHOLD: 500,
+    LOSING_REDUCTION: 0.15,
+    WINNING_INCREASE: 0.10,
+};
+
+export const DIFFICULTY_PRESETS = {
+    easy:   { PERFECT: 300, GOOD: 500, OK: 700, label: 'Easy' },
+    normal: { PERFECT: 200, GOOD: 400, OK: 600, label: 'Normal' },
+    hard:   { PERFECT: 120, GOOD: 250, OK: 400, label: 'Hard' },
+};
+
 export const MATCHDAY = {
     CHANTS_PER_HALF: 3,
     MIN_CHANTS_FOR_MATCHDAY: 6,

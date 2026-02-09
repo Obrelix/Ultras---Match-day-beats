@@ -2,9 +2,9 @@
 // main.js — Entry point, game loop, event wiring
 // ============================================
 
-import { GameState, TIMING, MATCHDAY, clubs } from './config.js';
+import { GameState, MATCHDAY, DIFFICULTY_PRESETS, clubs } from './config.js';
 import { state, resetGameState, resetMatchState } from './state.js';
-import { initAudio, loadAudio, playAudio } from './audio.js';
+import { initAudio, loadAudio, playAudio, stopAudio, setVolume, setSFXVolume } from './audio.js';
 import { analyzeBeats } from './beatDetection.js';
 import { handleInput, registerMiss, simulateAI } from './input.js';
 import { initVisualizer, computeWaveformPeaks, buildWaveformCache, drawVisualizer } from './renderer.js';
@@ -14,6 +14,18 @@ import {
     renderMatchdayIntro, updateMatchScoreboard, updateScoreboardTeams,
     setMatchdayChantStarter, endGame, elements, screens
 } from './ui.js';
+import { loadSettings, saveSettings, hasTutorialSeen, markTutorialSeen } from './storage.js';
+
+// ============================================
+// Initialize settings from localStorage
+// ============================================
+
+const savedSettings = loadSettings();
+Object.assign(state.settings, savedSettings);
+
+// Apply difficulty preset
+const preset = DIFFICULTY_PRESETS[state.settings.difficulty] || DIFFICULTY_PRESETS.normal;
+state.activeTiming = { PERFECT: preset.PERFECT, GOOD: preset.GOOD, OK: preset.OK };
 
 // ============================================
 // Club & Chant Selection (Practice)
@@ -87,6 +99,10 @@ async function startMatchdayChant() {
 
     resetGameState();
 
+    // Apply difficulty preset
+    const diffPreset = DIFFICULTY_PRESETS[state.settings.difficulty] || DIFFICULTY_PRESETS.normal;
+    state.activeTiming = { PERFECT: diffPreset.PERFECT, GOOD: diffPreset.GOOD, OK: diffPreset.OK };
+
     // Update UI
     elements.playerScore.textContent = '0';
     elements.aiScore.textContent = '0';
@@ -100,10 +116,21 @@ async function startMatchdayChant() {
     initVisualizer();
     await loadAudio(chant.audio);
 
+    // Show loading overlay and yield for render
+    elements.loadingOverlay.classList.remove('hidden');
+    await new Promise(resolve => setTimeout(resolve, 50));
+
     // Pre-analyze beats and waveform
     state.detectedBeats = analyzeBeats(state.audioBuffer);
     computeWaveformPeaks();
     buildWaveformCache();
+
+    elements.loadingOverlay.classList.add('hidden');
+
+    // Tutorial on first play
+    if (!hasTutorialSeen()) {
+        await showTutorial();
+    }
 
     // Start countdown then game
     await countdown();
@@ -131,6 +158,10 @@ async function startGame() {
 
     resetGameState();
 
+    // Apply difficulty preset
+    const diffPreset = DIFFICULTY_PRESETS[state.settings.difficulty] || DIFFICULTY_PRESETS.normal;
+    state.activeTiming = { PERFECT: diffPreset.PERFECT, GOOD: diffPreset.GOOD, OK: diffPreset.OK };
+
     // Update UI
     elements.playerScore.textContent = '0';
     elements.aiScore.textContent = '0';
@@ -144,10 +175,21 @@ async function startGame() {
     initVisualizer();
     await loadAudio(state.selectedChant.audio);
 
+    // Show loading overlay and yield for render
+    elements.loadingOverlay.classList.remove('hidden');
+    await new Promise(resolve => setTimeout(resolve, 50));
+
     // Pre-analyze beats and waveform
     state.detectedBeats = analyzeBeats(state.audioBuffer);
     computeWaveformPeaks();
     buildWaveformCache();
+
+    elements.loadingOverlay.classList.add('hidden');
+
+    // Tutorial on first play
+    if (!hasTutorialSeen()) {
+        await showTutorial();
+    }
 
     // Start countdown then game
     await countdown();
@@ -157,6 +199,26 @@ async function startGame() {
     state.gameStartTime = performance.now();
 
     gameLoop();
+}
+
+async function showTutorial() {
+    elements.tutorialOverlay.classList.remove('hidden');
+    return new Promise(resolve => {
+        function dismiss() {
+            elements.tutorialOverlay.classList.add('hidden');
+            document.removeEventListener('keydown', dismiss);
+            document.removeEventListener('touchstart', dismiss);
+            document.removeEventListener('click', dismiss);
+            markTutorialSeen();
+            resolve();
+        }
+        // Small delay to avoid the click that opened gameplay from dismissing instantly
+        setTimeout(() => {
+            document.addEventListener('keydown', dismiss, { once: true });
+            document.addEventListener('touchstart', dismiss, { once: true });
+            document.addEventListener('click', dismiss, { once: true });
+        }, 300);
+    });
 }
 
 async function countdown() {
@@ -186,6 +248,7 @@ async function countdown() {
 
 function gameLoop() {
     if (state.currentState !== GameState.PLAYING) return;
+    if (state.isPaused) return;
 
     const now = performance.now();
     const audioElapsed = state.audioContext.currentTime - state.audioStartTime;
@@ -198,7 +261,7 @@ function gameLoop() {
     }
 
     // Check for missed beats
-    if (state.activeBeat && (now - state.activeBeat.time) > TIMING.OK) {
+    if (state.activeBeat && (now - state.activeBeat.time) > state.activeTiming.OK) {
         registerMiss();
         state.activeBeat = null;
     }
@@ -240,6 +303,43 @@ function triggerBeat() {
 
     // AI plays
     simulateAI();
+}
+
+// ============================================
+// Pause / Resume
+// ============================================
+
+function pauseGame() {
+    if (state.isPaused || state.currentState !== GameState.PLAYING) return;
+    state.isPaused = true;
+    state._pauseTime = performance.now();
+    cancelAnimationFrame(state.gameLoopId);
+    if (state.audioContext) state.audioContext.suspend();
+    elements.pauseOverlay.classList.remove('hidden');
+}
+
+function resumeGame() {
+    if (!state.isPaused) return;
+    const pauseDuration = performance.now() - state._pauseTime;
+    state.gameStartTime += pauseDuration;
+    if (state.activeBeat) {
+        state.activeBeat.time += pauseDuration;
+    }
+    state.isPaused = false;
+    if (state.audioContext) state.audioContext.resume();
+    elements.pauseOverlay.classList.add('hidden');
+    // Close volume panel if open
+    elements.volumePanel.classList.add('hidden');
+    gameLoop();
+}
+
+function quitToMenu() {
+    state.isPaused = false;
+    cancelAnimationFrame(state.gameLoopId);
+    stopAudio();
+    elements.pauseOverlay.classList.add('hidden');
+    elements.volumePanel.classList.add('hidden');
+    showScreen('title');
 }
 
 // ============================================
@@ -310,8 +410,14 @@ elements.changeChantBtn.addEventListener('click', () => {
 
 // Input - Spacebar
 document.addEventListener('keydown', (e) => {
+    if (e.code === 'Escape') {
+        if (state.isPaused) resumeGame();
+        else if (state.currentState === GameState.PLAYING) pauseGame();
+        return;
+    }
     if (e.code === 'Space' || e.key === ' ') {
         e.preventDefault();
+        if (state.isPaused) return;
         handleInput();
     }
 });
@@ -319,7 +425,7 @@ document.addEventListener('keydown', (e) => {
 // Touch support for mobile
 let lastTouchTime = 0;
 document.addEventListener('touchstart', (e) => {
-    if (state.currentState === GameState.PLAYING) {
+    if (state.currentState === GameState.PLAYING && !state.isPaused) {
         e.preventDefault();
         lastTouchTime = performance.now();
         handleInput();
@@ -327,9 +433,76 @@ document.addEventListener('touchstart', (e) => {
 }, { passive: false });
 
 // Click support during gameplay (skip synthetic clicks from touch)
-screens.gameplay.addEventListener('click', () => {
+screens.gameplay.addEventListener('click', (e) => {
+    if (state.isPaused) return;
     if (performance.now() - lastTouchTime < 500) return;
+    // Don't handle clicks on UI controls
+    if (e.target.closest('#volume-controls') || e.target.closest('#pause-btn')) return;
     handleInput();
+});
+
+// Pause button
+elements.pauseBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (state.isPaused) resumeGame();
+    else pauseGame();
+});
+
+// Resume / Quit buttons
+elements.resumeBtn.addEventListener('click', () => resumeGame());
+elements.quitBtn.addEventListener('click', () => quitToMenu());
+
+// Volume toggle
+elements.volumeToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    elements.volumePanel.classList.toggle('hidden');
+});
+
+// Music volume slider
+elements.volumeSlider.addEventListener('input', (e) => {
+    const val = parseInt(e.target.value) / 100;
+    setVolume(val);
+    state.settings.volume = val;
+    saveSettings(state.settings);
+});
+
+// SFX volume slider
+elements.sfxVolumeSlider.addEventListener('input', (e) => {
+    const val = parseInt(e.target.value) / 100;
+    setSFXVolume(val);
+    state.settings.sfxVolume = val;
+    saveSettings(state.settings);
+});
+
+// Reduced effects toggle
+elements.reducedEffectsToggle.addEventListener('change', (e) => {
+    state.settings.reducedEffects = e.target.checked;
+    saveSettings(state.settings);
+});
+
+// Difficulty buttons
+document.querySelectorAll('.difficulty-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.difficulty-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.settings.difficulty = btn.dataset.difficulty;
+        const p = DIFFICULTY_PRESETS[state.settings.difficulty] || DIFFICULTY_PRESETS.normal;
+        state.activeTiming = { PERFECT: p.PERFECT, GOOD: p.GOOD, OK: p.OK };
+        saveSettings(state.settings);
+    });
+});
+
+// ============================================
+// Apply persisted settings to UI on load
+// ============================================
+
+elements.volumeSlider.value = Math.round(state.settings.volume * 100);
+elements.sfxVolumeSlider.value = Math.round(state.settings.sfxVolume * 100);
+elements.reducedEffectsToggle.checked = state.settings.reducedEffects;
+
+// Set active difficulty button
+document.querySelectorAll('.difficulty-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.difficulty === state.settings.difficulty);
 });
 
 // Initialize on load

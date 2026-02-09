@@ -2,15 +2,17 @@
 // input.js — Input handling, scoring, AI
 // ============================================
 
-import { GameState, TIMING, SCORE, BEAT_RESULT_COLORS, AI_ACCURACY } from './config.js';
+import { GameState, SCORE, BEAT_RESULT_COLORS, AI_ACCURACY, AI_RUBBER_BAND } from './config.js';
 import { state } from './state.js';
 import { elements } from './ui.js';
+import { playSFX } from './audio.js';
 
 const INPUT_COOLDOWN_MS = 80;
 let lastInputTime = 0;
 
 export function handleInput() {
     if (state.currentState !== GameState.PLAYING) return;
+    if (state.isPaused) return;
 
     const now = performance.now();
 
@@ -41,8 +43,10 @@ export function handleInput() {
     }
 
     // No beat within reach
-    if (!bestBeat || bestDiff > TIMING.OK) {
+    if (!bestBeat || bestDiff > state.activeTiming.OK) {
         showFeedback('MISS');
+        playSFX('MISS');
+        if (navigator.vibrate) navigator.vibrate([40]);
         state.playerStats.miss++;
         state.playerCombo = 0;
         updateComboDisplay();
@@ -52,17 +56,17 @@ export function handleInput() {
     // Rate the hit
     let rating, score;
 
-    if (bestDiff <= TIMING.PERFECT) {
+    if (bestDiff <= state.activeTiming.PERFECT) {
         rating = 'PERFECT';
         score = SCORE.PERFECT;
         state.playerStats.perfect++;
         state.playerCombo++;
-    } else if (bestDiff <= TIMING.GOOD) {
+    } else if (bestDiff <= state.activeTiming.GOOD) {
         rating = 'GOOD';
         score = SCORE.GOOD;
         state.playerStats.good++;
         state.playerCombo++;
-    } else if (bestDiff <= TIMING.OK) {
+    } else if (bestDiff <= state.activeTiming.OK) {
         rating = 'OK';
         score = SCORE.OK;
         state.playerStats.ok++;
@@ -78,6 +82,19 @@ export function handleInput() {
     if (bestBeat.index !== undefined) {
         state.beatResults[bestBeat.index] = rating.toLowerCase();
     }
+
+    // Haptic feedback
+    if (navigator.vibrate) {
+        switch (rating) {
+            case 'PERFECT': navigator.vibrate([15, 5, 15]); break;
+            case 'GOOD': navigator.vibrate([10]); break;
+            case 'OK': navigator.vibrate([5]); break;
+            case 'MISS': navigator.vibrate([40]); break;
+        }
+    }
+
+    // Audio SFX
+    playSFX(rating);
 
     // If this was an early hit on an upcoming beat, advance past it
     if (bestBeat.isEarly && rating !== 'MISS') {
@@ -148,6 +165,8 @@ export function registerMiss() {
     state.playerStats.miss++;
     state.playerCombo = 0;
     showFeedback('MISS');
+    playSFX('MISS');
+    if (navigator.vibrate) navigator.vibrate([40]);
     updateComboDisplay();
 }
 
@@ -184,15 +203,46 @@ export function showHitEffect(rating) {
 }
 
 export function simulateAI() {
-    const rand = Math.random();
+    let accuracy = AI_ACCURACY;
 
-    if (rand < AI_ACCURACY * 0.4) {
-        state.aiScore += SCORE.PERFECT;
-    } else if (rand < AI_ACCURACY * 0.7) {
-        state.aiScore += SCORE.GOOD;
-    } else if (rand < AI_ACCURACY) {
-        state.aiScore += SCORE.OK;
+    // Rubber banding in matchday mode
+    if (state.gameMode === 'matchday') {
+        const diff = state.playerScore - state.aiScore;
+        if (diff < -AI_RUBBER_BAND.SCORE_DIFF_THRESHOLD) {
+            accuracy -= AI_RUBBER_BAND.LOSING_REDUCTION;
+        } else if (diff > AI_RUBBER_BAND.SCORE_DIFF_THRESHOLD) {
+            accuracy += AI_RUBBER_BAND.WINNING_INCREASE;
+        }
+        accuracy = Math.max(0.3, Math.min(0.95, accuracy));
     }
 
+    // Miss roll
+    const rand = Math.random();
+    if (rand > accuracy) {
+        elements.aiScore.textContent = state.aiScore;
+        return;
+    }
+
+    // Quality roll (within scoring range)
+    let scoreGained = 0;
+    const scoringRoll = Math.random();
+    if (scoringRoll < 0.40) {
+        scoreGained = SCORE.PERFECT;
+    } else if (scoringRoll < 0.70) {
+        scoreGained = SCORE.GOOD;
+    } else {
+        scoreGained = SCORE.OK;
+    }
+
+    state.aiScore += scoreGained;
     elements.aiScore.textContent = state.aiScore;
+
+    // AI score popup
+    if (scoreGained > 0 && elements.aiScorePopupContainer) {
+        const popup = document.createElement('div');
+        popup.className = 'ai-score-popup';
+        popup.textContent = `+${scoreGained}`;
+        elements.aiScorePopupContainer.appendChild(popup);
+        setTimeout(() => popup.remove(), 800);
+    }
 }

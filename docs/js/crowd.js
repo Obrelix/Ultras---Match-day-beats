@@ -91,7 +91,7 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType) {
     }
     const x = Math.floor(baseX + rockX);
 
-    if (frenzy) {
+    if (frenzy && !state.settings.reducedEffects) {
         const glowPhase = (Math.sin(now / 200 + s.jumpPhase) + 1) * 0.5;
         const primary = state.selectedClub ? state.selectedClub.colors.primary : '#006633';
         ctx.fillStyle = primary;
@@ -442,7 +442,7 @@ export function drawGameVisuals() {
 
     // Sky / stadium background gradient
     const grad = ctx.createLinearGradient(0, 0, 0, h);
-    if (frenzy) {
+    if (frenzy && !state.settings.reducedEffects) {
         const frenzyPulse = (Math.sin(now / 300) + 1) * 0.5;
         const r = Math.floor(25 + frenzyPulse * 15);
         grad.addColorStop(0, `rgb(${r}, 5, 8)`);
@@ -471,7 +471,7 @@ export function drawGameVisuals() {
 
     const sway = Math.sin(now / 400) * 2;
 
-    if (frenzy && beatDecay > 0.9) {
+    if (frenzy && beatDecay > 0.9 && !state.settings.reducedEffects) {
         spawnFrenzyParticles(w, h);
     }
 
@@ -504,7 +504,7 @@ export function drawGameVisuals() {
 
         if (frenzy && s.hasFlare) {
             drawFlare(ctx, s, jumpY, now);
-            if (Math.random() < 0.3) {
+            if (!state.settings.reducedEffects && Math.random() < 0.3) {
                 spawnSmoke(s, jumpY, now);
             }
         }
@@ -600,8 +600,28 @@ export function drawGameVisuals() {
         hudY += 28;
     }
 
-    // 3) Combo counter
-    if (state.comboDisplayCount > 1) {
+    // 3) Frenzy progress indicator (combo 2-5, pre-frenzy)
+    if (state.comboDisplayCount >= 2 && state.comboDisplayCount <= 5 && !frenzy) {
+        const progressText = `COMBO ${state.comboDisplayCount}/6 → FEVER!`;
+        ctx.save();
+        ctx.font = 'bold 16px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
+        ctx.strokeText(progressText, w / 2, hudY);
+        const gradProgress = state.comboDisplayCount / 6;
+        const hue = 30 + gradProgress * 30;
+        ctx.fillStyle = `hsl(${hue}, 100%, 60%)`;
+        ctx.globalAlpha = 0.7 + gradProgress * 0.3;
+        ctx.fillText(progressText, w / 2, hudY);
+        ctx.globalAlpha = 1;
+        ctx.restore();
+        hudY += 24;
+    }
+
+    // 4) Combo counter (frenzy mode, combo > 5)
+    if (state.comboDisplayCount > 5) {
         const sinceBump = now - state.comboBumpTime;
         const bumpT = Math.min(1, sinceBump / 200);
 
@@ -663,5 +683,42 @@ export function drawGameVisuals() {
         ctx.shadowBlur = 0;
         ctx.globalAlpha = 1;
         ctx.restore();
+
+        // Combo meter arc: progress to next multiplier threshold
+        let nextThreshold, currentBase;
+        if (state.playerCombo < 10) { nextThreshold = 10; currentBase = 5; }
+        else if (state.playerCombo < 15) { nextThreshold = 15; currentBase = 10; }
+        else if (state.playerCombo < 20) { nextThreshold = 20; currentBase = 15; }
+        else { nextThreshold = null; }
+
+        if (nextThreshold) {
+            const progress = (state.playerCombo - currentBase) / (nextThreshold - currentBase);
+            const arcR = 14;
+            const arcX = w / 2 + 100;
+            const arcY = hudY;
+
+            ctx.save();
+            // Background ring
+            ctx.beginPath();
+            ctx.arc(arcX, arcY, arcR, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Progress arc
+            ctx.beginPath();
+            ctx.arc(arcX, arcY, arcR, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2, false);
+            ctx.strokeStyle = comboColor;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Text inside
+            ctx.font = 'bold 9px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(`${state.playerCombo}/${nextThreshold}`, arcX, arcY);
+            ctx.restore();
+        }
     }
 }

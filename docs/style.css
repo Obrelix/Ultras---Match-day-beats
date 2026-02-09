@@ -742,6 +742,371 @@ body {
     margin-bottom: 10px;
 }
 
+/* ============================================
+   Utility Classes
+   ============================================ */
+
+.hidden {
+    display: none !important;
+}
+
+/* ============================================
+   Pause Button & Overlay
+   ============================================ */
+
+#pause-btn {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 20;
+}
+
+.icon-btn {
+    width: 40px;
+    height: 40px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.5);
+    color: var(--text-light);
+    font-size: 1.1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.icon-btn:hover {
+    border-color: var(--primary-color);
+    background: rgba(0, 0, 0, 0.7);
+}
+
+#pause-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+}
+
+#pause-content {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+}
+
+#pause-content h2 {
+    font-size: 3rem;
+    color: var(--text-light);
+    margin-bottom: 10px;
+}
+
+/* ============================================
+   Loading Overlay
+   ============================================ */
+
+#loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 150;
+}
+
+#loading-content {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+}
+
+.loading-spinner {
+    width: 50px;
+    height: 50px;
+    border: 4px solid rgba(255, 255, 255, 0.15);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+#loading-text {
+    color: var(--text-muted);
+    font-size: 1rem;
+}
+
+/* ============================================
+   Tutorial Overlay
+   ============================================ */
+
+#tutorial-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 180;
+}
+
+#tutorial-content {
+    text-align: center;
+    max-width: 400px;
+    padding: 30px;
+}
+
+#tutorial-content h3 {
+    font-size: 2rem;
+    margin-bottom: 20px;
+    color: var(--accent-gold);
+}
+
+#tutorial-content p {
+    margin-bottom: 15px;
+    font-size: 1rem;
+    line-height: 1.5;
+    color: var(--text-light);
+}
+
+.tutorial-zones {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin: 20px 0;
+}
+
+.tutorial-zone {
+    padding: 8px 18px;
+    border-radius: 20px;
+    font-weight: bold;
+    font-size: 0.85rem;
+    letter-spacing: 1px;
+}
+
+.tutorial-zone.perfect {
+    background: var(--perfect-color);
+    color: #000;
+}
+
+.tutorial-zone.good {
+    background: var(--good-color);
+    color: #000;
+}
+
+.tutorial-zone.ok {
+    background: var(--ok-color);
+    color: #000;
+}
+
+.tutorial-dismiss {
+    color: var(--text-muted) !important;
+    font-size: 0.85rem !important;
+    animation: pulse 2s infinite;
+    margin-top: 25px !important;
+}
+
+/* ============================================
+   Volume / Settings Controls
+   ============================================ */
+
+#volume-controls {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+#volume-panel {
+    background: rgba(0, 0, 0, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    padding: 16px;
+    min-width: 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+#volume-panel label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.85rem;
+    color: var(--text-light);
+}
+
+#volume-panel input[type="range"] {
+    flex: 1;
+    height: 4px;
+    appearance: none;
+    -webkit-appearance: none;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+}
+
+#volume-panel input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--primary-color);
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+#volume-panel input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: var(--primary-color);
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+}
+
+.toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    color: var(--text-light);
+    cursor: pointer;
+}
+
+.toggle-label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--primary-color);
+    cursor: pointer;
+}
+
+/* ============================================
+   Difficulty Selector
+   ============================================ */
+
+#difficulty-selector {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    font-size: 0.95rem;
+    color: var(--text-muted);
+}
+
+#difficulty-options {
+    display: flex;
+    gap: 6px;
+}
+
+.difficulty-btn {
+    padding: 6px 16px;
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    border-radius: 20px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.difficulty-btn:hover {
+    border-color: var(--primary-color);
+    color: var(--text-light);
+}
+
+.difficulty-btn.active {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: var(--bg-dark);
+}
+
+/* ============================================
+   AI Score Popups
+   ============================================ */
+
+#ai-score-box {
+    position: relative;
+}
+
+#ai-score-popup-container {
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    pointer-events: none;
+    z-index: 10;
+}
+
+.ai-score-popup {
+    position: absolute;
+    white-space: nowrap;
+    font-size: 0.8rem;
+    font-weight: bold;
+    color: var(--rival-color);
+    text-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
+    animation: aiPopup 0.8s ease-out forwards;
+}
+
+@keyframes aiPopup {
+    0% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(-40px);
+    }
+}
+
+/* ============================================
+   High Score Display
+   ============================================ */
+
+#high-score-display {
+    margin-bottom: 20px;
+}
+
+#high-score-display .stat {
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.15), transparent);
+    border: 1px solid var(--accent-gold);
+    color: var(--accent-gold);
+}
+
+/* ============================================
+   Next Chant Button (Match Day)
+   ============================================ */
+
+#next-chant-btn {
+    margin-top: 25px;
+}
+
 /* Responsive — Tablet */
 @media (max-width: 768px) {
     #game-container {
@@ -789,6 +1154,16 @@ body {
 
     #matchup-display {
         gap: 25px;
+    }
+
+    #volume-panel {
+        min-width: 180px;
+        padding: 12px;
+    }
+
+    #difficulty-selector {
+        flex-direction: column;
+        gap: 8px;
     }
 }
 
@@ -1050,5 +1425,199 @@ body {
     /* Countdown */
     #countdown-number {
         font-size: 5rem;
+    }
+
+    /* Pause */
+    #pause-btn {
+        top: 8px;
+        left: 8px;
+    }
+
+    .icon-btn {
+        width: 34px;
+        height: 34px;
+        font-size: 0.95rem;
+    }
+
+    #pause-content h2 {
+        font-size: 2rem;
+    }
+
+    /* Volume */
+    #volume-controls {
+        top: 8px;
+        right: 8px;
+    }
+
+    #volume-panel {
+        min-width: 160px;
+        padding: 10px;
+        gap: 8px;
+    }
+
+    #volume-panel label {
+        font-size: 0.75rem;
+    }
+
+    /* Tutorial */
+    #tutorial-content {
+        padding: 20px;
+    }
+
+    #tutorial-content h3 {
+        font-size: 1.5rem;
+    }
+
+    #tutorial-content p {
+        font-size: 0.9rem;
+    }
+
+    .tutorial-zone {
+        padding: 6px 12px;
+        font-size: 0.75rem;
+    }
+
+    /* Difficulty */
+    #difficulty-selector {
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 14px;
+        font-size: 0.85rem;
+    }
+
+    .difficulty-btn {
+        padding: 5px 12px;
+        font-size: 0.75rem;
+    }
+}
+
+/* ============================================
+   Responsive — Landscape (phones on side)
+   ============================================ */
+
+@media (orientation: landscape) and (max-height: 500px) {
+    #gameplay-screen {
+        padding-top: 4px;
+    }
+
+    #game-canvas {
+        height: 60px;
+        margin-top: 4px;
+    }
+
+    #game-visual-canvas {
+        height: 120px;
+        margin-bottom: 4px;
+    }
+
+    #chant-display {
+        margin-bottom: 4px;
+    }
+
+    #current-chant-name {
+        font-size: 1rem;
+    }
+
+    #scoreboard {
+        gap: 12px;
+        margin-top: 2px;
+    }
+
+    .score-box {
+        padding: 4px 12px;
+        min-width: 80px;
+    }
+
+    .score-value {
+        font-size: 1.3rem;
+    }
+
+    .score-label {
+        font-size: 0.7rem;
+    }
+
+    .score-badge {
+        width: 18px;
+        height: 18px;
+        margin-bottom: 1px;
+    }
+
+    #vs-divider {
+        font-size: 0.9rem;
+    }
+
+    #input-hint {
+        display: none;
+    }
+
+    #match-scoreboard {
+        padding: 3px 10px;
+        font-size: 0.75rem;
+        margin-bottom: 2px;
+    }
+
+    /* Non-gameplay screens: tighten spacing */
+    .screen {
+        padding: 10px 0;
+    }
+
+    #title-screen h1 {
+        font-size: 1.5rem;
+        margin-bottom: 6px;
+    }
+
+    .subtitle {
+        font-size: 0.85rem;
+        margin-bottom: 15px;
+    }
+
+    .btn-primary, .btn-secondary {
+        padding: 8px 24px;
+        font-size: 0.9rem;
+    }
+
+    #mode-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+
+    .mode-card {
+        padding: 12px 10px;
+    }
+
+    .mode-icon {
+        font-size: 1.5rem;
+        margin-bottom: 4px;
+    }
+
+    .mode-title {
+        font-size: 1rem;
+    }
+
+    .mode-desc {
+        font-size: 0.75rem;
+    }
+
+    #club-grid {
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 8px;
+    }
+
+    .club-card {
+        padding: 10px 8px;
+    }
+
+    .club-card .club-badge {
+        width: 40px;
+        height: 40px;
+    }
+
+    .club-card .club-badge img {
+        width: 30px;
+        height: 30px;
+    }
+
+    .club-card .club-name {
+        font-size: 0.85rem;
     }
 }

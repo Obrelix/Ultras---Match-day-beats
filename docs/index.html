@@ -30,6 +30,14 @@
                     <div class="mode-desc">Play a full match — 6 chants, 2 halves, goals on the line</div>
                 </div>
             </div>
+            <div id="difficulty-selector">
+                <span>Difficulty:</span>
+                <div id="difficulty-options">
+                    <button class="difficulty-btn" data-difficulty="easy">Easy</button>
+                    <button class="difficulty-btn active" data-difficulty="normal">Normal</button>
+                    <button class="difficulty-btn" data-difficulty="hard">Hard</button>
+                </div>
+            </div>
             <button id="back-to-title-from-mode" class="btn-secondary">Back</button>
         </div>
 
@@ -67,6 +75,8 @@
 
         <!-- Gameplay Screen -->
         <div id="gameplay-screen" class="screen">
+            <button id="pause-btn" class="icon-btn" title="Pause">&#9208;</button>
+
             <div id="match-scoreboard" class="hidden">
                 <span id="match-score-player">0</span>
                 <span class="match-score-sep">-</span>
@@ -95,10 +105,56 @@
                     <img id="ai-score-badge" class="score-badge" src="" alt="">
                     <span id="ai-score-label" class="score-label">RIVAL</span>
                     <span id="ai-score" class="score-value">0</span>
+                    <div id="ai-score-popup-container"></div>
                 </div>
             </div>
 
             <div id="input-hint">Press SPACEBAR or TAP on the beat!</div>
+
+            <div id="volume-controls">
+                <button id="volume-toggle" class="icon-btn" title="Settings">&#9881;</button>
+                <div id="volume-panel" class="hidden">
+                    <label>Music <input type="range" id="volume-slider" min="0" max="100" value="100"></label>
+                    <label>SFX <input type="range" id="sfx-volume-slider" min="0" max="100" value="50"></label>
+                    <label class="toggle-label">
+                        <input type="checkbox" id="reduced-effects-toggle">
+                        Reduce Effects
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pause Overlay -->
+        <div id="pause-overlay" class="hidden">
+            <div id="pause-content">
+                <h2>PAUSED</h2>
+                <button id="resume-btn" class="btn-primary">RESUME</button>
+                <button id="quit-btn" class="btn-secondary">QUIT TO MENU</button>
+            </div>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div id="loading-overlay" class="hidden">
+            <div id="loading-content">
+                <div class="loading-spinner"></div>
+                <p id="loading-text">Analyzing beat pattern...</p>
+            </div>
+        </div>
+
+        <!-- Tutorial Overlay -->
+        <div id="tutorial-overlay" class="hidden">
+            <div id="tutorial-content">
+                <h3>HOW TO PLAY</h3>
+                <p>Hit <strong>SPACEBAR</strong> or <strong>TAP</strong> on the beat!</p>
+                <div class="tutorial-zones">
+                    <div class="tutorial-zone perfect">PERFECT</div>
+                    <div class="tutorial-zone good">GOOD</div>
+                    <div class="tutorial-zone ok">OK</div>
+                </div>
+                <p>Match the rhythm as beats scroll toward the hit line.</p>
+                <p>Build a <strong>6 combo</strong> to trigger <strong>FEVER mode</strong>!</p>
+                <p class="tutorial-dismiss">Press any key or tap to start...</p>
+            </div>
         </div>
 
         <!-- Results Screen (Practice) -->
@@ -122,6 +178,9 @@
                 <div class="stat">Miss: <span id="stat-miss">0</span></div>
                 <div class="stat">Max Combo: <span id="stat-max-combo">0</span></div>
             </div>
+            <div id="high-score-display" class="hidden">
+                <span class="stat">Best: <span id="high-score-value">0</span></span>
+            </div>
             <button id="play-again-btn" class="btn-primary">Play Again</button>
             <button id="change-chant-btn" class="btn-secondary">Change Chant</button>
         </div>
@@ -135,6 +194,7 @@
             </div>
             <div id="chant-result-message"></div>
             <div id="chant-result-detail"></div>
+            <button id="next-chant-btn" class="btn-primary">NEXT CHANT</button>
         </div>
 
         <!-- Halftime Screen -->

@@ -10,12 +10,30 @@ export const state = {
     selectedClub: null,
     selectedChant: null,
 
+    // Settings (loaded from localStorage at startup)
+    settings: {
+        volume: 1.0,
+        sfxVolume: 0.5,
+        difficulty: 'normal',
+        reducedEffects: false,
+        tutorialSeen: false
+    },
+
+    // Active timing windows (set from difficulty preset)
+    activeTiming: { PERFECT: 200, GOOD: 400, OK: 600 },
+
+    // Pause state
+    isPaused: false,
+    pauseOffset: 0,
+
     // Audio
     audioContext: null,
     audioBuffer: null,
     audioSource: null,
     analyser: null,
     dataArray: null,
+    masterGain: null,
+    sfxGain: null,
 
     // Beat detection
     detectedBeats: [],
@@ -65,6 +83,7 @@ export const state = {
 
     // AI stats
     aiScore: 0,
+    aiScorePopups: [],
 
     // Match Day
     gameMode: null,
@@ -83,8 +102,11 @@ export function resetGameState() {
     state.playerMaxCombo = 0;
     state.playerStats = { perfect: 0, good: 0, ok: 0, miss: 0 };
     state.aiScore = 0;
+    state.aiScorePopups = [];
     state.totalBeats = 0;
     state.activeBeat = null;
+    state.isPaused = false;
+    state.pauseOffset = 0;
 
     state.detectedBeats = [];
     state.nextBeatIndex = 0;

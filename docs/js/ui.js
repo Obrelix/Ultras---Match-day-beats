@@ -5,6 +5,7 @@
 import { GameState, clubs, MATCHDAY } from './config.js';
 import { state } from './state.js';
 import { stopAudio } from './audio.js';
+import { saveHighScore, loadHighScore, saveMatchdayStats, loadMatchdayStats } from './storage.js';
 
 // DOM Elements (module runs after DOM is parsed due to type="module")
 export const screens = {
@@ -73,6 +74,7 @@ export const elements = {
     chantResultAiGoals: document.getElementById('chant-result-ai-goals'),
     chantResultMessage: document.getElementById('chant-result-message'),
     chantResultDetail: document.getElementById('chant-result-detail'),
+    nextChantBtn: document.getElementById('next-chant-btn'),
 
     // Halftime
     halftimePlayerGoals: document.getElementById('halftime-player-goals'),
@@ -86,7 +88,34 @@ export const elements = {
     fulltimeResultMessage: document.getElementById('fulltime-result-message'),
     fulltimeSummary: document.getElementById('fulltime-summary'),
     fulltimePlayAgainBtn: document.getElementById('fulltime-play-again-btn'),
-    fulltimeMainMenuBtn: document.getElementById('fulltime-main-menu-btn')
+    fulltimeMainMenuBtn: document.getElementById('fulltime-main-menu-btn'),
+
+    // Pause
+    pauseBtn: document.getElementById('pause-btn'),
+    pauseOverlay: document.getElementById('pause-overlay'),
+    resumeBtn: document.getElementById('resume-btn'),
+    quitBtn: document.getElementById('quit-btn'),
+
+    // Loading
+    loadingOverlay: document.getElementById('loading-overlay'),
+    loadingText: document.getElementById('loading-text'),
+
+    // Tutorial
+    tutorialOverlay: document.getElementById('tutorial-overlay'),
+
+    // Volume / Settings
+    volumeToggle: document.getElementById('volume-toggle'),
+    volumePanel: document.getElementById('volume-panel'),
+    volumeSlider: document.getElementById('volume-slider'),
+    sfxVolumeSlider: document.getElementById('sfx-volume-slider'),
+    reducedEffectsToggle: document.getElementById('reduced-effects-toggle'),
+
+    // AI score popup
+    aiScorePopupContainer: document.getElementById('ai-score-popup-container'),
+
+    // High score
+    highScoreDisplay: document.getElementById('high-score-display'),
+    highScoreValue: document.getElementById('high-score-value'),
 };
 
 export function showScreen(screenName) {
@@ -156,11 +185,12 @@ export function renderChantSelection(onSelectChant) {
     elements.chantList.innerHTML = '';
 
     state.selectedClub.chants.forEach(chant => {
+        const highScore = loadHighScore(state.selectedClub.id, chant.id);
         const item = document.createElement('div');
         item.className = 'chant-item';
         item.innerHTML = `
             <div class="chant-name">${chant.name}</div>
-            <div class="chant-info">Click to play</div>
+            <div class="chant-info">${highScore > 0 ? `Best: ${highScore}` : 'Click to play'}</div>
         `;
         item.addEventListener('click', () => onSelectChant(chant));
         elements.chantList.appendChild(item);
@@ -223,6 +253,14 @@ export function endGame() {
     elements.statMiss.textContent = state.playerStats.miss;
     elements.statMaxCombo.textContent = state.playerMaxCombo;
 
+    // Save and show high score
+    if (state.selectedClub && state.selectedChant) {
+        saveHighScore(state.selectedClub.id, state.selectedChant.id, state.playerScore);
+        const best = loadHighScore(state.selectedClub.id, state.selectedChant.id);
+        elements.highScoreValue.textContent = best;
+        elements.highScoreDisplay.classList.remove('hidden');
+    }
+
     showScreen('results');
 }
 
@@ -238,9 +276,10 @@ function endMatchdayChant() {
     cancelAnimationFrame(state.gameLoopId);
     stopAudio();
 
-    // Evaluate player goal
-    const comboRatio = state.totalBeats > 0 ? state.playerMaxCombo / state.totalBeats : 0;
-    const playerScored = comboRatio >= MATCHDAY.GOAL_COMBO_THRESHOLD;
+    // Evaluate player goal based on accuracy (not combo ratio)
+    const totalHits = state.playerStats.perfect + state.playerStats.good + state.playerStats.ok;
+    const accuracy = state.totalBeats > 0 ? totalHits / state.totalBeats : 0;
+    const playerScored = accuracy >= MATCHDAY.GOAL_COMBO_THRESHOLD;
 
     // Evaluate AI goal
     const aiScored = Math.random() < MATCHDAY.AI_GOAL_CHANCE;
@@ -253,7 +292,7 @@ function endMatchdayChant() {
         chant: state.matchChants[state.currentChantIndex],
         playerScored,
         aiScored,
-        comboRatio,
+        accuracy,
         maxCombo: state.playerMaxCombo,
         totalBeats: state.totalBeats
     });
@@ -283,21 +322,28 @@ function showChantResult(playerScored, aiScored) {
 
     const prevResult = state.chantResults[state.chantResults.length - 1];
     elements.chantResultDetail.textContent =
-        `Max combo: ${prevResult.maxCombo}/${prevResult.totalBeats} beats (${Math.round(prevResult.comboRatio * 100)}%)`;
+        `Accuracy: ${Math.round(prevResult.accuracy * 100)}% | Max combo: ${prevResult.maxCombo} — Score 40% to score a goal!`;
 
-    showScreen('chantResult');
-
-    // Auto-advance after transition delay
-    setTimeout(() => {
-        if (state.currentChantIndex === MATCHDAY.CHANTS_PER_HALF) {
+    // Set up next-chant button
+    let btnText, btnAction;
+    if (state.currentChantIndex === MATCHDAY.CHANTS_PER_HALF) {
+        btnText = 'HALF TIME';
+        btnAction = () => {
             state.currentHalf = 2;
             showHalftime();
-        } else if (state.currentChantIndex === MATCHDAY.CHANTS_PER_HALF * 2) {
-            showFulltime();
-        } else {
-            if (_startNextChant) _startNextChant();
-        }
-    }, MATCHDAY.CHANT_TRANSITION_MS);
+        };
+    } else if (state.currentChantIndex === MATCHDAY.CHANTS_PER_HALF * 2) {
+        btnText = 'FULL TIME';
+        btnAction = () => showFulltime();
+    } else {
+        btnText = 'NEXT CHANT';
+        btnAction = () => { if (_startNextChant) _startNextChant(); };
+    }
+
+    elements.nextChantBtn.textContent = btnText;
+    elements.nextChantBtn.onclick = btnAction;
+
+    showScreen('chantResult');
 }
 
 export function showHalftime() {
@@ -340,6 +386,14 @@ export function showFulltime() {
         return `${half} Half - Chant ${(i % MATCHDAY.CHANTS_PER_HALF) + 1}: You ${you} | Rival ${rival}`;
     });
     elements.fulltimeSummary.innerHTML = lines.join('<br>');
+
+    // Persist matchday stats
+    const stats = loadMatchdayStats();
+    stats.played++;
+    if (state.playerGoals > state.aiGoals) stats.won++;
+    else if (state.playerGoals < state.aiGoals) stats.lost++;
+    else stats.drawn++;
+    saveMatchdayStats(stats);
 
     showScreen('fulltime');
 }
