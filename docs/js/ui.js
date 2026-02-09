@@ -30,6 +30,11 @@ export const elements = {
     selectedClubBanner: document.getElementById('selected-club-banner'),
     playerScore: document.getElementById('player-score'),
     aiScore: document.getElementById('ai-score'),
+    playerScoreBadge: document.getElementById('player-score-badge'),
+    aiScoreBadge: document.getElementById('ai-score-badge'),
+    playerScoreLabel: document.getElementById('player-score-label'),
+    aiScoreLabel: document.getElementById('ai-score-label'),
+    aiScoreBox: document.getElementById('ai-score-box'),
     currentChantName: document.getElementById('current-chant-name'),
     gameVisualCanvas: document.getElementById('game-visual-canvas'),
     gameCanvas: document.getElementById('game-canvas'),
@@ -93,6 +98,33 @@ export function showScreen(screenName) {
 export function applyClubTheme(club) {
     document.documentElement.style.setProperty('--primary-color', club.colors.primary);
     document.documentElement.style.setProperty('--secondary-color', club.colors.secondary);
+    if (state.rivalClub) {
+        document.documentElement.style.setProperty('--rival-color', state.rivalClub.colors.primary);
+    } else {
+        document.documentElement.style.setProperty('--rival-color', '#cc0000');
+    }
+}
+
+export function updateScoreboardTeams() {
+    // Player side: always show selected club badge and name
+    elements.playerScoreBadge.src = state.selectedClub.badge;
+    elements.playerScoreBadge.alt = state.selectedClub.name;
+    elements.playerScoreLabel.textContent = state.selectedClub.name;
+
+    if (state.rivalClub) {
+        // Match Day: show rival club badge, name, and color
+        elements.aiScoreBadge.src = state.rivalClub.badge;
+        elements.aiScoreBadge.alt = state.rivalClub.name;
+        elements.aiScoreBadge.style.display = '';
+        elements.aiScoreLabel.textContent = state.rivalClub.name;
+        document.documentElement.style.setProperty('--rival-color', state.rivalClub.colors.primary);
+    } else {
+        // Practice: generic rival
+        elements.aiScoreBadge.src = '';
+        elements.aiScoreBadge.style.display = 'none';
+        elements.aiScoreLabel.textContent = 'RIVAL';
+        document.documentElement.style.setProperty('--rival-color', '#cc0000');
+    }
 }
 
 export function renderClubSelection(onSelectClub, minChants = 0) {

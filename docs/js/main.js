@@ -11,8 +11,8 @@ import { initVisualizer, computeWaveformPeaks, buildWaveformCache, drawVisualize
 import { drawGameVisuals } from './crowd.js';
 import {
     showScreen, applyClubTheme, renderClubSelection, renderChantSelection,
-    renderMatchdayIntro, updateMatchScoreboard, setMatchdayChantStarter,
-    endGame, elements, screens
+    renderMatchdayIntro, updateMatchScoreboard, updateScoreboardTeams,
+    setMatchdayChantStarter, endGame, elements, screens
 } from './ui.js';
 
 // ============================================
@@ -79,6 +79,7 @@ async function startMatchdayChant() {
     state.selectedChant = chant;
 
     showScreen('gameplay');
+    updateScoreboardTeams();
 
     // Show & update match scoreboard
     elements.matchScoreboard.classList.remove('hidden');
@@ -123,6 +124,7 @@ setMatchdayChantStarter(startMatchdayChant);
 
 async function startGame() {
     showScreen('gameplay');
+    updateScoreboardTeams();
 
     // Hide match scoreboard in practice mode
     elements.matchScoreboard.classList.add('hidden');
@@ -315,15 +317,18 @@ document.addEventListener('keydown', (e) => {
 });
 
 // Touch support for mobile
+let lastTouchTime = 0;
 document.addEventListener('touchstart', (e) => {
     if (state.currentState === GameState.PLAYING) {
         e.preventDefault();
+        lastTouchTime = performance.now();
         handleInput();
     }
 }, { passive: false });
 
-// Click support during gameplay
+// Click support during gameplay (skip synthetic clicks from touch)
 screens.gameplay.addEventListener('click', () => {
+    if (performance.now() - lastTouchTime < 500) return;
     handleInput();
 });
 

@@ -11,6 +11,7 @@
     --good-color: #88ff00;
     --ok-color: #ffaa00;
     --miss-color: #ff4444;
+    --rival-color: #cc0000;
 }
 
 * {
@@ -27,7 +28,8 @@ body {
     justify-content: center;
     align-items: center;
     color: var(--text-light);
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 
 #game-container {
@@ -276,6 +278,7 @@ body {
     height: 100vh;
     height: 100dvh;
     position: relative;
+    overflow: hidden;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
 }
@@ -288,7 +291,7 @@ body {
     border-radius: 15px 15px 0 0;
     border: 3px solid rgba(255, 255, 255, 0.1);
     border-bottom: none;
-    margin-top: 15px;
+    margin-top: 8px;
     transition: border-color 0.1s ease, box-shadow 0.1s ease;
 }
 
@@ -367,8 +370,20 @@ body {
 }
 
 #ai-score-box {
-    background: linear-gradient(135deg, #cc0000, transparent);
-    border: 2px solid #cc0000;
+    background: linear-gradient(135deg, var(--rival-color), transparent);
+    border: 2px solid var(--rival-color);
+}
+
+.score-badge {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: contain;
+    margin-bottom: 4px;
+}
+
+.score-badge[src=""] {
+    display: none;
 }
 
 .score-label {
@@ -390,7 +405,7 @@ body {
 }
 
 #chant-display {
-    margin-bottom: 30px;
+    margin-bottom: 10px;
     text-align: center;
 }
 
@@ -783,6 +798,10 @@ body {
         padding: 6px;
     }
 
+    .screen {
+        padding: 20px 0;
+    }
+
     #game-canvas {
         height: 70px;
         border-radius: 10px 10px 0 0;
@@ -879,6 +898,12 @@ body {
     /* Gameplay */
     #scoreboard {
         gap: 12px;
+    }
+
+    .score-badge {
+        width: 22px;
+        height: 22px;
+        margin-bottom: 2px;
     }
 
     .score-box {
