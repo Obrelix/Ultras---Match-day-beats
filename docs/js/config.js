@@ -3,27 +3,11 @@
 // ============================================
 
 export const clubs = {
-    panathinaikos: {
-        id: 'panathinaikos',
-        name: 'Panathinaikos',
-        colors: { primary: '#006633', secondary: '#FFFFFF' },
-        badge: '🟢',
-        chants: [
-            { id: 'eisai_i_zwi_mou', name: 'eisai_i_zwi_mou', audio: 'chants/Panathinaikos/eisai_i_zwi_mou.mp3', duration: 15 },
-            { id: 'kolisa', name: 'kolisa', audio: 'chants/Panathinaikos/kolisa.mp3', duration: 15 },
-            { id: 'sti_leofor_paizoume', name: 'sti_leofor_paizoume', audio: 'chants/Panathinaikos/sti_leofor_paizoume.mp3', duration: 15 },
-            { id: 'sta_asteria_thelw_gipedo', name: 'sta_asteria_thelw_gipedo', audio: 'chants/Panathinaikos/sta_asteria_thelw_gipedo.mp3', duration: 15 },
-            { id: 'se_gnorisa_apo_paidi_mikro', name: 'se_gnorisa_apo_paidi_mikro', audio: 'chants/Panathinaikos/se_gnorisa_apo_paidi_mikro.mp3', duration: 15 },
-            { id: 'prasine_thee', name: 'prasine_thee', audio: 'chants/Panathinaikos/prasine_thee.mp3', duration: 15 },
-            { id: 'mia_zwi_gemati_alitia', name: 'mia_zwi_gemati_alitia', audio: 'chants/Panathinaikos/mia_zwi_gemati_alitia.mp3', duration: 15 },
-            { id: 'horto_magiko', name: 'horto_magiko', audio: 'chants/Panathinaikos/horto_magiko.mp3', duration: 15 },
-        ]
-    },
     AEK: {
         id: 'aek',
         name: 'AEK',
         colors: { primary: '#f4f800', secondary: '#000000' },
-        badge: '🟡',
+        badge: 'Logos/AEK_logo.svg',
         chants: [
             { id: '100_xronia', name: '100_xronia', audio: 'chants/AEK/100_xronia.mp3', duration: 15 },
             { id: 'aekara_agapi_mou', name: 'aekara_agapi_mou', audio: 'chants/AEK/aekara_agapi_mou.mp3', duration: 15 },
@@ -33,11 +17,63 @@ export const clubs = {
             { id: 'eisai_narkotiko', name: 'eisai_narkotiko', audio: 'chants/AEK/eisai_narkotiko.mp3', duration: 15 },
         ]
     },
+    aris: {
+        id: 'aris',
+        name: 'Aris',
+        colors: { primary: '#f4f800', secondary: '#000000' },
+        badge: 'Logos/Aris_logo.svg',
+        chants: [
+            { id: 'ari_na_safisw_den_mporw', name: 'ari_na_safisw_den_mporw', audio: 'chants/Aris/ari_na_safisw_den_mporw.mp3', duration: 15 },
+            { id: 'aris_kai_den_eimai_kala', name: 'aris_kai_den_eimai_kala', audio: 'chants/Aris/aris_kai_den_eimai_kala.mp3', duration: 15 },
+            { id: 'aris', name: 'aris', audio: 'chants/Aris/aris.mp3', duration: 15 },
+            { id: 'mas_lene_alites', name: 'mas_lene_alites', audio: 'chants/Aris/mas_lene_alites.mp3', duration: 15 },
+            { id: 'mia_omada_ston_kosmo_agapw', name: 'mia_omada_ston_kosmo_agapw', audio: 'chants/Aris/mia_omada_ston_kosmo_agapw.mp3', duration: 15 },
+            { id: 'oso_tha_zw', name: 'oso_tha_zw', audio: 'chants/Aris/oso_tha_zw.mp3', duration: 15 },
+            { id: 'porothika', name: 'porothika', audio: 'chants/Aris/porothika.mp3', duration: 15 },
+            { id: 'salonika_salonika', name: 'salonika_salonika', audio: 'chants/Aris/salonika_salonika.mp3', duration: 15 },
+            { id: 'trelogiatre', name: 'trelogiatre', audio: 'chants/Aris/trelogiatre.mp3', duration: 15 },
+        ]
+    },
+    olympiacos: {
+        id: 'olympiacos',
+        name: 'Olympiacos',
+        colors: { primary: '#e41d1d', secondary: '#FFFFFF' },
+        badge: 'Logos/Olympiacos_logo.svg',
+        chants: [
+            { id: 'eisai_arostia_olimpiake', name: 'eisai_arostia_olimpiake', audio: 'chants/Olympiakos/eisai_arostia_olimpiake.mp3', duration: 15 },
+            { id: 'eisai_sto_mialo', name: 'eisai_sto_mialo', audio: 'chants/Olympiakos/eisai_sto_mialo.mp3', duration: 15 },
+            { id: 'gia_senane_monaha_tragoudo', name: 'gia_senane_monaha_tragoudo', audio: 'chants/Olympiakos/gia_senane_monaha_tragoudo.mp3', duration: 15 },
+            { id: 'imoun_paidaki', name: 'imoun_paidaki', audio: 'chants/Olympiakos/imoun_paidaki.mp3', duration: 15 },
+            { id: 'mastoura_san_kai_sena', name: 'mastoura_san_kai_sena', audio: 'chants/Olympiakos/mastoura_san_kai_sena.mp3', duration: 15 },
+            { id: 'palavosa_gia_sena', name: 'palavosa_gia_sena', audio: 'chants/Olympiakos/palavosa_gia_sena.mp3', duration: 15 },
+            { id: 'thira_7_me_tsampouka', name: 'thira_7_me_tsampouka', audio: 'chants/Olympiakos/thira_7_me_tsampouka.mp3', duration: 15 },
+            { id: 'tin_teleftea_kiriaki', name: 'tin_teleftea_kiriaki', audio: 'chants/Olympiakos/tin_teleftea_kiriaki.mp3', duration: 15 },
+        ]
+    },
+    panathinaikos: {
+        id: 'panathinaikos',
+        name: 'Panathinaikos',
+        colors: { primary: '#006633', secondary: '#FFFFFF' },
+        badge: 'Logos/PAO_logo.svg',
+        chants: [
+            { id: 'eisai_i_zwi_mou', name: 'eisai_i_zwi_mou', audio: 'chants/Panathinaikos/eisai_i_zwi_mou.mp3', duration: 15 },
+            { id: 'kolisa', name: 'kolisa', audio: 'chants/Panathinaikos/kolisa.mp3', duration: 15 },
+            { id: 'sti_leofor_paizoume', name: 'sti_leofor_paizoume', audio: 'chants/Panathinaikos/sti_leofor_paizoume.mp3', duration: 15 },
+            { id: 'sta_asteria_thelw_gipedo', name: 'sta_asteria_thelw_gipedo', audio: 'chants/Panathinaikos/sta_asteria_thelw_gipedo.mp3', duration: 15 },
+            { id: 'se_gnorisa_apo_paidi_mikro', name: 'se_gnorisa_apo_paidi_mikro', audio: 'chants/Panathinaikos/se_gnorisa_apo_paidi_mikro.mp3', duration: 15 },
+            { id: 'prasine_thee', name: 'prasine_thee', audio: 'chants/Panathinaikos/prasine_thee.mp3', duration: 15 },
+            { id: 'mia_zwi_gemati_alitia', name: 'mia_zwi_gemati_alitia', audio: 'chants/Panathinaikos/mia_zwi_gemati_alitia.mp3', duration: 15 },
+            { id: 'horto_magiko', name: 'horto_magiko', audio: 'chants/Panathinaikos/horto_magiko.mp3', duration: 15 },
+            { id: 'ooo_ooooo', name: 'ooo_ooooo', audio: 'chants/Panathinaikos/ooo_ooooo.mp3', duration: 15 },
+            { id: 'ton_pao_mou_ton_agapw', name: 'ton_pao_mou_ton_agapw', audio: 'chants/Panathinaikos/ton_pao_mou_ton_agapw.mp3', duration: 15 },
+            { id: 'trifyllara_mou_sagapw', name: 'trifyllara_mou_sagapw', audio: 'chants/Panathinaikos/trifyllara_mou_sagapw.mp3', duration: 15 },
+        ]
+    },
     PAOK: {
         id: 'paok',
         name: 'PAOK',
         colors: { primary: '#000000', secondary: '#ffffff' },
-        badge: '🟡',
+        badge: 'Logos/PAOK_logo.svg',
         chants: [
             { id: 'eisai_sy_narkotiko', name: 'eisai_sy_narkotiko', audio: 'chants/PAOK/eisai_sy_narkotiko.mp3', duration: 15 },
             { id: 'gia_sena_tha_pethanw', name: 'gia_sena_tha_pethanw', audio: 'chants/PAOK/gia_sena_tha_pethanw.mp3', duration: 15 },

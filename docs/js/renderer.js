@@ -17,12 +17,15 @@ export function initVisualizer() {
 
     function resizeCanvas() {
         const rect = canvas.getBoundingClientRect();
-        canvas.width = 1200;
+        canvas.width = Math.floor(rect.width);
         canvas.height = Math.floor(rect.height);
 
         const visualRect = visualCanvas.getBoundingClientRect();
-        visualCanvas.width = 1200;
+        visualCanvas.width = Math.floor(visualRect.width);
         visualCanvas.height = Math.floor(visualRect.height);
+
+        // Reset crowd so it reinitializes with the new column count
+        state.supporters = [];
 
         if (state.audioBuffer) {
             computeWaveformPeaks();

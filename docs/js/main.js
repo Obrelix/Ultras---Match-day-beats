@@ -320,7 +320,7 @@ document.addEventListener('touchstart', (e) => {
         e.preventDefault();
         handleInput();
     }
-});
+}, { passive: false });
 
 // Click support during gameplay
 screens.gameplay.addEventListener('click', () => {
