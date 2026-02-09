@@ -294,26 +294,31 @@ function estimateTempo(spectralFlux, hopSize, sampleRate) {
 
     if (bestCorr < meanCorr * 2.0 && bestCorr < 0.1) return null;
 
+    // Octave correction: collect candidates at original, half, and double lag
+    // then pick the best one in a reasonable BPM range (70–170)
+    const candidates = [{ lag: bestLag, corr: bestCorr }];
+
     const halfLag = Math.floor(bestLag / 2);
-    if (halfLag >= minLag) {
-        const halfCorr = autocorr[halfLag - minLag];
-        if (halfCorr > bestCorr * 0.8) {
-            bestLag = halfLag;
-            bestCorr = halfCorr;
-        }
+    if (halfLag >= minLag && halfLag <= maxLag) {
+        candidates.push({ lag: halfLag, corr: autocorr[halfLag - minLag] });
     }
 
-    // Octave-up correction: if BPM > 160, check if double-period is a better fit
-    const currentBpm = 60 / (bestLag * frameDuration);
-    if (currentBpm > 160) {
-        const doubleLag = bestLag * 2;
-        if (doubleLag <= maxLag) {
-            const doubleCorr = autocorr[doubleLag - minLag];
-            if (doubleCorr >= bestCorr * 0.8) {
-                bestLag = doubleLag;
-                bestCorr = doubleCorr;
-            }
-        }
+    const doubleLag = bestLag * 2;
+    if (doubleLag >= minLag && doubleLag <= maxLag) {
+        candidates.push({ lag: doubleLag, corr: autocorr[doubleLag - minLag] });
+    }
+
+    // Filter to candidates in 70–170 BPM with at least 50% of best correlation
+    const minCorrThreshold = bestCorr * 0.5;
+    const validCandidates = candidates.filter(c => {
+        const bpm = 60 / (c.lag * frameDuration);
+        return bpm >= 70 && bpm <= 170 && c.corr >= minCorrThreshold;
+    });
+
+    if (validCandidates.length > 0) {
+        validCandidates.sort((a, b) => b.corr - a.corr);
+        bestLag = validCandidates[0].lag;
+        bestCorr = validCandidates[0].corr;
     }
 
     return {
@@ -331,7 +336,7 @@ function generateBeatGrid(onsets, tempoResult, totalDurationSec) {
 
     const beatPeriod = tempoResult.beatPeriodSec;
 
-    const numCandidates = 20;
+    const numCandidates = BEAT_DETECTION.GRID_PHASE_CANDIDATES;
     let bestPhase = 0;
     let bestPhaseScore = -1;
     const snapWindow = BEAT_DETECTION.GRID_SNAP_WINDOW_SEC * 2;
@@ -388,8 +393,11 @@ export function analyzeBeats(buffer) {
     const sampleRate = buffer.sampleRate;
     const totalDuration = buffer.duration;
 
-    const spectralFlux = computeSpectralFlux(buffer);
+    // Step 1: Compute spectral flux and smooth it to reduce noise (Problem 1 fix)
+    const rawFlux = computeSpectralFlux(buffer);
+    const spectralFlux = smoothFlux(rawFlux, BEAT_DETECTION.FLUX_SMOOTH_WINDOW);
 
+    // Step 2: Pick onsets (used for phase alignment, not directly as beats)
     let onsets = pickOnsets(spectralFlux, BEAT_DETECTION.HOP_SIZE, sampleRate);
 
     if (onsets.length < 4) {
@@ -423,11 +431,14 @@ export function analyzeBeats(buffer) {
 
     const thinnedOnsets = thinOnsets(onsets, spectralFlux, BEAT_DETECTION.HOP_SIZE, sampleRate);
 
+    // Step 3: Prefer vocal onsets for natural rhythm; fall back to grid
     let beats;
     if (thinnedOnsets.length >= BEAT_DETECTION.MIN_ONSETS_FOR_DIRECT_USE) {
+        // Primary path: use vocal onsets — follows the natural chant rhythm
         beats = thinnedOnsets;
         console.log(`Beat analysis: Using ${beats.length} vocal onsets in ${totalDuration.toFixed(1)}s`);
     } else {
+        // Fallback: not enough vocal onsets, estimate tempo and use a grid
         const tempoResult = estimateTempo(spectralFlux, BEAT_DETECTION.HOP_SIZE, sampleRate);
         beats = generateBeatGrid(onsets, tempoResult, totalDuration);
         console.log(`Beat analysis: Grid fallback - ${beats.length} beats in ${totalDuration.toFixed(1)}s`);
