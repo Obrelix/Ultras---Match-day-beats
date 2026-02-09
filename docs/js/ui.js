@@ -106,8 +106,8 @@ export function renderClubSelection(onSelectClub, minChants = 0) {
         const card = document.createElement('div');
         card.className = 'club-card';
         card.innerHTML = `
-            <div class="club-badge" style="background: ${club.colors.primary}; color: ${club.colors.secondary}">
-                ${club.badge}
+            <div class="club-badge" style="background: ${club.colors.primary}">
+                <img src="${club.badge}" alt="${club.name}">
             </div>
             <div class="club-name">${club.name}</div>
         `;
@@ -139,14 +139,12 @@ export function renderMatchdayIntro() {
     const player = state.selectedClub;
     const rival = state.rivalClub;
 
-    elements.matchupPlayerBadge.textContent = player.badge;
+    elements.matchupPlayerBadge.innerHTML = `<img src="${player.badge}" alt="${player.name}">`;
     elements.matchupPlayerBadge.style.background = player.colors.primary;
-    elements.matchupPlayerBadge.style.color = player.colors.secondary;
     elements.matchupPlayerName.textContent = player.name;
 
-    elements.matchupRivalBadge.textContent = rival.badge;
+    elements.matchupRivalBadge.innerHTML = `<img src="${rival.badge}" alt="${rival.name}">`;
     elements.matchupRivalBadge.style.background = rival.colors.primary;
-    elements.matchupRivalBadge.style.color = rival.colors.secondary;
     elements.matchupRivalName.textContent = rival.name;
 }
 
