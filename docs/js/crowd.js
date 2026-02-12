@@ -16,15 +16,21 @@ function shadeColor(hex, percent) {
     return '#' + [r, g, b].map(c => c.toString(16).padStart(2, '0')).join('');
 }
 
-export function initSupporters(canvasWidth, canvasHeight) {
+export function setCrowdEmotion(emotion) {
+    state.crowdEmotion = emotion;
+    // Optionally, reset/trigger specific animations here if needed
+    // For now, drawing logic will react to state.crowdEmotion
+}
+
+export function initSupporters(canvasWidth, canvasHeight, isResultCanvas = false) {
     state.supporters = [];
     const PX = 3;
     const supporterW = 10 * PX;
-    const spacing = 4;
+    const spacing = isResultCanvas ? 2 : 4; // Reduced spacing for result canvas for denser, even look
     const cols = Math.floor(canvasWidth / (supporterW + spacing));
-    const rows = 5;
+    const rows = isResultCanvas ? Math.max(1, Math.floor(canvasHeight / (14 * PX + 6))) : 5; // Adjust rows dynamically for result canvas
     const supporterH = 14 * PX;
-    const groundY = canvasHeight - supporterH - 4;
+    const groundY = canvasHeight - supporterH - (isResultCanvas ? 2 : 4); // Adjust ground for result canvas
 
     const primary = state.selectedClub ? state.selectedClub.colors.primary : '#006633';
     const secondary = state.selectedClub ? state.selectedClub.colors.secondary : '#FFFFFF';
@@ -32,12 +38,18 @@ export function initSupporters(canvasWidth, canvasHeight) {
     const palette = [primary, secondary, shadeColor(primary, -30), shadeColor(primary, 30), shadeColor(secondary, -40)];
     const skinTones = ['#f5d0a9', '#d4a373', '#8d5524', '#c68642', '#e0ac69'];
 
+    // Calculate total width of supporters for centering
+    const totalSupporterWidth = cols * (supporterW + spacing) - spacing;
+    const startXOffset = isResultCanvas ? (canvasWidth - totalSupporterWidth) / 2 : 0;
+
+
     for (let row = 0; row < rows; row++) {
         const rowY = groundY - row * (14 * PX + 6);
         const rowScale = 0.7 + row * 0.15;
-        const rowOffset = row % 2 === 0 ? 0 : (supporterW + spacing) / 2;
+        // Remove rowOffset for even distribution on result canvas
+        const rowOffset = isResultCanvas ? 0 : (row % 2 === 0 ? 0 : (supporterW + spacing) / 2);
         for (let col = 0; col < cols; col++) {
-            const x = col * (supporterW + spacing) + rowOffset;
+            const x = col * (supporterW + spacing) + rowOffset + startXOffset;
             if (x + supporterW > canvasWidth) continue;
             const roll = Math.random();
             const hasFlag = roll < 0.08;
@@ -78,20 +90,43 @@ function drawPixelRect(ctx, x, y, w, h, color, px) {
 function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType) {
     const px = s.px;
     const baseX = Math.floor(s.x);
-    const y = Math.floor(s.baseY + jumpOffset);
+    let y = Math.floor(s.baseY + jumpOffset);
+
+    let currentArmsUp = armsUp;
+    let currentFrenzy = frenzy;
+    let currentRockX = 0;
+    let eyeOffsetX = 0;
+    let eyeOffsetY = 0;
+    let mouthShape = 'normal'; // 'normal', 'frown', 'open'
+
+    if (state.crowdEmotion === 'deject') {
+        currentArmsUp = false;
+        currentFrenzy = false; // Override frenzy if dejected
+        y += 2 * px; // Slight slump
+        // Make supporters look down
+        eyeOffsetY = px;
+        mouthShape = 'frown';
+    } else if (state.crowdEmotion === 'celebrate') {
+        currentFrenzy = true; // Force frenzy-like behavior for celebration
+        currentArmsUp = true;
+        mouthShape = 'open';
+    } else if (currentFrenzy) {
+        // Gameplay frenzy (combo > 5): open mouth, same as celebrate
+        mouthShape = 'open';
+    }
+
 
     // Coreo types 1-3: synchronized sway; type 0: individual rocking
-    let rockX;
     if (coreoType >= 1) {
-        rockX = Math.sin(now / 200) * 5;
-    } else if (frenzy) {
-        rockX = Math.sin(now / 120 + s.jumpPhase) * 3;
+        currentRockX = Math.sin(now / 200) * 5;
+    } else if (currentFrenzy) {
+        currentRockX = Math.sin(now / 120 + s.jumpPhase) * 3;
     } else {
-        rockX = 0;
+        currentRockX = 0;
     }
-    const x = Math.floor(baseX + rockX);
+    const x = Math.floor(baseX + currentRockX);
 
-    if (frenzy && !state.settings.reducedEffects) {
+    if (currentFrenzy && !state.settings.reducedEffects) {
         const glowPhase = (Math.sin(now / 200 + s.jumpPhase) + 1) * 0.5;
         const primary = state.selectedClub ? state.selectedClub.colors.primary : '#006633';
         ctx.fillStyle = primary;
@@ -103,7 +138,7 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType) {
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.fillRect(x + px, Math.floor(s.baseY + 2 * px), 8 * px, px);
 
-    if (frenzy) {
+    if (currentFrenzy) {
         const kick = Math.sin(now / 100 + s.jumpPhase) > 0;
         if (kick) {
             drawPixelRect(ctx, x + 1 * px, y + 11 * px, 2, 3, '#222244', px);
@@ -112,7 +147,12 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType) {
             drawPixelRect(ctx, x + 1 * px, y + 12 * px, 2, 2, '#222244', px);
             drawPixelRect(ctx, x + 7 * px, y + 11 * px, 2, 3, '#222244', px);
         }
-    } else {
+    } else if (state.crowdEmotion === 'deject') {
+        // Slumped legs
+        drawPixelRect(ctx, x + 2 * px, y + 12 * px, 2, 2, '#222244', px);
+        drawPixelRect(ctx, x + 6 * px, y + 12 * px, 2, 2, '#222244', px);
+    }
+    else {
         drawPixelRect(ctx, x + 2 * px, y + 11 * px, 2, 3, '#222244', px);
         drawPixelRect(ctx, x + 6 * px, y + 11 * px, 2, 3, '#222244', px);
     }
@@ -124,15 +164,25 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType) {
         const secondary = state.selectedClub ? state.selectedClub.colors.secondary : '#FFFFFF';
         shirtColor = Math.sin(now / 400 + s.x / 40 + s.row * 1.5) > 0 ? primary : secondary;
     }
+    // Desaturate slightly if dejected
+    if (state.crowdEmotion === 'deject') {
+        // This is a simplistic way to desaturate pixel art, might need refinement
+        const r = parseInt(shirtColor.slice(1, 3), 16);
+        const g = parseInt(shirtColor.slice(3, 5), 16);
+        const b = parseInt(shirtColor.slice(5, 7), 16);
+        const avg = (r + g + b) / 3;
+        shirtColor = '#' + [avg * 0.8, avg * 0.8, avg * 0.8].map(c => Math.floor(c).toString(16).padStart(2, '0')).join('');
+    }
     drawPixelRect(ctx, x + 2 * px, y + 6 * px, 6, 5, shirtColor, px);
 
+    // Arms
     if (coreoType === 2 && !s.hasFlag && !s.hasFlare) {
         // Scarf coreo: arms straight up holding scarf taut
         drawPixelRect(ctx, x - px, y + 1 * px, 2, 5, s.skinColor, px);
         drawPixelRect(ctx, x + 9 * px, y + 1 * px, 2, 5, s.skinColor, px);
         drawPixelRect(ctx, x - px, y, 2, 1, s.skinColor, px);
         drawPixelRect(ctx, x + 9 * px, y, 2, 1, s.skinColor, px);
-    } else if (frenzy) {
+    } else if (currentFrenzy) {
         const armPhase = Math.sin(now / 150 + s.jumpPhase);
         if (armPhase > 0.3) {
             drawPixelRect(ctx, x - px, y + 1 * px, 2, 3, s.skinColor, px);
@@ -146,32 +196,45 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType) {
             drawPixelRect(ctx, x - px, y + 4 * px, 3, 2, s.skinColor, px);
             drawPixelRect(ctx, x + 8 * px, y + 4 * px, 3, 2, s.skinColor, px);
         }
-    } else if (armsUp) {
+    } else if (currentArmsUp) {
         drawPixelRect(ctx, x, y + 2 * px, 2, 4, s.skinColor, px);
         drawPixelRect(ctx, x + 8 * px, y + 2 * px, 2, 4, s.skinColor, px);
         drawPixelRect(ctx, x, y + 1 * px, 2, 1, s.skinColor, px);
         drawPixelRect(ctx, x + 8 * px, y + 1 * px, 2, 1, s.skinColor, px);
-    } else {
+    } else if (state.crowdEmotion === 'deject') {
+        // Arms down, slightly inward
+        drawPixelRect(ctx, x + px, y + 8 * px, 2, 4, s.skinColor, px);
+        drawPixelRect(ctx, x + 7 * px, y + 8 * px, 2, 4, s.skinColor, px);
+    }
+    else {
         drawPixelRect(ctx, x, y + 7 * px, 2, 4, s.skinColor, px);
         drawPixelRect(ctx, x + 8 * px, y + 7 * px, 2, 4, s.skinColor, px);
     }
 
-    drawPixelRect(ctx, x + 3 * px, y + 2 * px, 4, 4, s.skinColor, px);
+    drawPixelRect(ctx, x + 3 * px, y + 2 * px, 4, 4, s.skinColor, px); // Head
 
     if (s.hasHat) {
         drawPixelRect(ctx, x + 2 * px, y + 1 * px, 6, 1, shirtColor, px);
         drawPixelRect(ctx, x + 3 * px, y, 4, 1, shirtColor, px);
     } else {
-        drawPixelRect(ctx, x + 3 * px, y + 1 * px, 4, 1, '#222222', px);
+        drawPixelRect(ctx, x + 3 * px, y + 1 * px, 4, 1, '#222222', px); // Hair
     }
 
-    if (frenzy) {
+    // Eyes and Mouth
+    if (state.crowdEmotion === 'deject') {
+        ctx.fillStyle = '#000000'; // Darker eyes
+        ctx.fillRect(x + 4 * px, y + 3 * px + eyeOffsetY, px, px);
+        ctx.fillRect(x + 6 * px, y + 3 * px + eyeOffsetY, px, px);
+        // Frown mouth
+        ctx.fillRect(x + 4 * px, y + 5 * px + eyeOffsetY, 3 * px, px);
+    } else if (mouthShape === 'open') { // Celebration or frenzy
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(x + 4 * px, y + 3 * px, px, px);
         ctx.fillRect(x + 6 * px, y + 3 * px, px, px);
         ctx.fillStyle = '#000000';
-        ctx.fillRect(x + 5 * px, y + 5 * px, px, px);
-    } else {
+        ctx.fillRect(x + 4 * px, y + 5 * px, 3 * px, px); // Open mouth
+    }
+    else { // Normal / neutral
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(x + 4 * px, y + 3 * px, px, px);
         ctx.fillRect(x + 6 * px, y + 3 * px, px, px);
@@ -179,6 +242,7 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType) {
         ctx.fillRect(x + 4 * px + 1, y + 3 * px + 1, Math.max(1, px - 1), Math.max(1, px - 1));
         ctx.fillRect(x + 6 * px + 1, y + 3 * px + 1, Math.max(1, px - 1), Math.max(1, px - 1));
     }
+
 
     if (coreoType === 2 && !s.hasFlag && !s.hasFlare) {
         // Scarf-up coreo: supporters hold scarves stretched above heads
@@ -191,7 +255,7 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType) {
         drawPixelRect(ctx, x - px, scarfY - px, 12, 1, scarfColor, px);
     } else if (s.hasScarf && s.scarfColor) {
         drawPixelRect(ctx, x + 2 * px, y + 5 * px, 6, 1, s.scarfColor, px);
-        if (frenzy) {
+        if (currentFrenzy) { // Use currentFrenzy for scarf waving
             const scarfWave = Math.sin(now / 100 + s.jumpPhase) > 0 ? 1 : -1;
             drawPixelRect(ctx, x + (scarfWave > 0 ? 8 : -2) * px, y + 5 * px, 2, 1, s.scarfColor, px);
         }
@@ -199,6 +263,7 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType) {
 }
 
 function spawnFrenzyParticles(w, h) {
+    if (state.frenzyParticles.length > 200) return;
     const count = 3 + Math.floor(Math.random() * 4);
     for (let i = 0; i < count; i++) {
         state.frenzyParticles.push({
@@ -381,6 +446,7 @@ function spawnSmoke(s, jumpOffset, now) {
     if (s.flareColor === '#00ff44') { smokeR = 100; smokeG = 200; smokeB = 100; }
     else if (s.flareColor === '#ff2200' || s.flareColor === '#ff4400') { smokeR = 200; smokeG = 160; smokeB = 150; }
 
+    if (state.smokeParticles.length > 300) return;
     for (let i = 0; i < 2; i++) {
         state.smokeParticles.push({
             x: handX + px + (Math.random() - 0.5) * 4 * px,
@@ -430,19 +496,24 @@ export function drawGameVisuals() {
     const ctx = state.gameVisualCtx;
     const now = performance.now();
     const multiplier = getComboMultiplier();
-    const frenzy = state.playerCombo > 5;
-    // Coreo cycles every 10 combos: 0=base, 1=sway+row-wave, 2=scarf-up, 3=tifo
+
+    // Determine frenzy state based on crowdEmotion for visuals
+    const currentFrenzy = state.crowdEmotion === 'celebrate' || state.playerCombo > 5;
     const coreoType = state.playerCombo >= 10 ? Math.floor(state.playerCombo / 10) % 4 : 0;
 
     if (state.supporters.length === 0) {
-        initSupporters(w, h);
+        initSupporters(w, h, false); // Explicitly pass false for game visuals
     }
 
     ctx.clearRect(0, 0, w, h);
 
     // Sky / stadium background gradient
     const grad = ctx.createLinearGradient(0, 0, 0, h);
-    if (frenzy && !state.settings.reducedEffects) {
+    if (state.crowdEmotion === 'deject') {
+        grad.addColorStop(0, '#0f0f1a');
+        grad.addColorStop(0.6, '#1a1a30');
+        grad.addColorStop(1, '#252540');
+    } else if (currentFrenzy && !state.settings.reducedEffects) {
         const frenzyPulse = (Math.sin(now / 300) + 1) * 0.5;
         const r = Math.floor(25 + frenzyPulse * 15);
         grad.addColorStop(0, `rgb(${r}, 5, 8)`);
@@ -457,24 +528,38 @@ export function drawGameVisuals() {
     ctx.fillRect(0, 0, w, h);
 
     // Stadium railing
-    ctx.fillStyle = frenzy ? 'rgba(255,100,0,0.12)' : 'rgba(255,255,255,0.08)';
+    if (state.crowdEmotion === 'deject') {
+        ctx.fillStyle = 'rgba(100,100,100,0.08)';
+    } else {
+        ctx.fillStyle = currentFrenzy ? 'rgba(255,100,0,0.12)' : 'rgba(255,255,255,0.08)';
+    }
     ctx.fillRect(0, h * 0.1, w, 3);
 
     // Beat-synced animation
     const timeSinceBeat = (now - state.crowdBeatTime) / 1000;
     const beatDecay = Math.max(0, 1 - timeSinceBeat * 4);
 
-    // Jump height scales with combo multiplier
-    const baseJump = 18 + (multiplier - 1) * 13;
-    const jumpHeight = beatDecay * baseJump;
-    const frenzyBounce = frenzy ? Math.abs(Math.sin(now / 150)) * (4 + multiplier * 2) : 0;
+    let jumpHeight = 0;
+    let frenzyBounce = 0;
+    let sway = Math.sin(now / 400) * 2;
 
-    const sway = Math.sin(now / 400) * 2;
+    if (state.crowdEmotion === 'deject') {
+        // Very minimal movement
+        jumpHeight = beatDecay * 2;
+        sway = Math.sin(now / 800) * 1;
+    } else {
+        // Jump height scales with combo multiplier or celebration
+        const baseJump = 18 + (multiplier - 1) * 13;
+        jumpHeight = beatDecay * baseJump;
+        frenzyBounce = currentFrenzy ? Math.abs(Math.sin(now / 150)) * (4 + multiplier * 2) : 0;
+    }
 
-    if (frenzy && beatDecay > 0.9 && !state.settings.reducedEffects) {
+    // Spawn frenzy particles (only during frenzy/celebration)
+    if ((currentFrenzy || state.crowdEmotion === 'celebrate') && beatDecay > 0.9 && !state.settings.reducedEffects) {
         spawnFrenzyParticles(w, h);
     }
 
+    // Draw smoke behind supporters (natural fade, no forced clearing)
     if (state.smokeParticles.length > 0) {
         updateAndDrawSmoke(ctx, w, h);
     }
@@ -484,7 +569,9 @@ export function drawGameVisuals() {
         const s = state.supporters[i];
 
         let personalJump;
-        if (coreoType === 1) {
+        if (state.crowdEmotion === 'deject') {
+            personalJump = -s.jumpStrength * 2; // Slump down a bit
+        } else if (coreoType === 1) {
             // Row-wave coreo: rows bounce in coordinated sequence
             const rowWave = Math.abs(Math.sin(now / 250 + s.row * (Math.PI / 2.5))) * multiplier * 3;
             personalJump = jumpHeight * s.jumpStrength + rowWave;
@@ -492,17 +579,17 @@ export function drawGameVisuals() {
             const phaseOffset = Math.sin(timeSinceBeat * 12 + s.jumpPhase) * 0.3;
             personalJump = jumpHeight * s.jumpStrength * (1 + phaseOffset);
         }
-        const jumpY = -(personalJump + frenzyBounce + (beatDecay < 0.01 && !frenzy ? sway * 0.5 : 0));
+        const jumpY = -(personalJump + frenzyBounce + (beatDecay < 0.01 && !currentFrenzy && state.crowdEmotion !== 'deject' ? sway * 0.5 : 0));
 
-        const armsUp = !frenzy && timeSinceBeat < 0.3 && s.jumpStrength > 0.7;
+        const armsUp = !currentFrenzy && timeSinceBeat < 0.3 && s.jumpStrength > 0.7;
 
-        if (frenzy && s.hasFlag) {
+        if ((currentFrenzy || state.crowdEmotion === 'celebrate') && s.hasFlag) {
             drawFlag(ctx, s, jumpY, now);
         }
 
-        drawSupporter(ctx, s, jumpY, armsUp, frenzy, now, coreoType);
+        drawSupporter(ctx, s, jumpY, armsUp, currentFrenzy, now, coreoType);
 
-        if (frenzy && s.hasFlare) {
+        if ((currentFrenzy || state.crowdEmotion === 'celebrate') && s.hasFlare) {
             drawFlare(ctx, s, jumpY, now);
             if (!state.settings.reducedEffects && Math.random() < 0.3) {
                 spawnSmoke(s, jumpY, now);
@@ -510,7 +597,7 @@ export function drawGameVisuals() {
         }
     }
 
-    // Fire particles
+    // Draw frenzy fire particles in front of supporters (natural fade, no forced clearing)
     if (state.frenzyParticles.length > 0) {
         updateAndDrawParticles(ctx, w, h);
     }
@@ -518,24 +605,28 @@ export function drawGameVisuals() {
     // Beat flash overlay
     if (beatDecay > 0.01) {
         const primary = state.selectedClub ? state.selectedClub.colors.primary : '#006633';
-        ctx.fillStyle = frenzy ? '#ff4400' : primary;
-        ctx.globalAlpha = beatDecay * (frenzy ? 0.15 : 0.08);
+        if (state.crowdEmotion === 'deject') {
+            ctx.fillStyle = 'rgba(50,50,50,0.08)';
+        } else {
+            ctx.fillStyle = currentFrenzy ? '#ff4400' : primary;
+            ctx.globalAlpha = beatDecay * (currentFrenzy ? 0.15 : 0.08);
+        }
         ctx.fillRect(0, 0, w, h);
         ctx.globalAlpha = 1;
     }
 
     // --- HUD text stack: FEVER -> Feedback -> Combo ---
-    if (frenzy && !state.wasFrenzy) {
+    if (currentFrenzy && !state.wasFrenzy) {
         state.frenzyStartTime = now;
         state.wasFrenzy = true;
-    } else if (!frenzy && state.wasFrenzy) {
+    } else if (!currentFrenzy && state.wasFrenzy) {
         state.wasFrenzy = false;
     }
 
     let hudY = 22;
 
-    // 1) FEVER! text
-    if (frenzy) {
+    // 1) FEVER! text (only for celebration/frenzy)
+    if (currentFrenzy || state.crowdEmotion === 'celebrate') {
         drawFeverText(ctx, w, h, now, hudY);
         hudY += 30;
     }
@@ -601,7 +692,7 @@ export function drawGameVisuals() {
     }
 
     // 3) Frenzy progress indicator (combo 2-5, pre-frenzy)
-    if (state.comboDisplayCount >= 2 && state.comboDisplayCount <= 5 && !frenzy) {
+    if (state.comboDisplayCount >= 2 && state.comboDisplayCount <= 5 && !currentFrenzy) {
         const progressText = `COMBO ${state.comboDisplayCount}/6 → FEVER!`;
         ctx.save();
         ctx.font = 'bold 16px monospace';
@@ -698,7 +789,6 @@ export function drawGameVisuals() {
             const arcY = hudY;
 
             ctx.save();
-            // Background ring
             ctx.beginPath();
             ctx.arc(arcX, arcY, arcR, 0, Math.PI * 2);
             ctx.strokeStyle = 'rgba(255,255,255,0.15)';
@@ -721,4 +811,186 @@ export function drawGameVisuals() {
             ctx.restore();
         }
     }
+}
+
+export function stopChantResultAnimation() {
+    if (state.chantResultAnimationId) {
+        cancelAnimationFrame(state.chantResultAnimationId);
+        state.chantResultAnimationId = null;
+    }
+    state.chantResultCtx = null; // Clear the context
+    // Also clear particles that might be lingering
+    state.frenzyParticles = [];
+    state.smokeParticles = [];
+}
+
+export function renderChantResultCrowd(playerScored, aiScored, visualCanvasWidth, visualCanvasHeight) {
+    stopChantResultAnimation(); // Stop any previous animation
+
+    const canvas = elements.chantResultVisualCanvas;
+    if (!canvas) return;
+
+    // Set canvas dimensions from passed arguments
+    canvas.width = visualCanvasWidth;
+    canvas.height = visualCanvasHeight;
+
+    state.chantResultCtx = canvas.getContext('2d'); // Assign to state
+    if (!state.chantResultCtx) return;
+
+    // Determine crowd emotion for this result (stored on state for drawSupporter to read)
+    if (playerScored) {
+        state.crowdEmotion = 'celebrate';
+    } else {
+        state.crowdEmotion = 'deject';
+    }
+
+    // Save game supporters and init fresh ones for result canvas
+    const savedSupporters = state.supporters;
+    state.supporters = [];
+    initSupporters(canvas.width, canvas.height, true); // Pass true for result canvas
+    const resultSupporters = state.supporters;
+    state.supporters = savedSupporters; // Restore game supporters immediately
+
+
+    // Local particle arrays for the result screen (don't pollute game state)
+    let resultFrenzyParticles = [];
+    let resultSmokeParticles = [];
+    const emotion = state.crowdEmotion; // Capture at creation time
+
+    // Animation loop for the chant result screen
+    const animateChantResultCrowd = (now) => {
+        const w = canvas.width;
+        const h = canvas.height;
+        const ctx = state.chantResultCtx; // Use context from state
+        if (!ctx) return;
+
+        ctx.clearRect(0, 0, w, h);
+
+        // Sky / stadium background gradient (adapted from drawGameVisuals)
+        const grad = ctx.createLinearGradient(0, 0, 0, h);
+        if (emotion === 'deject') {
+            grad.addColorStop(0, '#0f0f1a');
+            grad.addColorStop(0.6, '#1a1a30');
+            grad.addColorStop(1, '#252540');
+        } else if (emotion === 'celebrate' && !state.settings.reducedEffects) {
+            const frenzyPulse = (Math.sin(now / 300) + 1) * 0.5;
+            const r = Math.floor(25 + frenzyPulse * 15);
+            grad.addColorStop(0, `rgb(${r}, 5, 8)`);
+            grad.addColorStop(0.6, `rgb(${r + 10}, 8, 15)`);
+            grad.addColorStop(1, '#1a0a0e');
+        } else {
+            grad.addColorStop(0, '#0a0a1a');
+            grad.addColorStop(0.6, '#111128');
+            grad.addColorStop(1, '#1a1a2e');
+        }
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+
+        // Stadium railing (adapted from drawGameVisuals)
+        if (emotion === 'deject') {
+            ctx.fillStyle = 'rgba(100,100,100,0.08)';
+        } else {
+            ctx.fillStyle = emotion === 'celebrate' ? 'rgba(255,100,0,0.12)' : 'rgba(255,255,255,0.08)';
+        }
+        ctx.fillRect(0, h * 0.1, w, 3);
+
+        // Particle effects using local arrays
+        if (emotion === 'celebrate' && !state.settings.reducedEffects) {
+            if (Math.random() < 0.1 && resultFrenzyParticles.length < 200) {
+                const count = 3 + Math.floor(Math.random() * 4);
+                for (let i = 0; i < count; i++) {
+                    resultFrenzyParticles.push({
+                        x: Math.random() * w,
+                        y: h - 20 - Math.random() * 40,
+                        vx: (Math.random() - 0.5) * 1.5,
+                        vy: -(1.5 + Math.random() * 2.5),
+                        life: 1,
+                        decay: 0.01 + Math.random() * 0.015,
+                        size: 3 + Math.random() * 5,
+                        hue: Math.random() < 0.5 ? 0 : (15 + Math.random() * 30)
+                    });
+                }
+            }
+        }
+        // Draw local frenzy particles
+        for (let i = resultFrenzyParticles.length - 1; i >= 0; i--) {
+            const p = resultFrenzyParticles[i];
+            p.x += p.vx; p.y += p.vy; p.vy *= 0.98; p.life -= p.decay; p.size *= 0.99;
+            if (p.life <= 0 || p.y < -10) { resultFrenzyParticles.splice(i, 1); continue; }
+            const alpha = p.life * 0.9;
+            const px = Math.max(2, Math.floor(p.size));
+            ctx.fillStyle = `hsla(${p.hue}, 100%, ${50 + (1 - p.life) * 30}%, ${alpha})`;
+            ctx.fillRect(Math.floor(p.x), Math.floor(p.y), px, px);
+        }
+        // Draw local smoke particles
+        for (let i = resultSmokeParticles.length - 1; i >= 0; i--) {
+            const p = resultSmokeParticles[i];
+            p.x += p.vx + Math.sin(p.life * 3) * 0.3; p.y += p.vy; p.vy *= 0.995;
+            p.vx += (Math.random() - 0.5) * 0.1; p.life -= p.decay; p.size += 0.15;
+            if (p.life <= 0 || p.y < -20) { resultSmokeParticles.splice(i, 1); continue; }
+            const alpha = p.life * 0.35;
+            const sz = Math.floor(p.size);
+            ctx.fillStyle = `rgba(${p.r},${p.g},${p.b},${alpha})`;
+            ctx.fillRect(Math.floor(p.x - sz / 2), Math.floor(p.y - sz / 2), sz, sz);
+        }
+
+        // Draw supporters (simplified: no beat-sync, just emotion-driven sway/slump)
+        for (let i = 0; i < resultSupporters.length; i++) {
+            const s = resultSupporters[i];
+
+            let jumpY = 0;
+            let rockX = 0;
+            let armsUp = false;
+
+            if (emotion === 'celebrate') {
+                jumpY = -(Math.abs(Math.sin(now / 200 + s.jumpPhase)) * (5 + s.jumpStrength * 5));
+                rockX = Math.sin(now / 150 + s.jumpPhase) * 3;
+                armsUp = true;
+            } else if (emotion === 'deject') {
+                jumpY = 5; // Slump down
+                rockX = Math.sin(now / 500 + s.jumpPhase) * 1;
+                armsUp = false;
+            } else { // Neutral
+                rockX = Math.sin(now / 400 + s.jumpPhase) * 2;
+            }
+
+            drawSupporter(ctx, s, jumpY, armsUp, emotion === 'celebrate', now, 0); // coreoType 0 for simplicity
+
+            if (emotion === 'celebrate' && s.hasFlare) {
+                drawFlare(ctx, s, jumpY, now);
+                if (!state.settings.reducedEffects && Math.random() < 0.05 && resultSmokeParticles.length < 200) {
+                    // Inline smoke spawn for result canvas using local array
+                    const px = s.px;
+                    const baseX = Math.floor(s.x);
+                    const rX = Math.sin(now / 120 + s.jumpPhase) * 3;
+                    const sx = Math.floor(baseX + rX);
+                    const sy = Math.floor(s.baseY + jumpY);
+                    const handX = s.flareHand === 'left' ? sx - px : sx + 9 * px;
+                    const flareY = sy - 2 * px;
+                    let smokeR = 180, smokeG = 180, smokeB = 180;
+                    if (s.flareColor === '#00ff44') { smokeR = 100; smokeG = 200; smokeB = 100; }
+                    else if (s.flareColor === '#ff2200' || s.flareColor === '#ff4400') { smokeR = 200; smokeG = 160; smokeB = 150; }
+                    for (let si = 0; si < 3; si++) {
+                        resultSmokeParticles.push({
+                            x: handX + px + (Math.random() - 0.5) * 4 * px,
+                            y: flareY - 6 * px,
+                            vx: (Math.random() - 0.5) * 1,
+                            vy: -(0.5 + Math.random() * 1),
+                            life: 1, decay: 0.005 + Math.random() * 0.005,
+                            size: 4 + Math.random() * 6,
+                            r: smokeR, g: smokeG, b: smokeB
+                        });
+                    }
+                }
+            }
+            if (emotion === 'celebrate' && s.hasFlag) {
+                drawFlag(ctx, s, jumpY, now);
+            }
+        }
+
+        // Request next frame
+        state.chantResultAnimationId = requestAnimationFrame(animateChantResultCrowd);
+    };
+
+    state.chantResultAnimationId = requestAnimationFrame(animateChantResultCrowd);
 }

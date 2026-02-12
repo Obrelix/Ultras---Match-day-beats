@@ -305,7 +305,6 @@ body {
     border-top: 1px solid rgba(255, 255, 255, 0.05);
     margin-bottom: 10px;
 }
-
 #game-canvas.beat-pulse {
     animation: canvasPulse 0.15s ease-out;
 }

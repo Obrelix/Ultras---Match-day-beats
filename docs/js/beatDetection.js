@@ -160,7 +160,11 @@ function refineOnsetTime(spectralFlux, peakFrame, frameDuration) {
     const prev = spectralFlux[peakFrame - 1];
     const curr = spectralFlux[peakFrame];
     const next = spectralFlux[peakFrame + 1];
-    const offset = 0.5 * (prev - next) / (prev - 2 * curr + next);
+    const denom = prev - 2 * curr + next;
+    if (Math.abs(denom) < 1e-10) {
+        return peakFrame * frameDuration;
+    }
+    const offset = 0.5 * (prev - next) / denom;
     if (Math.abs(offset) < 1) {
         return (peakFrame + offset) * frameDuration;
     }
@@ -308,11 +312,11 @@ function estimateTempo(spectralFlux, hopSize, sampleRate) {
         candidates.push({ lag: doubleLag, corr: autocorr[doubleLag - minLag] });
     }
 
-    // Filter to candidates in 70–170 BPM with at least 50% of best correlation
+    // Filter to candidates in configured BPM range with at least 50% of best correlation
     const minCorrThreshold = bestCorr * 0.5;
     const validCandidates = candidates.filter(c => {
         const bpm = 60 / (c.lag * frameDuration);
-        return bpm >= 70 && bpm <= 170 && c.corr >= minCorrThreshold;
+        return bpm >= BEAT_DETECTION.MIN_BPM && bpm <= BEAT_DETECTION.MAX_BPM && c.corr >= minCorrThreshold;
     });
 
     if (validCandidates.length > 0) {

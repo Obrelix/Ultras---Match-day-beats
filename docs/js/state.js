@@ -24,7 +24,7 @@ export const state = {
 
     // Pause state
     isPaused: false,
-    pauseOffset: 0,
+    _pauseTime: 0,
 
     // Audio
     audioContext: null,
@@ -94,6 +94,9 @@ export const state = {
     playerGoals: 0,
     aiGoals: 0,
     chantResults: [],
+    crowdEmotion: 'neutral',
+    chantResultAnimationId: null, // New: To control the chant result screen animation
+    chantResultCtx: null, // New: Context for the chant result visual canvas
 };
 
 export function resetGameState() {
@@ -106,7 +109,7 @@ export function resetGameState() {
     state.totalBeats = 0;
     state.activeBeat = null;
     state.isPaused = false;
-    state.pauseOffset = 0;
+    state._pauseTime = 0;
 
     state.detectedBeats = [];
     state.nextBeatIndex = 0;
@@ -130,6 +133,9 @@ export function resetGameState() {
     state.comboBumpTime = 0;
     state.frenzyStartTime = 0;
     state.wasFrenzy = false;
+    state.crowdEmotion = 'neutral'; // Reset crowd emotion
+    state.chantResultAnimationId = null; // Reset chant result animation ID
+    state.chantResultCtx = null; // Reset chant result canvas context
 }
 
 export function resetMatchState() {

@@ -66,16 +66,12 @@ export function handleInput() {
         score = SCORE.GOOD;
         state.playerStats.good++;
         state.playerCombo++;
-    } else if (bestDiff <= state.activeTiming.OK) {
+    } else {
+        // bestDiff <= activeTiming.OK guaranteed (early return above for > OK)
         rating = 'OK';
         score = SCORE.OK;
         state.playerStats.ok++;
         state.playerCombo++;
-    } else {
-        rating = 'MISS';
-        score = SCORE.MISS;
-        state.playerStats.miss++;
-        state.playerCombo = 0;
     }
 
     // Record result for visualizer beat coloring
@@ -99,7 +95,11 @@ export function handleInput() {
     // If this was an early hit on an upcoming beat, advance past it
     if (bestBeat.isEarly && rating !== 'MISS') {
         if (state.activeBeat) {
-            registerMiss();
+            // Silently mark the skipped active beat as missed (no SFX/feedback — player already got hit feedback)
+            if (state.activeBeat.index !== undefined) {
+                state.beatResults[state.activeBeat.index] = 'miss';
+            }
+            state.playerStats.miss++;
         }
         state.nextBeatIndex = bestBeat.index + 1;
         state.activeBeat = null;

@@ -8,7 +8,7 @@ import { initAudio, loadAudio, playAudio, stopAudio, setVolume, setSFXVolume } f
 import { analyzeBeats } from './beatDetection.js';
 import { handleInput, registerMiss, simulateAI } from './input.js';
 import { initVisualizer, computeWaveformPeaks, buildWaveformCache, drawVisualizer } from './renderer.js';
-import { drawGameVisuals } from './crowd.js';
+import { drawGameVisuals, stopChantResultAnimation } from './crowd.js';
 import {
     showScreen, applyClubTheme, renderClubSelection, renderChantSelection,
     renderMatchdayIntro, updateMatchScoreboard, updateScoreboardTeams,
@@ -87,6 +87,8 @@ function selectClubMatchday(club) {
 // ============================================
 
 async function startMatchdayChant() {
+    stopChantResultAnimation(); // Stop any lingering result animation
+
     const chant = state.matchChants[state.currentChantIndex];
     state.selectedChant = chant;
 
@@ -150,6 +152,7 @@ setMatchdayChantStarter(startMatchdayChant);
 // ============================================
 
 async function startGame() {
+    stopChantResultAnimation(); // Stop any lingering result animation
     showScreen('gameplay');
     updateScoreboardTeams();
 
@@ -318,7 +321,7 @@ function pauseGame() {
     elements.pauseOverlay.classList.remove('hidden');
 }
 
-function resumeGame() {
+async function resumeGame() {
     if (!state.isPaused) return;
     const pauseDuration = performance.now() - state._pauseTime;
     state.gameStartTime += pauseDuration;
@@ -326,7 +329,7 @@ function resumeGame() {
         state.activeBeat.time += pauseDuration;
     }
     state.isPaused = false;
-    if (state.audioContext) state.audioContext.resume();
+    if (state.audioContext) await state.audioContext.resume();
     elements.pauseOverlay.classList.add('hidden');
     // Close volume panel if open
     elements.volumePanel.classList.add('hidden');
@@ -337,6 +340,9 @@ function quitToMenu() {
     state.isPaused = false;
     cancelAnimationFrame(state.gameLoopId);
     stopAudio();
+    // Clean up countdown overlay if still present
+    const countdownEl = document.getElementById('countdown-overlay');
+    if (countdownEl) countdownEl.remove();
     elements.pauseOverlay.classList.add('hidden');
     elements.volumePanel.classList.add('hidden');
     showScreen('title');

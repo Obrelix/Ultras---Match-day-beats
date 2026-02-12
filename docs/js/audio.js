@@ -88,6 +88,12 @@ export function playSFX(type) {
     osc.connect(gain);
     gain.connect(state.sfxGain);
 
+    // Clean up nodes after oscillator stops to prevent memory leaks
+    osc.onended = () => {
+        osc.disconnect();
+        gain.disconnect();
+    };
+
     switch (type) {
         case 'PERFECT':
             osc.type = 'sine';
