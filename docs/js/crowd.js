@@ -6,6 +6,72 @@ import { state } from './state.js';
 import { elements } from './ui.js';
 import { getComboMultiplier } from './input.js';
 
+// ============================================
+// Batched Drawing System - reduces fillStyle changes for performance
+// ============================================
+
+class DrawBatch {
+    constructor() {
+        this.rects = new Map();  // color -> array of {x, y, w, h}
+        this.faceQueue = [];     // faces to draw after main batch (ensures eyes on top)
+    }
+
+    add(color, x, y, w, h) {
+        if (!this.rects.has(color)) {
+            this.rects.set(color, []);
+        }
+        this.rects.get(color).push({ x: Math.floor(x), y: Math.floor(y), w, h });
+    }
+
+    flush(ctx) {
+        // Draw all body parts first
+        for (const [color, rects] of this.rects) {
+            ctx.fillStyle = color;
+            for (const r of rects) {
+                ctx.fillRect(r.x, r.y, r.w, r.h);
+            }
+        }
+        this.rects.clear();
+
+        // Draw faces on top (eyes need to be visible over skin)
+        for (const face of this.faceQueue) {
+            drawFace(ctx, face.x, face.y, face.px, face.eyeOffsetY, face.mouthShape, face.emotion);
+        }
+        this.faceQueue = [];
+    }
+
+    clear() {
+        this.rects.clear();
+        this.faceQueue = [];
+    }
+}
+
+// Draw face features (eyes and mouth) - called after batch flush to ensure visibility
+function drawFace(ctx, x, y, px, eyeOffsetY, mouthShape, emotion) {
+    if (emotion === 'deject') {
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(x + 4 * px, y + 3 * px + eyeOffsetY, px, px);
+        ctx.fillRect(x + 6 * px, y + 3 * px + eyeOffsetY, px, px);
+        ctx.fillRect(x + 4 * px, y + 5 * px + eyeOffsetY, 3 * px, px);
+    } else if (mouthShape === 'open') {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(x + 4 * px, y + 3 * px, px, px);
+        ctx.fillRect(x + 6 * px, y + 3 * px, px, px);
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(x + 4 * px, y + 5 * px, 3 * px, px);
+    } else {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(x + 4 * px, y + 3 * px, px, px);
+        ctx.fillRect(x + 6 * px, y + 3 * px, px, px);
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(x + 4 * px + 1, y + 3 * px + 1, Math.max(1, px - 1), Math.max(1, px - 1));
+        ctx.fillRect(x + 6 * px + 1, y + 3 * px + 1, Math.max(1, px - 1), Math.max(1, px - 1));
+    }
+}
+
+// Reusable batch instance to avoid allocations
+const supporterBatch = new DrawBatch();
+
 function shadeColor(hex, percent) {
     let r = parseInt(hex.slice(1, 3), 16);
     let g = parseInt(hex.slice(3, 5), 16);
@@ -26,14 +92,16 @@ export function initSupporters(canvasWidth, canvasHeight) {
     state.supporters = [];
     const PX = 3;
     const supporterW = 5 * PX;
-    const spacing =  20 ; // Reduced spacing for result canvas for denser, even look
+    // Same density on all devices - other optimizations handle performance
+    const spacing = 20;
     const cols = Math.floor(canvasWidth / (supporterW + spacing));
     const supporterH = 14 * PX;
     const rows =  Math.floor(canvasHeight / (supporterH)); // Adjust rows dynamically for result canvas
     const groundY = (canvasHeight) - supporterH ; 
 
-    const primary = state.selectedClub ? state.selectedClub.colors.primary : '#e5ff00';
-    const secondary = state.selectedClub ? state.selectedClub.colors.secondary : '#000000';
+    // Use cached colors if available, otherwise fallback
+    const primary = state.cachedColors?.primary || (state.selectedClub ? state.selectedClub.colors.primary : '#e5ff00');
+    const secondary = state.cachedColors?.secondary || (state.selectedClub ? state.selectedClub.colors.secondary : '#000000');
 
     const palette = [primary, secondary, shadeColor(primary, -30), shadeColor(primary, 30), shadeColor(secondary, -40)];
     const skinTones = ['#f5d0a9', '#d4a373', '#f79c9c', '#c68642', '#e0ac69'];
@@ -92,9 +160,13 @@ export function initSupporters(canvasWidth, canvasHeight) {
     state.supporters.sort((a, b) => a.row - b.row);
 }
 
-function drawPixelRect(ctx, x, y, w, h, color, px) {
-    ctx.fillStyle = color;
-    ctx.fillRect(Math.floor(x), Math.floor(y), w * px, h * px);
+function drawPixelRect(ctx, x, y, w, h, color, px, batch = null) {
+    if (batch) {
+        batch.add(color, x, y, w * px, h * px);
+    } else {
+        ctx.fillStyle = color;
+        ctx.fillRect(Math.floor(x), Math.floor(y), w * px, h * px);
+    }
 }
 
 // Calculate flag swing motion - used by both supporter body and flag drawing
@@ -135,7 +207,7 @@ function getFlagSwing(s, now) {
     return { swingX, swingY, poleAngle, t, swingSpeed };
 }
 
-function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType) {
+function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType, batch = null) {
     const px = s.px;
     const baseX = Math.floor(s.x);
     let y = Math.floor(s.baseY + jumpOffset);
@@ -183,7 +255,7 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType) {
 
     if (currentFrenzy && !state.settings.reducedEffects) {
         const glowPhase = (Math.sin(now / 200 + s.jumpPhase) + 1) * 0.5;
-        const primary = state.selectedClub ? state.selectedClub.colors.primary : '#006633';
+        const primary = state.cachedColors?.primary || '#006633';
         ctx.fillStyle = primary;
         ctx.globalAlpha = 0.12 + glowPhase * 0.1;
         ctx.fillRect(x - px, y + 2 * px, 12 * px, 12 * px);
@@ -196,20 +268,20 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType) {
     if (currentFrenzy) {
         const kick = Math.sin(now / 100 + s.jumpPhase) > 0;
         if (kick) {
-            drawPixelRect(ctx, x + 1 * px, y + 11 * px, 2, 3, '#222244', px);
-            drawPixelRect(ctx, x + 7 * px, y + 12 * px, 2, 2, '#222244', px);
+            drawPixelRect(ctx, x + 1 * px, y + 11 * px, 2, 3, '#222244', px, batch);
+            drawPixelRect(ctx, x + 7 * px, y + 12 * px, 2, 2, '#222244', px, batch);
         } else {
-            drawPixelRect(ctx, x + 1 * px, y + 12 * px, 2, 2, '#222244', px);
-            drawPixelRect(ctx, x + 7 * px, y + 11 * px, 2, 3, '#222244', px);
+            drawPixelRect(ctx, x + 1 * px, y + 12 * px, 2, 2, '#222244', px, batch);
+            drawPixelRect(ctx, x + 7 * px, y + 11 * px, 2, 3, '#222244', px, batch);
         }
     } else if (state.crowdEmotion === 'deject') {
         // Slumped legs
-        drawPixelRect(ctx, x + 2 * px, y + 12 * px, 2, 2, '#222244', px);
-        drawPixelRect(ctx, x + 6 * px, y + 12 * px, 2, 2, '#222244', px);
+        drawPixelRect(ctx, x + 2 * px, y + 12 * px, 2, 2, '#222244', px, batch);
+        drawPixelRect(ctx, x + 6 * px, y + 12 * px, 2, 2, '#222244', px, batch);
     }
     else {
-        drawPixelRect(ctx, x + 2 * px, y + 11 * px, 2, 3, '#222244', px);
-        drawPixelRect(ctx, x + 6 * px, y + 11 * px, 2, 3, '#222244', px);
+        drawPixelRect(ctx, x + 2 * px, y + 11 * px, 2, 3, '#222244', px, batch);
+        drawPixelRect(ctx, x + 6 * px, y + 11 * px, 2, 3, '#222244', px, batch);
     }
 
     // Tifo coreo (type 3): coordinated shirt color wave
@@ -228,140 +300,84 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType) {
         const avg = (r + g + b) / 3;
         shirtColor = '#' + [avg * 0.8, avg * 0.8, avg * 0.8].map(c => Math.floor(c).toString(16).padStart(2, '0')).join('');
     }
-    drawPixelRect(ctx, x + 2 * px, y + 6 * px, 6, 5, shirtColor, px);
+    drawPixelRect(ctx, x + 2 * px, y + 6 * px, 6, 5, shirtColor, px, batch);
 
     // Arms
     if ((coreoType === 2 ||coreoType === 3) && !s.hasFlag && !s.hasFlare) {
         // Scarf coreo: arms straight up holding scarf taut
-        drawPixelRect(ctx, x - px, y + 1 * px, 2, 5, s.skinColor, px);
-        drawPixelRect(ctx, x + 9 * px, y + 1 * px, 2, 5, s.skinColor, px);
-        drawPixelRect(ctx, x - px, y, 2, 1, s.skinColor, px);
-        drawPixelRect(ctx, x + 9 * px, y, 2, 1, s.skinColor, px);
+        drawPixelRect(ctx, x - px, y + 1 * px, 2, 5, s.skinColor, px, batch);
+        drawPixelRect(ctx, x + 9 * px, y + 1 * px, 2, 5, s.skinColor, px, batch);
+        drawPixelRect(ctx, x - px, y, 2, 1, s.skinColor, px, batch);
+        drawPixelRect(ctx, x + 9 * px, y, 2, 1, s.skinColor, px, batch);
     } else if (currentFrenzy) {
         const armPhase = Math.sin(now / 150 + s.jumpPhase);
         if (armPhase > 0.3) {
-            drawPixelRect(ctx, x - px, y + 1 * px, 2, 3, s.skinColor, px);
-            drawPixelRect(ctx, x + 9 * px, y + 1 * px, 2, 3, s.skinColor, px);
-            drawPixelRect(ctx, x - px, y, 2, 1, s.skinColor, px);
-            drawPixelRect(ctx, x + 9 * px, y, 2, 1, s.skinColor, px);
+            drawPixelRect(ctx, x - px, y + 1 * px, 2, 3, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 9 * px, y + 1 * px, 2, 3, s.skinColor, px, batch);
+            drawPixelRect(ctx, x - px, y, 2, 1, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 9 * px, y, 2, 1, s.skinColor, px, batch);
         } else if (armPhase > -0.3) {
-            drawPixelRect(ctx, x - px, y + 2 * px, 2, 4, s.skinColor, px);
-            drawPixelRect(ctx, x + 9 * px, y + 5 * px, 3, 2, s.skinColor, px);
+            drawPixelRect(ctx, x - px, y + 2 * px, 2, 4, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 9 * px, y + 5 * px, 3, 2, s.skinColor, px, batch);
         } else {
-            drawPixelRect(ctx, x - px, y + 4 * px, 3, 2, s.skinColor, px);
-            drawPixelRect(ctx, x + 8 * px, y + 4 * px, 3, 2, s.skinColor, px);
+            drawPixelRect(ctx, x - px, y + 4 * px, 3, 2, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 8 * px, y + 4 * px, 3, 2, s.skinColor, px, batch);
         }
     } else if (currentArmsUp) {
-        drawPixelRect(ctx, x, y + 2 * px, 2, 4, s.skinColor, px);
-        drawPixelRect(ctx, x + 8 * px, y + 2 * px, 2, 4, s.skinColor, px);
-        drawPixelRect(ctx, x, y + 1 * px, 2, 1, s.skinColor, px);
-        drawPixelRect(ctx, x + 8 * px, y + 1 * px, 2, 1, s.skinColor, px);
+        drawPixelRect(ctx, x, y + 2 * px, 2, 4, s.skinColor, px, batch);
+        drawPixelRect(ctx, x + 8 * px, y + 2 * px, 2, 4, s.skinColor, px, batch);
+        drawPixelRect(ctx, x, y + 1 * px, 2, 1, s.skinColor, px, batch);
+        drawPixelRect(ctx, x + 8 * px, y + 1 * px, 2, 1, s.skinColor, px, batch);
     } else if (state.crowdEmotion === 'deject') {
         // Arms down, slightly inward
-        drawPixelRect(ctx, x + px, y + 8 * px, 2, 4, s.skinColor, px);
-        drawPixelRect(ctx, x + 7 * px, y + 8 * px, 2, 4, s.skinColor, px);
+        drawPixelRect(ctx, x + px, y + 8 * px, 2, 4, s.skinColor, px, batch);
+        drawPixelRect(ctx, x + 7 * px, y + 8 * px, 2, 4, s.skinColor, px, batch);
     }
     else {
-        drawPixelRect(ctx, x, y + 7 * px, 2, 4, s.skinColor, px);
-        drawPixelRect(ctx, x + 8 * px, y + 7 * px, 2, 4, s.skinColor, px);
+        drawPixelRect(ctx, x, y + 7 * px, 2, 4, s.skinColor, px, batch);
+        drawPixelRect(ctx, x + 8 * px, y + 7 * px, 2, 4, s.skinColor, px, batch);
     }
 
-    drawPixelRect(ctx, x + 3 * px, y + 2 * px, 4, 4, s.skinColor, px); // Head
+    drawPixelRect(ctx, x + 3 * px, y + 2 * px, 4, 4, s.skinColor, px, batch); // Head
 
     if (s.hasHat) {
-        drawPixelRect(ctx, x + 2 * px, y + 1 * px, 6, 1, shirtColor, px);
-        drawPixelRect(ctx, x + 3 * px, y, 4, 1, shirtColor, px);
+        drawPixelRect(ctx, x + 2 * px, y + 1 * px, 6, 1, shirtColor, px, batch);
+        drawPixelRect(ctx, x + 3 * px, y, 4, 1, shirtColor, px, batch);
     } else {
-        drawPixelRect(ctx, x + 3 * px, y + 1 * px, 4, 1, '#222222', px); // Hair
+        drawPixelRect(ctx, x + 3 * px, y + 1 * px, 4, 1, '#222222', px, batch); // Hair
     }
 
-    // Eyes and Mouth
-    if (state.crowdEmotion === 'deject') {
-        ctx.fillStyle = '#000000'; // Darker eyes
-        ctx.fillRect(x + 4 * px, y + 3 * px + eyeOffsetY, px, px);
-        ctx.fillRect(x + 6 * px, y + 3 * px + eyeOffsetY, px, px);
-        // Frown mouth
-        ctx.fillRect(x + 4 * px, y + 5 * px + eyeOffsetY, 3 * px, px);
-    } else if (mouthShape === 'open') { // Celebration or frenzy
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(x + 4 * px, y + 3 * px, px, px);
-        ctx.fillRect(x + 6 * px, y + 3 * px, px, px);
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(x + 4 * px, y + 5 * px, 3 * px, px); // Open mouth
+    // Eyes and Mouth - store for later drawing (after batch flush) to ensure they're on top
+    // We return the face data so it can be drawn after the batch
+    if (batch) {
+        const faceData = { x, y, px, eyeOffsetY, mouthShape, emotion: state.crowdEmotion };
+        if (!batch.faceQueue) batch.faceQueue = [];
+        batch.faceQueue.push(faceData);
+    } else {
+        // Direct draw mode (no batch)
+        drawFace(ctx, x, y, px, eyeOffsetY, mouthShape, state.crowdEmotion);
     }
-    else { // Normal / neutral
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(x + 4 * px, y + 3 * px, px, px);
-        ctx.fillRect(x + 6 * px, y + 3 * px, px, px);
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(x + 4 * px + 1, y + 3 * px + 1, Math.max(1, px - 1), Math.max(1, px - 1));
-        ctx.fillRect(x + 6 * px + 1, y + 3 * px + 1, Math.max(1, px - 1), Math.max(1, px - 1));
-    }
-
 
     if (coreoType === 2 && !s.hasFlag && !s.hasFlare) {
         // Scarf-up coreo: supporters hold scarves stretched above heads
-        const primary = state.selectedClub ? state.selectedClub.colors.primary : '#006633';
-        const secondary = state.selectedClub ? state.selectedClub.colors.secondary : '#FFFFFF';
+        const primary = state.cachedColors?.primary || '#006633';
+        const secondary = state.cachedColors?.secondary || '#FFFFFF';
         const scarfColor = s.row % 2 === 0 ? primary : secondary;
         const scarfWave = Math.sin(now / 300 + s.x / 40) * 2;
         const scarfY = y - px + Math.floor(scarfWave);
-        drawPixelRect(ctx, x - 2 * px, scarfY, 14, 1, scarfColor, px);
-        drawPixelRect(ctx, x - px, scarfY - px, 12, 1, scarfColor, px);
+        drawPixelRect(ctx, x - 2 * px, scarfY, 14, 1, scarfColor, px, batch);
+        drawPixelRect(ctx, x - px, scarfY - px, 12, 1, scarfColor, px, batch);
     } else if (s.hasScarf && s.scarfColor) {
-        drawPixelRect(ctx, x + 2 * px, y + 5 * px, 6, 1, s.scarfColor, px);
-        if (currentFrenzy) { // Use currentFrenzy for scarf waving
+        drawPixelRect(ctx, x + 2 * px, y + 5 * px, 6, 1, s.scarfColor, px, batch);
+        if (currentFrenzy) {
             const scarfWave = Math.sin(now / 100 + s.jumpPhase) > 0 ? 1 : -1;
-            drawPixelRect(ctx, x + (scarfWave > 0 ? 8 : -2) * px, y + 5 * px, 2, 1, s.scarfColor, px);
-        }
-    }
-}
-
-function spawnFrenzyParticles(w, h) {
-    if (state.frenzyParticles.length > 200) return;
-    const count = 3 + Math.floor(Math.random() * 4);
-    for (let i = 0; i < count; i++) {
-        state.frenzyParticles.push({
-            x: Math.random() * w,
-            y: h - 20 - Math.random() * 40,
-            vx: (Math.random() - 0.5) * 1.5,
-            vy: -(1.5 + Math.random() * 2.5),
-            life: 1,
-            decay: 0.01 + Math.random() * 0.015,
-            size: 3 + Math.random() * 5,
-            hue: Math.random() < 0.5 ? 0 : (15 + Math.random() * 30)
-        });
-    }
-}
-
-function updateAndDrawParticles(ctx, w, h) {
-    for (let i = state.frenzyParticles.length - 1; i >= 0; i--) {
-        const p = state.frenzyParticles[i];
-        p.x += p.vx;
-        p.y += p.vy;
-        p.vy *= 0.98;
-        p.life -= p.decay;
-        p.size *= 0.99;
-
-        if (p.life <= 0 || p.y < -10) {
-            state.frenzyParticles[i] = state.frenzyParticles[state.frenzyParticles.length - 1];
-            state.frenzyParticles.pop();
-            continue;
-        }
-
-        const alpha = p.life * 0.9;
-        const px = Math.max(2, Math.floor(p.size));
-        ctx.fillStyle = `hsla(${p.hue}, 100%, ${50 + (1 - p.life) * 30}%, ${alpha})`;
-        ctx.fillRect(Math.floor(p.x), Math.floor(p.y), px, px);
-        if (px > 3) {
-            ctx.fillStyle = `hsla(${p.hue + 20}, 100%, 85%, ${alpha * 0.7})`;
-            ctx.fillRect(Math.floor(p.x) + 1, Math.floor(p.y) + 1, px - 2, px - 2);
+            drawPixelRect(ctx, x + (scarfWave > 0 ? 8 : -2) * px, y + 5 * px, 2, 1, s.scarfColor, px, batch);
         }
     }
 }
 
 function drawFeverText(ctx, w, h, now, yPos) {
-    const primary = state.selectedClub ? state.selectedClub.colors.primary : '#006633';
+    const primary = state.cachedColors?.primary || '#006633';
 
     const sinceStart = now - state.frenzyStartTime;
     const entranceT = Math.min(1, sinceStart / 400);
@@ -403,8 +419,9 @@ function drawFlag(ctx, s, jumpOffset, now) {
     const baseX = Math.floor(s.x);
     const y = Math.floor(s.baseY + jumpOffset);
 
-    const primary = state.selectedClub ? state.selectedClub.colors.primary : '#006633';
-    const secondary = state.selectedClub ? state.selectedClub.colors.secondary : '#FFFFFF';
+    // Use cached colors for performance (set in updateCrowdClub)
+    const primary = state.cachedColors?.primary || '#006633';
+    const secondary = state.cachedColors?.secondary || '#FFFFFF';
 
     const scale = s.flagScale || 1;
 
@@ -546,7 +563,8 @@ function spawnSmoke(s, jumpOffset, now) {
     if (s.flareColor === '#00ff44') { smokeR = 100; smokeG = 200; smokeB = 100; }
     else if (s.flareColor === '#ff2200' || s.flareColor === '#ff4400') { smokeR = 200; smokeG = 160; smokeB = 150; }
 
-    if (state.smokeParticles.length > 600) return;
+    // Limit smoke particles for performance (reduced from 600)
+    if (state.smokeParticles.length > 300) return;
     for (let i = 0; i < 2; i++) {
         state.smokeParticles.push({
             x: handX + px + (Math.random() - 0.5) * 6 * px,
@@ -582,8 +600,8 @@ function updateAndDrawSmoke(ctx, w, h) {
         ctx.fillStyle = `rgba(${p.r},${p.g},${p.b},${alpha})`;
         ctx.fillRect(Math.floor(p.x - sz / 2), Math.floor(p.y - sz / 2), sz, sz);
     }
-    if (state.smokeParticles.length > 600) {
-        state.smokeParticles.splice(0, state.smokeParticles.length - 600);
+    if (state.smokeParticles.length > 300) {
+        state.smokeParticles.splice(0, state.smokeParticles.length - 300);
     }
 }
 
@@ -654,12 +672,8 @@ export function drawGameVisuals() {
         frenzyBounce = currentFrenzy ? Math.abs(Math.sin(now / 150)) * (4 + multiplier * 2) : 0;
     }
 
-    // Spawn frenzy particles (only during frenzy/celebration)
-    if ((currentFrenzy || state.crowdEmotion === 'celebrate') && beatDecay > 0.9 && !state.settings.reducedEffects) {
-        spawnFrenzyParticles(w, h);
-    }
-
-    // First pass: draw all supporters (base layer)
+    // First pass: draw all supporters (base layer) - use batching for performance
+    supporterBatch.clear();
     const jumpYValues = [];
     for (let i = 0; i < state.supporters.length; i++) {
         const s = state.supporters[i];
@@ -678,8 +692,10 @@ export function drawGameVisuals() {
         jumpYValues.push(jumpY);
 
         const armsUp = !currentFrenzy && timeSinceBeat < 0.3 && s.jumpStrength > 0.7;
-        drawSupporter(ctx, s, jumpY, armsUp, currentFrenzy, now, coreoType);
+        drawSupporter(ctx, s, jumpY, armsUp, currentFrenzy, now, coreoType, supporterBatch);
     }
+    // Flush all batched supporter draws at once (reduces fillStyle changes)
+    supporterBatch.flush(ctx);
 
     // Second pass: flags, flares on top of all supporters
     for (let i = 0; i < state.supporters.length; i++) {
@@ -699,17 +715,14 @@ export function drawGameVisuals() {
         }
     }
 
-    // Smoke and fire particles on top of everything
+    // Smoke particles on top of everything
     if (state.smokeParticles.length > 0) {
         updateAndDrawSmoke(ctx, w, h);
-    }
-    if (state.frenzyParticles.length > 0) {
-        updateAndDrawParticles(ctx, w, h);
     }
 
     // Beat flash overlay
     if (beatDecay > 0.01) {
-        const primary = state.selectedClub ? state.selectedClub.colors.primary : '#006633';
+        const primary = state.cachedColors?.primary || '#006633';
         if (state.crowdEmotion === 'deject') {
             ctx.fillStyle = 'rgba(50,50,50,0.08)';
         } else {
@@ -971,12 +984,8 @@ export function drawAmbientCrowd() {
     }
     ctx.fillRect(0, h * 0.1, w, 3);
 
-    // Spawn frenzy particles during celebration
-    if (isCelebrate && !state.settings.reducedEffects && Math.random() < 0.1) {
-        spawnFrenzyParticles(w, h);
-    }
-
-    // First pass: draw all supporters (base layer)
+    // First pass: draw all supporters (base layer) - use batching for performance
+    supporterBatch.clear();
     const jumpYValues = [];
     for (let i = 0; i < state.supporters.length; i++) {
         const s = state.supporters[i];
@@ -991,8 +1000,10 @@ export function drawAmbientCrowd() {
         }
         jumpYValues.push(jumpY);
 
-        drawSupporter(ctx, s, jumpY, isCelebrate, isCelebrate, now, 0);
+        drawSupporter(ctx, s, jumpY, isCelebrate, isCelebrate, now, 0, supporterBatch);
     }
+    // Flush all batched supporter draws at once (reduces fillStyle changes)
+    supporterBatch.flush(ctx);
 
     // Second pass: flags, flares on top of all supporters
     for (let i = 0; i < state.supporters.length; i++) {
@@ -1011,11 +1022,8 @@ export function drawAmbientCrowd() {
         }
     }
 
-    // Smoke and fire particles on top of everything
+    // Smoke particles on top of everything
     if (state.smokeParticles.length > 0) {
         updateAndDrawSmoke(ctx, w, h);
-    }
-    if (state.frenzyParticles.length > 0) {
-        updateAndDrawParticles(ctx, w, h);
     }
 }

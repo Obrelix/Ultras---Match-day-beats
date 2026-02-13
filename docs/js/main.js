@@ -2,10 +2,9 @@
 // main.js — Entry point, game loop, event wiring
 // ============================================
 
-import { GameState, MATCHDAY, DIFFICULTY_PRESETS, clubs } from './config.js';
+import { GameState, MATCHDAY, DIFFICULTY_PRESETS, BEAT_DETECTION, clubs } from './config.js';
 import { state, resetGameState, resetMatchState } from './state.js';
 import { initAudio, loadAudio, playAudio, stopAudio, setVolume, setSFXVolume } from './audio.js';
-import { analyzeBeats } from './beatDetection.js';
 import { handleInput, registerMiss, simulateAI } from './input.js';
 import { initVisualizer, computeWaveformPeaks, buildWaveformCache, drawVisualizer } from './renderer.js';
 import { initCrowdBg, setCrowdMode, updateCrowdClub } from './crowdBg.js';
@@ -15,6 +14,48 @@ import {
     setMatchdayChantStarter, endGame, elements, screens
 } from './ui.js';
 import { loadSettings, saveSettings, hasTutorialSeen, markTutorialSeen } from './storage.js';
+
+// ============================================
+// Beat Detection Worker (runs off main thread)
+// ============================================
+
+let beatWorker = null;
+
+function analyzeBeatsAsync(audioBuffer) {
+    return new Promise((resolve, reject) => {
+        // Create worker if not exists
+        if (!beatWorker) {
+            beatWorker = new Worker('./js/beatWorker.js');
+        }
+
+        // Extract channel data from AudioBuffer
+        const numChannels = audioBuffer.numberOfChannels;
+        const channelData = [];
+        for (let i = 0; i < numChannels; i++) {
+            // Copy to regular array for transfer
+            channelData.push(Array.from(audioBuffer.getChannelData(i)));
+        }
+
+        // Set up one-time message handler for this analysis
+        beatWorker.onmessage = (e) => {
+            resolve(e.data.beats);
+        };
+
+        beatWorker.onerror = (e) => {
+            console.error('Beat worker error:', e);
+            reject(e);
+        };
+
+        // Send data to worker
+        beatWorker.postMessage({
+            channelData,
+            numChannels,
+            sampleRate: audioBuffer.sampleRate,
+            duration: audioBuffer.duration,
+            config: BEAT_DETECTION
+        });
+    });
+}
 
 // ============================================
 // Initialize settings from localStorage
@@ -123,8 +164,8 @@ async function startMatchdayChant() {
     elements.loadingOverlay.classList.remove('hidden');
     await new Promise(resolve => setTimeout(resolve, 50));
 
-    // Pre-analyze beats and waveform
-    state.detectedBeats = analyzeBeats(state.audioBuffer);
+    // Pre-analyze beats in Web Worker (non-blocking) and waveform
+    state.detectedBeats = await analyzeBeatsAsync(state.audioBuffer);
     computeWaveformPeaks();
     buildWaveformCache();
 
@@ -183,8 +224,8 @@ async function startGame() {
     elements.loadingOverlay.classList.remove('hidden');
     await new Promise(resolve => setTimeout(resolve, 50));
 
-    // Pre-analyze beats and waveform
-    state.detectedBeats = analyzeBeats(state.audioBuffer);
+    // Pre-analyze beats in Web Worker (non-blocking) and waveform
+    state.detectedBeats = await analyzeBeatsAsync(state.audioBuffer);
     computeWaveformPeaks();
     buildWaveformCache();
 

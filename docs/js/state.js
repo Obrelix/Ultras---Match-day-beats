@@ -73,8 +73,8 @@ export const state = {
     // Supporters crowd
     supporters: [],
     crowdBeatTime: 0,
-    frenzyParticles: [],
     smokeParticles: [],
+    cachedColors: null,  // Set by updateCrowdClub for performance
 
     // Player stats
     playerScore: 0,
@@ -121,7 +121,6 @@ export function resetGameState() {
     state.hitParticles = [];
 
     state.crowdBeatTime = 0;
-    state.frenzyParticles = [];
     state.smokeParticles = [];
 
     state.feedbackText = '';
