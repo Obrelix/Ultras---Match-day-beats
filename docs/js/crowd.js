@@ -72,6 +72,51 @@ function drawFace(ctx, x, y, px, eyeOffsetY, mouthShape, emotion) {
 // Reusable batch instance to avoid allocations
 const supporterBatch = new DrawBatch();
 
+// Stadium barrier colors
+const BARRIER_COLOR = '#1a1a2e';
+const BARRIER_HIGHLIGHT = '#2a2a4e';
+const RAILING_COLOR = '#444466';
+
+// Draw stadium barriers (edges and aisles) - called each frame after background gradient
+function drawStadiumBarriers(ctx, w, h) {
+    const layout = state.stadiumLayout;
+    if (!layout) return;
+
+    const { edgeMargin, aisleWidth, aislePositions } = layout;
+
+    // Edge barriers (left and right walls)
+    ctx.fillStyle = BARRIER_COLOR;
+    ctx.fillRect(0, 0, edgeMargin, h);
+    ctx.fillRect(w - edgeMargin, 0, edgeMargin, h);
+
+    // Edge highlights
+    ctx.fillStyle = BARRIER_HIGHLIGHT;
+    ctx.fillRect(edgeMargin - 4, 0, 4, h);
+    ctx.fillRect(w - edgeMargin, 0, 4, h);
+
+    // Aisles between sections
+    for (const aisle of aislePositions) {
+        // Aisle background
+        ctx.fillStyle = BARRIER_COLOR;
+        ctx.fillRect(aisle.start, 0, aisleWidth, h);
+
+        // Aisle edge highlights
+        ctx.fillStyle = BARRIER_HIGHLIGHT;
+        ctx.fillRect(aisle.start, 0, 3, h);
+        ctx.fillRect(aisle.end - 3, 0, 3, h);
+
+        // Center railing
+        ctx.fillStyle = RAILING_COLOR;
+        ctx.fillRect(aisle.start + aisleWidth / 2 - 2, 0, 4, h);
+    }
+
+    // Bottom railing (front of stand)
+    ctx.fillStyle = RAILING_COLOR;
+    ctx.fillRect(0, h - 8, w, 8);
+    ctx.fillStyle = BARRIER_HIGHLIGHT;
+    ctx.fillRect(0, h - 10, w, 2);
+}
+
 function shadeColor(hex, percent) {
     let r = parseInt(hex.slice(1, 3), 16);
     let g = parseInt(hex.slice(3, 5), 16);
@@ -96,8 +141,26 @@ export function initSupporters(canvasWidth, canvasHeight) {
     const spacing = 20;
     const cols = Math.floor(canvasWidth / (supporterW + spacing));
     const supporterH = 14 * PX;
-    const rows =  Math.floor(canvasHeight / (supporterH)); // Adjust rows dynamically for result canvas
-    const groundY = (canvasHeight) - supporterH ; 
+    const rows = Math.floor(canvasHeight / (supporterH));
+    const groundY = (canvasHeight) - supporterH;
+
+    // Calculate aisle positions directly (same formula as crowdBg.js)
+    const edgeMargin = 30;
+    const aisleWidth = 40;
+    const sectionDivisor = 500;
+    const numSections = Math.max(1, Math.floor(canvasWidth / sectionDivisor));
+    const numAisles = numSections - 1;
+    const availableWidth = canvasWidth - (2 * edgeMargin) - (numAisles * aisleWidth);
+    const sectionWidth = availableWidth / numSections;
+
+    const aislePositions = [];
+    for (let a = 0; a < numAisles; a++) {
+        const aisleStart = edgeMargin + (a + 1) * sectionWidth + a * aisleWidth;
+        aislePositions.push({
+            start: aisleStart,
+            end: aisleStart + aisleWidth
+        });
+    }
 
     // Use cached colors if available, otherwise fallback
     const primary = state.cachedColors?.primary || (state.selectedClub ? state.selectedClub.colors.primary : '#e5ff00');
@@ -110,11 +173,31 @@ export function initSupporters(canvasWidth, canvasHeight) {
     for (let row = 0; row < rows; row++) {
         const rowY = groundY - row * (14 * PX + 6);
         const rowScale = 0.7 + row * 0.15;
-        // Remove rowOffset for even distribution on result canvas
         const rowOffset = (row % 2 === 0 ? 0 : (supporterW + spacing) / 2);
         for (let col = 0; col < cols; col++) {
             const x = col * (supporterW + spacing) + rowOffset + startXOffset;
             if (x + supporterW > canvasWidth) continue;
+
+            // Skip supporters that touch barrier zones (clean edges)
+            const supporterLeft = x;
+            const supporterRight = x + supporterW;
+
+            // Skip if touching left edge barrier
+            if (supporterLeft < edgeMargin) continue;
+
+            // Skip if touching right edge barrier
+            if (supporterRight > canvasWidth - edgeMargin) continue;
+
+            // Skip if touching any aisle (with small buffer for clean edges)
+            let touchesAisle = false;
+            const aisleBuffer = 2;  // Small buffer to ensure clean separation
+            for (const aisle of aislePositions) {
+                if (supporterRight > (aisle.start - aisleBuffer) && supporterLeft < (aisle.end + aisleBuffer)) {
+                    touchesAisle = true;
+                    break;
+                }
+            }
+            if (touchesAisle) continue;
             const roll = Math.random();
             const hasFlag = roll < 0.02;
             const hasFlare = !hasFlag && roll < 0.05;
@@ -397,6 +480,8 @@ function drawFeverText(ctx, w, h, now, yPos) {
 
     ctx.shadowColor = primary;
     ctx.shadowBlur = 12 + pulse * 8;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
 
     ctx.font = 'bold 26px monospace';
     ctx.textAlign = 'center';
@@ -409,6 +494,8 @@ function drawFeverText(ctx, w, h, now, yPos) {
     ctx.fillStyle = `hsl(${hue}, 100%, 55%)`;
     ctx.fillText('FEVER!', 0, 0);
 
+    // Reset shadow
+    ctx.shadowColor = 'transparent';
     ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
     ctx.restore();
@@ -563,20 +650,22 @@ function spawnSmoke(s, jumpOffset, now) {
     if (s.flareColor === '#00ff44') { smokeR = 100; smokeG = 200; smokeB = 100; }
     else if (s.flareColor === '#ff2200' || s.flareColor === '#ff4400') { smokeR = 200; smokeG = 160; smokeB = 150; }
 
-    // Limit smoke particles for performance (reduced from 600)
+    // Limit smoke particles for performance
     if (state.smokeParticles.length > 300) return;
-    for (let i = 0; i < 2; i++) {
-        state.smokeParticles.push({
-            x: handX + px + (Math.random() - 0.5) * 6 * px,
-            y: flareY - 6 * px,
-            vx: (Math.random() - 0.5) * 1.0,
-            vy: -(0.3 + Math.random() * 0.7),
-            life: 1,
-            decay: 0.002 + Math.random() * 0.003,
-            size: 6 + Math.random() * 8,
-            r: smokeR, g: smokeG, b: smokeB
-        });
-    }
+
+    // Spawn 1 particle per call (reduced from 2) with 50% chance for less density
+    if (Math.random() < 0.5) return;
+
+    state.smokeParticles.push({
+        x: handX + px + (Math.random() - 0.5) * 6 * px,
+        y: flareY - 6 * px,
+        vx: (Math.random() - 0.5) * 1.0,
+        vy: -(0.3 + Math.random() * 0.7),
+        life: 1,
+        decay: 0.002 + Math.random() * 0.003,
+        size: 6 + Math.random() * 8,
+        r: smokeR, g: smokeG, b: smokeB
+    });
 }
 
 function updateAndDrawSmoke(ctx, w, h) {
@@ -645,6 +734,9 @@ export function drawGameVisuals() {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
+    // Draw stadium barriers (edges, aisles, railings)
+    drawStadiumBarriers(ctx, w, h);
+
     // Stadium railing
     if (state.crowdEmotion === 'deject') {
         ctx.fillStyle = 'rgba(100,100,100,0.08)';
@@ -706,12 +798,10 @@ export function drawGameVisuals() {
             drawFlag(ctx, s, jumpY, now);
         }
 
-        // Flares always visible; every flare always produces smoke
+        // Flares always visible with smoke
         if (s.hasFlare) {
             drawFlare(ctx, s, jumpY, now);
-            if (!state.settings.reducedEffects) {
-                spawnSmoke(s, jumpY, now);
-            }
+            spawnSmoke(s, jumpY, now);
         }
     }
 
@@ -794,6 +884,8 @@ export function drawGameVisuals() {
 
         ctx.shadowColor = state.feedbackColor;
         ctx.shadowBlur = state.feedbackText === 'PERFECT' ? 12 : 6;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
 
         ctx.globalAlpha = drawAlpha;
         ctx.font = `bold ${fontSize}px monospace`;
@@ -805,6 +897,8 @@ export function drawGameVisuals() {
         ctx.fillStyle = state.feedbackColor;
         ctx.fillText(state.feedbackText, 0, 0);
 
+        // Reset shadow
+        ctx.shadowColor = 'transparent';
         ctx.shadowBlur = 0;
         ctx.globalAlpha = 1;
         ctx.restore();
@@ -883,10 +977,16 @@ export function drawGameVisuals() {
         // Layer 2: colored fill with glow
         ctx.shadowColor = glowColor;
         ctx.shadowBlur = 10 + pulse * 6 + multiplier * 3;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
         ctx.fillStyle = comboColor;
         ctx.fillText(comboStr, 0, 0);
 
-        // Layer 3: multiplier suffix
+        // Turn off shadow before drawing multiplier
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+
+        // Layer 3: multiplier suffix (no shadow)
         if (multiStr) {
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 16px monospace';
@@ -895,7 +995,6 @@ export function drawGameVisuals() {
             ctx.fillText(multiStr, (comboW + multiW) / 2, 0);
         }
 
-        ctx.shadowBlur = 0;
         ctx.globalAlpha = 1;
         ctx.restore();
 
@@ -976,6 +1075,9 @@ export function drawAmbientCrowd() {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
+    // Draw stadium barriers (edges, aisles, railings)
+    drawStadiumBarriers(ctx, w, h);
+
     // Stadium railing
     if (isDeject) {
         ctx.fillStyle = 'rgba(100,100,100,0.08)';
@@ -1016,9 +1118,7 @@ export function drawAmbientCrowd() {
 
         if (isCelebrate && s.hasFlare) {
             drawFlare(ctx, s, jumpY, now);
-            if (!state.settings.reducedEffects) {
-                spawnSmoke(s, jumpY, now);
-            }
+            spawnSmoke(s, jumpY, now);
         }
     }
 

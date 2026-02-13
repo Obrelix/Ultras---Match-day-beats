@@ -9,27 +9,70 @@ let _resizeHandler = null;
 let _lastIdleFrame = 0;
 const IDLE_FRAME_INTERVAL = 50;  // ~20fps for idle animations (saves CPU)
 
+// Stadium layout configuration (shared with crowd.js via state)
+const STADIUM_CONFIG = {
+    edgeMargin: 30,
+    aisleWidth: 40,
+    sectionDivisor: 500,  // canvasWidth / this = numSections
+    barrierColor: '#1a1a2e',
+    barrierHighlight: '#2a2a4e',
+    railingColor: '#444466'
+};
+
 export function initCrowdBg() {
     const canvas = document.getElementById('crowd-bg');
     state.crowdBgCanvas = canvas;
     state.crowdBgCtx = canvas.getContext('2d');
 
-    function resizeCrowdCanvas() {
+    function resizeCanvases() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
         // Reinitialize supporters for the new dimensions
         state.supporters = [];
+        // Recalculate stadium layout
+        calculateStadiumLayout();
     }
-    resizeCrowdCanvas();
+    resizeCanvases();
 
     if (_resizeHandler) {
         window.removeEventListener('resize', _resizeHandler);
     }
-    _resizeHandler = resizeCrowdCanvas;
-    window.addEventListener('resize', resizeCrowdCanvas);
+    _resizeHandler = resizeCanvases;
+    window.addEventListener('resize', resizeCanvases);
 
     // Start the persistent animation loop
     requestAnimationFrame(crowdLoop);
+}
+
+// Calculate stadium layout (edges and aisle positions) - called on init/resize
+// The actual drawing is done in crowd.js each frame (after background gradient)
+function calculateStadiumLayout() {
+    const w = state.crowdBgCanvas.width;
+
+    const { edgeMargin, aisleWidth, sectionDivisor } = STADIUM_CONFIG;
+    const numSections = Math.max(1, Math.floor(w / sectionDivisor));
+    const numAisles = numSections - 1;
+    const availableWidth = w - (2 * edgeMargin) - (numAisles * aisleWidth);
+    const sectionWidth = availableWidth / numSections;
+
+    // Store layout in state for crowd.js to use
+    state.stadiumLayout = {
+        canvasWidth: w,
+        edgeMargin,
+        aisleWidth,
+        numSections,
+        sectionWidth,
+        aislePositions: []
+    };
+
+    // Calculate aisle positions
+    for (let a = 0; a < numAisles; a++) {
+        const aisleStart = edgeMargin + (a + 1) * sectionWidth + a * aisleWidth;
+        state.stadiumLayout.aislePositions.push({
+            start: aisleStart,
+            end: aisleStart + aisleWidth
+        });
+    }
 }
 
 function crowdLoop(timestamp) {

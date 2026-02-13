@@ -49,6 +49,7 @@ export const state = {
     canvasCtx: null,
     crowdBgCanvas: null,
     crowdBgCtx: null,
+    stadiumLayout: null,  // Set by crowdBg.js on init/resize
     crowdMode: 'idle',
     beatFlashIntensity: 0,
     waveformPeaks: null,
