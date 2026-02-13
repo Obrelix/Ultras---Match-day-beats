@@ -57,8 +57,7 @@ export const clubs = {
         badge: 'Logos/PAO_logo.svg',
         chants: [
             { id: 'eisai_i_zwi_mou', name: 'eisai_i_zwi_mou', audio: 'chants/Panathinaikos/eisai_i_zwi_mou.mp3', duration: 15 },
-            { id: 'kolisa', name: 'kolisa', audio: 'chants/Panathinaikos/kolisa.mp3', duration: 15 },
-            { id: 'sti_leofor_paizoume', name: 'sti_leofor_paizoume', audio: 'chants/Panathinaikos/sti_leofor_paizoume.mp3', duration: 15 },
+            { id: 'sti_leoforo_paizoume', name: 'sti_leoforo_paizoume', audio: 'chants/Panathinaikos/sti_leoforo_paizoume.mp3', duration: 15 },
             { id: 'sta_asteria_thelw_gipedo', name: 'sta_asteria_thelw_gipedo', audio: 'chants/Panathinaikos/sta_asteria_thelw_gipedo.mp3', duration: 15 },
             { id: 'se_gnorisa_apo_paidi_mikro', name: 'se_gnorisa_apo_paidi_mikro', audio: 'chants/Panathinaikos/se_gnorisa_apo_paidi_mikro.mp3', duration: 15 },
             { id: 'prasine_thee', name: 'prasine_thee', audio: 'chants/Panathinaikos/prasine_thee.mp3', duration: 15 },

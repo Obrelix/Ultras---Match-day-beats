@@ -50,7 +50,7 @@ export function initSupporters(canvasWidth, canvasHeight) {
             const roll = Math.random();
             const hasFlag = roll < 0.02;
             const hasFlare = !hasFlag && roll < 0.05;
-            const flareColors = ['#ff2200', '#00ff44', '#ff4400', '#ffcc00'];
+            const flareColors = [shadeColor(primary, -30), shadeColor(primary, 30), primary, secondary];
             // Varying flag sizes: small pennants to giant tifo flags
             let flagScale = 1;
             if (hasFlag) {
@@ -79,6 +79,10 @@ export function initSupporters(canvasWidth, canvasHeight) {
                 flagStripe: Math.random() < 0.4,
                 flagScale: flagScale,
                 flagHand: Math.random() < 0.5 ? 'left' : 'right',
+                // Flag motion: 0=side-swing, 1=circular, 2=figure-8, 3=pumping
+                flagMotion: Math.floor(Math.random() * 4),
+                flagSwingPhase: Math.random() * Math.PI * 2,
+                flagSwingSpeed: 0.7 + Math.random() * 0.6,
                 hasFlare: hasFlare,
                 flareColor: flareColors[Math.floor(Math.random() * flareColors.length)],
                 flareHand: Math.random() < 0.5 ? 'left' : 'right'
@@ -91,6 +95,44 @@ export function initSupporters(canvasWidth, canvasHeight) {
 function drawPixelRect(ctx, x, y, w, h, color, px) {
     ctx.fillStyle = color;
     ctx.fillRect(Math.floor(x), Math.floor(y), w * px, h * px);
+}
+
+// Calculate flag swing motion - used by both supporter body and flag drawing
+function getFlagSwing(s, now) {
+    const px = s.px;
+    const scale = s.flagScale || 1;
+    const motionType = s.flagMotion || 0;
+    const swingPhase = s.flagSwingPhase || 0;
+    const swingSpeed = s.flagSwingSpeed || 1;
+
+    const t = now / 1000 * swingSpeed + swingPhase;
+    const swingAmp = (8 + scale * 6) * px;
+    const vertAmp = (4 + scale * 3) * px;
+
+    let swingX = 0, swingY = 0, poleAngle = 0;
+
+    switch (motionType) {
+        case 0:  // Side-to-side swing
+            swingX = Math.sin(t * 2.5) * swingAmp;
+            poleAngle = Math.sin(t * 2.5) * 0.4;
+            break;
+        case 1:  // Circular motion
+            swingX = Math.sin(t * 2) * swingAmp * 0.7;
+            swingY = Math.cos(t * 2) * vertAmp * 0.5;
+            poleAngle = Math.sin(t * 2) * 0.35;
+            break;
+        case 2:  // Figure-8 motion
+            swingX = Math.sin(t * 2) * swingAmp * 0.8;
+            swingY = Math.sin(t * 4) * vertAmp * 0.4;
+            poleAngle = Math.sin(t * 2) * 0.35;
+            break;
+        case 3:  // Pumping up and down
+            swingY = Math.sin(t * 3) * vertAmp;
+            poleAngle = Math.sin(t * 6) * 0.15;
+            break;
+    }
+
+    return { swingX, swingY, poleAngle, t, swingSpeed };
 }
 
 function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType) {
@@ -123,7 +165,14 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType) {
 
 
     // Coreo types 1-3: synchronized sway; type 0: individual rocking
-    if (coreoType >= 1) {
+    // Flag carriers follow their flag motion for realistic body sway
+    if (s.hasFlag && (currentFrenzy || state.crowdEmotion === 'celebrate')) {
+        const flagSwing = getFlagSwing(s, now);
+        // Body sways less than the flag pole - about 40% of flag motion
+        currentRockX = flagSwing.swingX * 0.4;
+        // Also shift Y slightly for pumping/circular motions
+        y += Math.floor(flagSwing.swingY * 0.3);
+    } else if (coreoType >= 1) {
         currentRockX = Math.sin(now / 200) * 5;
     } else if (currentFrenzy) {
         currentRockX = Math.sin(now / 120 + s.jumpPhase) * 3;
@@ -165,11 +214,11 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType) {
 
     // Tifo coreo (type 3): coordinated shirt color wave
     let shirtColor = s.shirtColor;
-    if (coreoType === 3) {
-        const primary = state.selectedClub ? state.selectedClub.colors.primary : '#006633';
-        const secondary = state.selectedClub ? state.selectedClub.colors.secondary : '#FFFFFF';
-        shirtColor = Math.sin(now / 400 + s.x / 40 + s.row * 1.5) > 0 ? primary : secondary;
-    }
+    // if (coreoType === 3) {
+    //     const primary = state.selectedClub ? state.selectedClub.colors.primary : '#006633';
+    //     const secondary = state.selectedClub ? state.selectedClub.colors.secondary : '#FFFFFF';
+    //     shirtColor = Math.sin(now / 400 + s.x / 40 + s.row * 1.5) > 0 ? primary : secondary;
+    // }
     // Desaturate slightly if dejected
     if (state.crowdEmotion === 'deject') {
         // This is a simplistic way to desaturate pixel art, might need refinement
@@ -182,7 +231,7 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType) {
     drawPixelRect(ctx, x + 2 * px, y + 6 * px, 6, 5, shirtColor, px);
 
     // Arms
-    if (coreoType === 2 && !s.hasFlag && !s.hasFlare) {
+    if ((coreoType === 2 ||coreoType === 3) && !s.hasFlag && !s.hasFlare) {
         // Scarf coreo: arms straight up holding scarf taut
         drawPixelRect(ctx, x - px, y + 1 * px, 2, 5, s.skinColor, px);
         drawPixelRect(ctx, x + 9 * px, y + 1 * px, 2, 5, s.skinColor, px);
@@ -352,8 +401,6 @@ function drawFeverText(ctx, w, h, now, yPos) {
 function drawFlag(ctx, s, jumpOffset, now) {
     const px = s.px;
     const baseX = Math.floor(s.x);
-    const rockX = Math.sin(now / 120 + s.jumpPhase) * 3;
-    const x = Math.floor(baseX + rockX);
     const y = Math.floor(s.baseY + jumpOffset);
 
     const primary = state.selectedClub ? state.selectedClub.colors.primary : '#006633';
@@ -361,44 +408,77 @@ function drawFlag(ctx, s, jumpOffset, now) {
 
     const scale = s.flagScale || 1;
 
+    // Get swing motion from shared helper
+    const { swingX, swingY, poleAngle, t, swingSpeed } = getFlagSwing(s, now);
+
+    const x = Math.floor(baseX + swingX);
+
     // Pole starts from the supporter's raised hand
     const handX = (s.flagHand === 'left') ? x + px : x + 8 * px;
-    const handY = y + 3 * px;
+    const handY = y + 3 * px + swingY;
 
     // Longer pole for bigger flags
     const poleLen = Math.floor((12 + scale * 8) * px);
-    const poleTop = handY - poleLen;
 
-    // Draw pole (thicker for giant flags)
+    // Draw pole with angle (as a line of rectangles for pixel effect)
     const poleW = scale >= 2.5 ? 2 * px : px;
-    ctx.fillStyle = '#999999';
-    ctx.fillRect(handX, poleTop, poleW, poleLen);
+    ctx.fillStyle = '#888888';
+
+    const poleSteps = Math.floor(poleLen / px);
+    for (let i = 0; i < poleSteps; i++) {
+        const progress = i / poleSteps;
+        const segX = handX + Math.sin(poleAngle) * poleLen * progress;
+        const segY = handY - Math.cos(poleAngle) * poleLen * progress;
+        ctx.fillRect(Math.floor(segX), Math.floor(segY), poleW, px + 1);
+    }
+
+    // Calculate pole tip position
+    const poleTipX = handX + Math.sin(poleAngle) * poleLen;
+    const poleTipY = handY - Math.cos(poleAngle) * poleLen;
 
     // Flag fabric scales with flagScale
     const flagW = Math.floor((6 + scale * 5) * px);
     const flagH = Math.floor((4 + scale * 3) * px);
 
-    // Larger flags wave more slowly and dramatically
+    // Fabric wave - ripples along the flag
     const waveSpeed = 180 + scale * 60;
     const wavePhase = now / waveSpeed + s.jumpPhase;
-    const waveAmp = 2 + scale * 2;
+    const baseWaveAmp = 2 + scale * 1.5;
+    const swingVelocity = Math.abs(Math.cos(t * 2.5)) * swingSpeed;
+    const waveAmp = baseWaveAmp + swingVelocity * 2;
 
-    // Flag extends from the pole top
-    for (let col = 0; col < flagW; col += px) {
-        const t = col / flagW;
-        const wave = Math.sin(wavePhase + t * 3.5) * (waveAmp + t * waveAmp * 1.5);
-        const sliceX = handX + poleW + col;
-        const sliceY = poleTop + wave;
+    // Flag attaches along the pole from tip downward
+    // Draw as vertical columns, each column attached at a point on the pole
+    const numCols = Math.ceil(flagW / px);
 
+    for (let col = 0; col < numCols; col++) {
+        const colT = col / numCols;  // 0 at pole, 1 at free edge
+
+        // Attachment point: first column at pole tip, slides down pole for visual connection
+        // But for simplicity, attach entire left edge at pole tip level
+        const attachX = poleTipX + poleW + col * px;
+
+        // Wave increases toward free edge (right side)
+        const wave = Math.sin(wavePhase + colT * 4) * (waveAmp * colT * 2);
+
+        // The flag follows the pole tilt - more at attached edge, less at free edge
+        const tiltFollow = poleAngle * (1 - colT * 0.7);
+        const tiltOffsetY = -Math.sin(tiltFollow) * col * px * 0.3;
+
+        const sliceX = Math.floor(attachX);
+        const sliceY = Math.floor(poleTipY + wave + tiltOffsetY);
+
+        // Draw main flag color as solid rectangle for this column
         ctx.fillStyle = s.flagColor;
-        ctx.fillRect(sliceX, sliceY, px, flagH);
+        ctx.fillRect(sliceX, sliceY, px + 1, flagH);  // +1 to prevent gaps
 
+        // Draw stripe if flag has one (middle horizontal band)
         if (s.flagStripe) {
             const stripeColor = s.flagColor === primary ? secondary : primary;
             ctx.fillStyle = stripeColor;
-            const stripeY = Math.floor(flagH * 0.45);
-            const stripeH = Math.max(px, Math.floor(flagH * 0.2));
-            ctx.fillRect(sliceX, sliceY + stripeY, px, stripeH);
+            const stripeY = Math.floor(flagH * 0.4);
+            const stripeH = Math.max(px, Math.floor(flagH * 0.25));
+            ctx.fillRect(sliceX, sliceY + stripeY, px + 1, stripeH);
         }
     }
 }
