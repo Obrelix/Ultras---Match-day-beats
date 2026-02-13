@@ -32,10 +32,21 @@ body {
     overflow-y: auto;
 }
 
+#crowd-bg {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+}
+
 #game-container {
     width: 100%;
     padding: 20px;
     position: relative;
+    z-index: 1;
 }
 
 /* Screen management */
@@ -45,6 +56,20 @@ body {
     align-items: center;
     justify-content: center;
     animation: fadeIn 0.3s ease;
+}
+
+.screen::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(15, 15, 26, 0.75);
+    z-index: -1;
+    pointer-events: none;
+}
+
+#gameplay-screen::before {
+    display: none;
 }
 
 .screen.active {
@@ -287,24 +312,13 @@ body {
     width: 100%;
     max-width: 1200px;
     height: 100px;
-    background: #1a1a2e;
-    border-radius: 15px 15px 0 0;
+    background: rgba(26, 26, 46, 0.85);
+    border-radius: 15px;
     border: 3px solid rgba(255, 255, 255, 0.1);
-    border-bottom: none;
     margin-top: 8px;
     transition: border-color 0.1s ease, box-shadow 0.1s ease;
 }
 
-#game-visual-canvas {
-    width: 100%;
-    max-width: 1200px;
-    height: 300px;
-    background: #0f0f1a;
-    border-radius: 0 0 15px 15px;
-    border: 3px solid rgba(255, 255, 255, 0.1);
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
-    margin-bottom: 10px;
-}
 #game-canvas.beat-pulse {
     animation: canvasPulse 0.15s ease-out;
 }
@@ -335,32 +349,24 @@ body {
     100% { transform: scale(1); border-color: rgba(255, 255, 255, 0.1); box-shadow: none; }
 }
 
-#game-visual-canvas.visual-canvas-beat-pulse {
-    animation: visualCanvasPulse 0.15s ease-out;
-}
-
-@keyframes visualCanvasPulse {
-    0% { box-shadow: 0 0 10px var(--primary-color); }
-    50% { box-shadow: 0 0 25px var(--primary-color), inset 0 0 10px var(--primary-color); }
-    100% { box-shadow: none; }
-}
-
 #scoreboard {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 30px;
+    gap: 20px;
     width: 100%;
-    margin-top: 6px;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 10px;
 }
 
 .score-box {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 15px 30px;
-    border-radius: 15px;
-    min-width: 150px;
+    padding: 10px 24px;
+    border-radius: 12px;
+    min-width: 130px;
 }
 
 #player-score-box {
@@ -374,11 +380,11 @@ body {
 }
 
 .score-badge {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     object-fit: contain;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
 }
 
 .score-badge[src=""] {
@@ -386,21 +392,65 @@ body {
 }
 
 .score-label {
-    font-size: 0.9rem;
+    font-size: 0.8rem;
     text-transform: uppercase;
     letter-spacing: 2px;
     opacity: 0.8;
 }
 
 .score-value {
-    font-size: 2.5rem;
+    font-size: 2rem;
     font-weight: bold;
 }
 
+#scoreboard-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
 #vs-divider {
-    font-size: 1.5rem;
+    font-size: 1.3rem;
     font-weight: bold;
     color: var(--accent-gold);
+}
+
+#match-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--accent-gold);
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 0.85rem;
+    font-weight: bold;
+}
+
+#match-info.hidden {
+    display: none;
+}
+
+#match-score-player,
+#match-score-ai {
+    font-size: 1.1rem;
+    color: var(--accent-gold);
+}
+
+.match-score-sep {
+    color: var(--text-muted);
+}
+
+.match-score-divider {
+    color: rgba(255, 255, 255, 0.2);
+    margin: 0 2px;
+}
+
+#match-half-label,
+#match-chant-progress {
+    color: var(--text-muted);
+    font-size: 0.8rem;
 }
 
 #chant-display {
@@ -579,46 +629,6 @@ body {
     font-size: 2rem;
     font-weight: bold;
     color: var(--accent-gold);
-}
-
-/* Match Scoreboard (in-game) */
-#match-scoreboard {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    background: rgba(0, 0, 0, 0.6);
-    border: 1px solid var(--accent-gold);
-    border-radius: 25px;
-    padding: 6px 20px;
-    font-size: 0.95rem;
-    font-weight: bold;
-    margin-bottom: 5px;
-}
-
-#match-scoreboard.hidden {
-    display: none;
-}
-
-#match-score-player,
-#match-score-ai {
-    font-size: 1.3rem;
-    color: var(--accent-gold);
-}
-
-.match-score-sep {
-    color: var(--text-muted);
-}
-
-.match-score-divider {
-    color: rgba(255, 255, 255, 0.2);
-    margin: 0 4px;
-}
-
-#match-half-label,
-#match-chant-progress {
-    color: var(--text-muted);
-    font-size: 0.85rem;
 }
 
 /* Chant Result Screen */
@@ -1116,21 +1126,17 @@ body {
         height: 80px;
     }
 
-    #game-visual-canvas {
-        height: 200px;
-    }
-
     .score-box {
-        padding: 10px 20px;
-        min-width: 120px;
+        padding: 8px 16px;
+        min-width: 110px;
     }
 
     .score-value {
-        font-size: 2rem;
+        font-size: 1.8rem;
     }
 
     #scoreboard {
-        gap: 20px;
+        gap: 14px;
     }
 
     #club-grid {
@@ -1178,14 +1184,8 @@ body {
 
     #game-canvas {
         height: 70px;
-        border-radius: 10px 10px 0 0;
+        border-radius: 10px;
         margin-top: 8px;
-    }
-
-    #game-visual-canvas {
-        height: 150px;
-        border-radius: 0 0 10px 10px;
-        margin-bottom: 6px;
     }
 
     #title-screen h1 {
@@ -1271,32 +1271,48 @@ body {
 
     /* Gameplay */
     #scoreboard {
-        gap: 12px;
+        gap: 8px;
     }
 
     .score-badge {
-        width: 22px;
-        height: 22px;
-        margin-bottom: 2px;
+        width: 18px;
+        height: 18px;
+        margin-bottom: 1px;
     }
 
     .score-box {
-        padding: 8px 14px;
-        min-width: 90px;
+        padding: 6px 10px;
+        min-width: 75px;
         border-radius: 10px;
     }
 
     .score-label {
-        font-size: 0.75rem;
+        font-size: 0.65rem;
         letter-spacing: 1px;
     }
 
     .score-value {
-        font-size: 1.5rem;
+        font-size: 1.3rem;
     }
 
     #vs-divider {
-        font-size: 1.1rem;
+        font-size: 0.9rem;
+    }
+
+    #match-info {
+        padding: 3px 10px;
+        font-size: 0.7rem;
+        gap: 4px;
+    }
+
+    #match-score-player,
+    #match-score-ai {
+        font-size: 0.9rem;
+    }
+
+    #match-half-label,
+    #match-chant-progress {
+        font-size: 0.65rem;
     }
 
     #current-chant-name {
@@ -1306,18 +1322,6 @@ body {
     #input-hint {
         font-size: 0.8rem;
         bottom: 8px;
-    }
-
-    /* Match scoreboard */
-    #match-scoreboard {
-        padding: 4px 12px;
-        font-size: 0.8rem;
-        gap: 6px;
-    }
-
-    #match-score-player,
-    #match-score-ai {
-        font-size: 1.1rem;
     }
 
     /* Match Day intro */
@@ -1504,11 +1508,6 @@ body {
         margin-top: 4px;
     }
 
-    #game-visual-canvas {
-        height: 120px;
-        margin-bottom: 4px;
-    }
-
     #chant-display {
         margin-bottom: 4px;
     }
@@ -1518,41 +1517,40 @@ body {
     }
 
     #scoreboard {
-        gap: 12px;
-        margin-top: 2px;
+        gap: 8px;
     }
 
     .score-box {
-        padding: 4px 12px;
-        min-width: 80px;
+        padding: 4px 10px;
+        min-width: 70px;
     }
 
     .score-value {
-        font-size: 1.3rem;
+        font-size: 1.1rem;
     }
 
     .score-label {
-        font-size: 0.7rem;
+        font-size: 0.65rem;
     }
 
     .score-badge {
-        width: 18px;
-        height: 18px;
+        width: 16px;
+        height: 16px;
         margin-bottom: 1px;
     }
 
     #vs-divider {
-        font-size: 0.9rem;
+        font-size: 0.8rem;
+    }
+
+    #match-info {
+        padding: 2px 8px;
+        font-size: 0.65rem;
+        gap: 4px;
     }
 
     #input-hint {
         display: none;
-    }
-
-    #match-scoreboard {
-        padding: 3px 10px;
-        font-size: 0.75rem;
-        margin-bottom: 2px;
     }
 
     /* Non-gameplay screens: tighten spacing */

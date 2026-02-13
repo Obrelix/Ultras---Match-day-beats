@@ -111,9 +111,6 @@ export function handleInput() {
         elements.gameCanvas.classList.remove('beat-pulse');
         void elements.gameCanvas.offsetWidth;
         elements.gameCanvas.classList.add('beat-pulse');
-        elements.gameVisualCanvas.classList.remove('visual-canvas-beat-pulse');
-        void elements.gameVisualCanvas.offsetWidth;
-        elements.gameVisualCanvas.classList.add('visual-canvas-beat-pulse');
         simulateAI();
     } else {
         state.activeBeat = null;

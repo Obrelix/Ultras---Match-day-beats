@@ -47,7 +47,9 @@ export const state = {
 
     // Visualizer
     canvasCtx: null,
-    gameVisualCtx: null,
+    crowdBgCanvas: null,
+    crowdBgCtx: null,
+    crowdMode: 'idle',
     beatFlashIntensity: 0,
     waveformPeaks: null,
     beatResults: [],
@@ -95,8 +97,6 @@ export const state = {
     aiGoals: 0,
     chantResults: [],
     crowdEmotion: 'neutral',
-    chantResultAnimationId: null, // New: To control the chant result screen animation
-    chantResultCtx: null, // New: Context for the chant result visual canvas
 };
 
 export function resetGameState() {
@@ -120,7 +120,6 @@ export function resetGameState() {
     state.beatHitEffects = [];
     state.hitParticles = [];
 
-    state.supporters = [];
     state.crowdBeatTime = 0;
     state.frenzyParticles = [];
     state.smokeParticles = [];
@@ -133,9 +132,7 @@ export function resetGameState() {
     state.comboBumpTime = 0;
     state.frenzyStartTime = 0;
     state.wasFrenzy = false;
-    state.crowdEmotion = 'neutral'; // Reset crowd emotion
-    state.chantResultAnimationId = null; // Reset chant result animation ID
-    state.chantResultCtx = null; // Reset chant result canvas context
+    state.crowdEmotion = 'neutral';
 }
 
 export function resetMatchState() {

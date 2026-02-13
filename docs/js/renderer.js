@@ -12,20 +12,10 @@ export function initVisualizer() {
     const canvas = elements.gameCanvas;
     state.canvasCtx = canvas.getContext('2d');
 
-    const visualCanvas = elements.gameVisualCanvas;
-    state.gameVisualCtx = visualCanvas.getContext('2d');
-
     function resizeCanvas() {
         const rect = canvas.getBoundingClientRect();
         canvas.width = Math.floor(rect.width);
         canvas.height = Math.floor(rect.height);
-
-        const visualRect = visualCanvas.getBoundingClientRect();
-        visualCanvas.width = Math.floor(visualRect.width);
-        visualCanvas.height = Math.floor(visualRect.height);
-
-        // Reset crowd so it reinitializes with the new column count
-        state.supporters = [];
 
         if (state.audioBuffer) {
             computeWaveformPeaks();

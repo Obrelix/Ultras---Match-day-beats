@@ -6,7 +6,8 @@ import { GameState, clubs, MATCHDAY } from './config.js';
 import { state } from './state.js';
 import { stopAudio } from './audio.js';
 import { saveHighScore, loadHighScore, saveMatchdayStats, loadMatchdayStats } from './storage.js';
-import { setCrowdEmotion, renderChantResultCrowd, stopChantResultAnimation } from './crowd.js';
+import { setCrowdEmotion } from './crowd.js';
+import { setCrowdMode } from './crowdBg.js';
 
 // DOM Elements (module runs after DOM is parsed due to type="module")
 export const screens = {
@@ -38,7 +39,6 @@ export const elements = {
     aiScoreLabel: document.getElementById('ai-score-label'),
     aiScoreBox: document.getElementById('ai-score-box'),
     currentChantName: document.getElementById('current-chant-name'),
-    gameVisualCanvas: document.getElementById('game-visual-canvas'),
     gameCanvas: document.getElementById('game-canvas'),
     playerScoreBox: document.getElementById('player-score-box'),
     finalPlayerScore: document.getElementById('final-player-score'),
@@ -63,8 +63,8 @@ export const elements = {
     matchupRivalName: document.getElementById('matchup-rival-name'),
     kickoffBtn: document.getElementById('kickoff-btn'),
 
-    // Match scoreboard (in-game)
-    matchScoreboard: document.getElementById('match-scoreboard'),
+    // Match info (in-game, matchday only)
+    matchInfo: document.getElementById('match-info'),
     matchScorePlayer: document.getElementById('match-score-player'),
     matchScoreAi: document.getElementById('match-score-ai'),
     matchHalfLabel: document.getElementById('match-half-label'),
@@ -75,7 +75,6 @@ export const elements = {
     chantResultAiGoals: document.getElementById('chant-result-ai-goals'),
     chantResultMessage: document.getElementById('chant-result-message'),
     chantResultDetail: document.getElementById('chant-result-detail'),
-    chantResultVisualCanvas: document.getElementById('chant-result-visual-canvas'), // Add this line
     nextChantBtn: document.getElementById('next-chant-btn'),
 
     // Halftime
@@ -254,6 +253,18 @@ export function endGame() {
     elements.resultMessage.className = resultClass;
     elements.resultMessage.textContent = resultText;
 
+    // Set crowd emotion/mode for results screen
+    if (resultClass === 'win') {
+        setCrowdEmotion('celebrate');
+        setCrowdMode('celebrate');
+    } else if (resultClass === 'lose') {
+        setCrowdEmotion('deject');
+        setCrowdMode('deject');
+    } else {
+        setCrowdEmotion('neutral');
+        setCrowdMode('idle');
+    }
+
     elements.statPerfect.textContent = state.playerStats.perfect;
     elements.statGood.textContent = state.playerStats.good;
     elements.statOk.textContent = state.playerStats.ok;
@@ -327,18 +338,20 @@ function showChantResult(playerScored, aiScored) {
     else if (aiScored) msgEl.classList.add('ai-goal');
     else msgEl.classList.add('no-goal');
 
-    // Set crowd emotion based on game outcome
+    // Set crowd emotion and mode based on game outcome
     if (playerScored && !aiScored) {
         setCrowdEmotion('celebrate');
+        setCrowdMode('celebrate');
     } else if (!playerScored && aiScored) {
         setCrowdEmotion('deject');
+        setCrowdMode('deject');
     } else if (playerScored && aiScored) {
-        setCrowdEmotion('celebrate'); // Both scored, prioritize player's goal for positive feedback
-    } else { // !playerScored && !aiScored
-        setCrowdEmotion('deject'); // No one scored, can be seen as a missed opportunity
+        setCrowdEmotion('celebrate');
+        setCrowdMode('celebrate');
+    } else {
+        setCrowdEmotion('deject');
+        setCrowdMode('deject');
     }
-
-    renderChantResultCrowd(playerScored, aiScored, elements.gameVisualCanvas.width, elements.gameVisualCanvas.height); // Call the new rendering function with dimensions
 
     const prevResult = state.chantResults[state.chantResults.length - 1];
     elements.chantResultDetail.textContent =
@@ -349,20 +362,17 @@ function showChantResult(playerScored, aiScored) {
     if (state.currentChantIndex === MATCHDAY.CHANTS_PER_HALF) {
         btnText = 'HALF TIME';
         btnAction = () => {
-            stopChantResultAnimation(); // Stop animation
             state.currentHalf = 2;
             showHalftime();
         };
     } else if (state.currentChantIndex === MATCHDAY.CHANTS_PER_HALF * 2) {
         btnText = 'FULL TIME';
         btnAction = () => {
-            stopChantResultAnimation(); // Stop animation
             showFulltime();
         };
     } else {
         btnText = 'NEXT CHANT';
         btnAction = () => {
-            stopChantResultAnimation(); // Stop animation
             if (_startNextChant) _startNextChant();
         };
     }
@@ -374,7 +384,7 @@ function showChantResult(playerScored, aiScored) {
 }
 
 export function showHalftime() {
-    stopChantResultAnimation(); // Stop any active chant result animation
+    setCrowdMode('idle');
     elements.halftimePlayerGoals.textContent = state.playerGoals;
     elements.halftimeAiGoals.textContent = state.aiGoals;
 
@@ -388,7 +398,6 @@ export function showHalftime() {
 }
 
 export function showFulltime() {
-    stopChantResultAnimation(); // Stop any active chant result animation
     elements.fulltimePlayerGoals.textContent = state.playerGoals;
     elements.fulltimeAiGoals.textContent = state.aiGoals;
 
@@ -406,6 +415,18 @@ export function showFulltime() {
 
     elements.fulltimeResultMessage.className = resultClass;
     elements.fulltimeResultMessage.textContent = resultText;
+
+    // Set crowd mode based on outcome
+    if (resultClass === 'win') {
+        setCrowdEmotion('celebrate');
+        setCrowdMode('celebrate');
+    } else if (resultClass === 'lose') {
+        setCrowdEmotion('deject');
+        setCrowdMode('deject');
+    } else {
+        setCrowdEmotion('neutral');
+        setCrowdMode('idle');
+    }
 
     // Full match summary
     const lines = state.chantResults.map((r, i) => {

@@ -8,7 +8,7 @@ import { initAudio, loadAudio, playAudio, stopAudio, setVolume, setSFXVolume } f
 import { analyzeBeats } from './beatDetection.js';
 import { handleInput, registerMiss, simulateAI } from './input.js';
 import { initVisualizer, computeWaveformPeaks, buildWaveformCache, drawVisualizer } from './renderer.js';
-import { drawGameVisuals, stopChantResultAnimation } from './crowd.js';
+import { initCrowdBg, setCrowdMode, updateCrowdClub } from './crowdBg.js';
 import {
     showScreen, applyClubTheme, renderClubSelection, renderChantSelection,
     renderMatchdayIntro, updateMatchScoreboard, updateScoreboardTeams,
@@ -34,6 +34,7 @@ state.activeTiming = { PERFECT: preset.PERFECT, GOOD: preset.GOOD, OK: preset.OK
 function selectClub(club) {
     state.selectedClub = club;
     applyClubTheme(club);
+    updateCrowdClub();
     renderChantSelection(selectChant);
     showScreen('chantSelect');
 }
@@ -50,6 +51,7 @@ function selectChant(chant) {
 function selectClubMatchday(club) {
     state.selectedClub = club;
     applyClubTheme(club);
+    updateCrowdClub();
     resetMatchState();
     state.gameMode = 'matchday';
 
@@ -87,16 +89,15 @@ function selectClubMatchday(club) {
 // ============================================
 
 async function startMatchdayChant() {
-    stopChantResultAnimation(); // Stop any lingering result animation
-
     const chant = state.matchChants[state.currentChantIndex];
     state.selectedChant = chant;
 
     showScreen('gameplay');
+    setCrowdMode('gameplay');
     updateScoreboardTeams();
 
-    // Show & update match scoreboard
-    elements.matchScoreboard.classList.remove('hidden');
+    // Show & update match info
+    elements.matchInfo.classList.remove('hidden');
     updateMatchScoreboard();
 
     resetGameState();
@@ -152,12 +153,12 @@ setMatchdayChantStarter(startMatchdayChant);
 // ============================================
 
 async function startGame() {
-    stopChantResultAnimation(); // Stop any lingering result animation
     showScreen('gameplay');
+    setCrowdMode('gameplay');
     updateScoreboardTeams();
 
-    // Hide match scoreboard in practice mode
-    elements.matchScoreboard.classList.add('hidden');
+    // Hide match info in practice mode
+    elements.matchInfo.classList.add('hidden');
 
     resetGameState();
 
@@ -269,8 +270,7 @@ function gameLoop() {
         state.activeBeat = null;
     }
 
-    // Draw game visuals and audio visualizer
-    drawGameVisuals();
+    // Draw audio visualizer (crowd is drawn by persistent crowdBg loop)
     drawVisualizer();
 
     state.gameLoopId = requestAnimationFrame(gameLoop);
@@ -295,10 +295,6 @@ function triggerBeat() {
     elements.gameCanvas.classList.remove('beat-pulse');
     void elements.gameCanvas.offsetWidth;
     elements.gameCanvas.classList.add('beat-pulse');
-
-    elements.gameVisualCanvas.classList.remove('visual-canvas-beat-pulse');
-    void elements.gameVisualCanvas.offsetWidth;
-    elements.gameVisualCanvas.classList.add('visual-canvas-beat-pulse');
     state.beatFlashIntensity = 1;
 
     // Trigger crowd jump
@@ -340,6 +336,7 @@ function quitToMenu() {
     state.isPaused = false;
     cancelAnimationFrame(state.gameLoopId);
     stopAudio();
+    setCrowdMode('idle');
     // Clean up countdown overlay if still present
     const countdownEl = document.getElementById('countdown-overlay');
     if (countdownEl) countdownEl.remove();
@@ -510,6 +507,9 @@ elements.reducedEffectsToggle.checked = state.settings.reducedEffects;
 document.querySelectorAll('.difficulty-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.difficulty === state.settings.difficulty);
 });
+
+// Initialize persistent crowd background canvas
+initCrowdBg();
 
 // Initialize on load
 showScreen('title');
