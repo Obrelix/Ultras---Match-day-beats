@@ -7,6 +7,349 @@ import { elements } from './ui.js';
 import { getComboMultiplier } from './input.js';
 
 // ============================================
+// Coreo Configuration System
+// Each coreo type defines its unique crowd behavior
+// To add a new coreo: add an entry here and implement any new item/overlay renderers
+// ============================================
+
+const COREO_TYPES = {
+    // Type 0: Default - individual movement, no special items
+    default: {
+        id: 0,
+        name: 'default',
+        comboMin: 0,
+        swayType: 'individual',      // 'individual' | 'synchronized' | 'flag-linked'
+        swaySpeed: 120,              // ms per cycle (lower = faster)
+        swayAmplitude: 3,            // pixels
+        armsPosition: 'normal',      // 'normal' | 'up' | 'scarf-hold'
+        jumpPattern: 'default',      // 'default' | 'wave' | 'synchronized'
+        showItem: null,              // null | 'scarf' | 'placard' | custom string
+        showOverlay: false,          // Whether to show tifo/banner overlay
+        overlayRenderer: null        // Function name or null
+    },
+
+    // Type 1: Wave - row-based synchronized wave jumping
+    wave: {
+        id: 1,
+        name: 'wave',
+        comboMin: 10,
+        swayType: 'synchronized',
+        swaySpeed: 200,
+        swayAmplitude: 5,
+        armsPosition: 'normal',
+        jumpPattern: 'wave',
+        waveRowDelay: 1.2566,        // ~0.4π - phase offset per row
+        showItem: null,
+        showOverlay: false,
+        overlayRenderer: null
+    },
+
+    // Type 2: Scarf-Up - arms stretched holding scarves above heads
+    scarfUp: {
+        id: 2,
+        name: 'scarfUp',
+        comboMin: 20,
+        swayType: 'synchronized',
+        swaySpeed: 200,
+        swayAmplitude: 5,
+        armsPosition: 'scarf-hold',
+        jumpPattern: 'default',
+        showItem: 'scarf',
+        scarfWaveSpeed: 300,         // ms per wave cycle
+        scarfWaveAmplitude: 2,       // pixels
+        showOverlay: false,
+        overlayRenderer: null
+    },
+
+    // Type 3: Tifo - placards forming patterns + badge overlay
+    tifo: {
+        id: 3,
+        name: 'tifo',
+        comboMin: 30,
+        swayType: 'synchronized',
+        swaySpeed: 200,
+        swayAmplitude: 5,
+        armsPosition: 'scarf-hold',
+        jumpPattern: 'default',
+        showItem: 'placard',
+        placardWaveSpeed: 600,       // ms per wave cycle
+        placardColorWaveSpeed: 400,  // ms for color alternation
+        showOverlay: true,
+        overlayRenderer: 'drawTifoOverlay'
+    },
+
+    // Type 4: Bounce - synchronized pogo jumping with pumping arms
+    bounce: {
+        id: 4,
+        name: 'bounce',
+        comboMin: 40,
+        swayType: 'synchronized',
+        swaySpeed: 100,              // Faster sway
+        swayAmplitude: 8,            // Bigger amplitude
+        armsPosition: 'pump',        // Pumping arms up and down
+        jumpPattern: 'pogo',         // High synchronized bouncing
+        pogoHeight: 28,              // Base jump height (higher than normal)
+        pogoSpeed: 150,              // ms per bounce cycle
+        showItem: null,
+        showOverlay: false,
+        overlayRenderer: null
+    },
+
+    // Type 5: Clap - synchronized clapping with intense energy
+    clap: {
+        id: 5,
+        name: 'clap',
+        comboMin: 50,
+        swayType: 'synchronized',
+        swaySpeed: 80,               // Even faster
+        swayAmplitude: 6,
+        armsPosition: 'clap',        // Clapping hands together
+        jumpPattern: 'pogo',
+        pogoHeight: 22,
+        pogoSpeed: 200,              // Synced with clap rhythm
+        clapSpeed: 200,              // ms per clap cycle
+        showItem: null,
+        showOverlay: false,
+        overlayRenderer: null
+    },
+
+    // Type 6: Inferno - maximum intensity, fire and chaos
+    inferno: {
+        id: 6,
+        name: 'inferno',
+        comboMin: 60,
+        swayType: 'synchronized',
+        swaySpeed: 60,               // Very fast swaying
+        swayAmplitude: 12,           // Maximum sway amplitude
+        armsPosition: 'scarf-hold',
+        jumpPattern: 'pogo',
+        pogoHeight: 35,              // Maximum jump height
+        pogoSpeed: 100,              // Fastest bounce
+        showItem: 'banner',          // Large banners waving
+        bannerWaveSpeed: 120,
+        bannerHeight: 20,
+        showOverlay: true,
+        overlayRenderer: 'drawInfernoOverlay'
+    }
+};
+
+// Order of coreo types for initial progression (0-59)
+const COREO_PROGRESSION = ['default', 'wave', 'scarfUp', 'tifo', 'bounce', 'clap'];
+
+// High-intensity cycle (60+): cycles between scarfUp, tifo, bounce, clap
+const COREO_HIGH_CYCLE = ['scarfUp', 'tifo', 'bounce', 'clap'];
+
+// Get current coreo config based on combo count
+// 0-9=default, 10-19=wave, 20-29=scarfUp, 30-39=tifo, 40-49=bounce, 50-59=clap
+// 60+: cycles between scarfUp/tifo/bounce/clap
+// 100, 200, 300... (every 100): INFERNO special
+function getCoreoConfig(combo) {
+    // Special: Inferno triggers at every 100 combo milestone
+    if (combo >= 100 && combo % 100 < 10) {
+        return COREO_TYPES.inferno;
+    }
+
+    // Initial progression (0-59)
+    if (combo < 60) {
+        const index = Math.floor(combo / 10);
+        return COREO_TYPES[COREO_PROGRESSION[index]];
+    }
+
+    // High-intensity cycling (60+): rotate through scarfUp, tifo, bounce, clap
+    const cycleIndex = Math.floor((combo - 60) / 10) % 4;
+    return COREO_TYPES[COREO_HIGH_CYCLE[cycleIndex]];
+}
+
+// Get coreo type ID (for backwards compatibility)
+function getCoreoType(combo) {
+    return getCoreoConfig(combo).id;
+}
+
+// Calculate sway offset based on coreo config
+function getCoreoSway(coreo, supporter, now, preCalc = {}) {
+    const { swayType, swaySpeed, swayAmplitude } = coreo;
+
+    switch (swayType) {
+        case 'synchronized':
+            // All supporters move together
+            const sinVal = preCalc.sinSway !== undefined
+                ? preCalc.sinSway
+                : Math.sin(now / swaySpeed);
+            return sinVal * swayAmplitude;
+
+        case 'flag-linked':
+            // Movement linked to flag swing (handled in drawSupporter)
+            return 0;
+
+        case 'individual':
+        default:
+            // Each supporter has their own phase
+            return Math.sin(now / swaySpeed + supporter.jumpPhase) * swayAmplitude;
+    }
+}
+
+// Calculate jump offset based on coreo config
+function getCoreoJump(coreo, supporter, beatDecay, multiplier, now, preCalc = {}) {
+    const { jumpPattern, waveRowDelay, pogoHeight, pogoSpeed } = coreo;
+
+    switch (jumpPattern) {
+        case 'wave':
+            // Row-based wave effect
+            const baseJump = 18 + (multiplier - 1) * 13;
+            const waveBase = preCalc.sinWaveBase !== undefined
+                ? preCalc.sinWaveBase
+                : now / 250;
+            const rowWave = Math.abs(Math.sin(waveBase + supporter.row * (waveRowDelay || 1.2566))) * multiplier * 3;
+            return beatDecay * baseJump * supporter.jumpStrength + rowWave;
+
+        case 'synchronized':
+            // All jump together (no phase offset)
+            const syncJump = 18 + (multiplier - 1) * 13;
+            return beatDecay * syncJump * supporter.jumpStrength;
+
+        case 'pogo':
+            // High-energy synchronized bouncing - continuous even without beat
+            const height = pogoHeight || 25;
+            const speed = pogoSpeed || 150;
+            // Continuous bounce with beat amplification
+            const pogoBase = Math.abs(Math.sin(now / speed)) * height;
+            const beatBoost = beatDecay * 10 * multiplier;
+            return (pogoBase + beatBoost) * supporter.jumpStrength;
+
+        case 'default':
+        default:
+            // Individual phase offsets
+            const timeSinceBeat = preCalc.timeSinceBeat || 0;
+            const baseJumpDefault = 18 + (multiplier - 1) * 13;
+            const phaseOffset = Math.sin(timeSinceBeat * 12 + supporter.jumpPhase) * 0.3;
+            return beatDecay * baseJumpDefault * supporter.jumpStrength * (1 + phaseOffset);
+    }
+}
+
+// Draw coreo-specific items (scarves, placards, etc.)
+function drawCoreoItem(ctx, coreo, supporter, x, y, now, colors, batch) {
+    const { showItem } = coreo;
+    const px = supporter.px;
+
+    // Skip if supporter has flag or flare (they're busy)
+    if (supporter.hasFlag || supporter.hasFlare) return;
+
+    switch (showItem) {
+        case 'scarf':
+            drawCoreoScarf(ctx, coreo, supporter, x, y, now, colors, px, batch);
+            break;
+
+        case 'placard':
+            drawCoreoPlacard(ctx, coreo, supporter, x, y, now, colors, px, batch);
+            break;
+
+        case 'banner':
+            drawCoreoBanner(ctx, coreo, supporter, x, y, now, colors, px, batch);
+            break;
+
+        default:
+            // No special item
+            break;
+    }
+}
+
+// Draw stretched scarf above head
+function drawCoreoScarf(ctx, coreo, supporter, x, y, now, colors, px, batch) {
+    const primary = colors.primary || '#006633';
+    const secondary = colors.secondary || '#FFFFFF';
+    const scarfColor = supporter.row % 2 === 0 ? primary : secondary;
+    const waveSpeed = coreo.scarfWaveSpeed || 300;
+    const waveAmp = coreo.scarfWaveAmplitude || 2;
+    const scarfWave = Math.sin(now / waveSpeed + supporter.x * 0.025) * waveAmp;
+    const scarfY = (y - px + scarfWave) | 0;
+
+    drawPixelRect(ctx, x - 2 * px, scarfY, 14, 1, scarfColor, px, batch);
+    drawPixelRect(ctx, x - px, scarfY - px, 12, 1, scarfColor, px, batch);
+}
+
+// Draw placard held above head
+function drawCoreoPlacard(ctx, coreo, supporter, x, y, now, colors, px, batch) {
+    const primary = colors.primary || '#006633';
+    const secondary = colors.secondary || '#FFFFFF';
+    const waveSpeed = coreo.placardWaveSpeed || 600;
+    const colorSpeed = coreo.placardColorWaveSpeed || 400;
+
+    const placardWave = Math.sin(now / waveSpeed + supporter.x * 0.01) * 1.5;
+    const placardY = (y - 6 * px + placardWave) | 0;
+    const placardW = 12;
+    const placardH = 10;
+
+    // Alternating color wave pattern
+    const colorWave = Math.sin(now / colorSpeed + supporter.x * 0.02 + supporter.row * 0.5);
+    const placardColor = colorWave > 0 ? primary : secondary;
+
+    // Draw placard with 3D border effect
+    drawPixelRect(ctx, x - px, placardY, placardW + 2, placardH + 2, placardColor, px, batch);
+    drawPixelRect(ctx, x - px, placardY, placardW + 2, 1, '#333333', px, batch);
+}
+
+// Draw large banner waving above head (inferno coreo)
+function drawCoreoBanner(ctx, coreo, supporter, x, y, now, colors, px, batch) {
+    const primary = colors.primary || '#006633';
+    const secondary = colors.secondary || '#FFFFFF';
+    const waveSpeed = coreo.bannerWaveSpeed || 120;
+    const bannerHeight = coreo.bannerHeight || 20;
+
+    // Banner waves more intensely
+    const wavePhase = now / waveSpeed + supporter.x * 0.03;
+    const waveY = Math.sin(wavePhase) * 4;
+    const waveX = Math.cos(wavePhase * 0.7) * 3;
+
+    const bannerY = (y - bannerHeight * px + waveY) | 0;
+    const bannerX = (x + waveX) | 0;
+    const bannerW = 16;
+    const bannerH = 14;
+
+    // Alternating stripes on banner
+    const stripePhase = Math.sin(now / 200 + supporter.row);
+    const topColor = stripePhase > 0 ? primary : secondary;
+    const bottomColor = stripePhase > 0 ? secondary : primary;
+
+    // Draw banner body with stripes
+    drawPixelRect(ctx, bannerX - 2 * px, bannerY, bannerW, bannerH / 2, topColor, px, batch);
+    drawPixelRect(ctx, bannerX - 2 * px, bannerY + (bannerH / 2) * px, bannerW, bannerH / 2, bottomColor, px, batch);
+
+    // Banner pole
+    drawPixelRect(ctx, bannerX + 6 * px, bannerY, 2, bannerH + 8, '#666666', px, batch);
+
+    // Wavy edge effect
+    const edgeWave = Math.sin(now / 80 + supporter.x * 0.05) * 2;
+    drawPixelRect(ctx, bannerX - 2 * px + edgeWave, bannerY - px, 3, 1, topColor, px, batch);
+    drawPixelRect(ctx, bannerX + (bannerW - 3) * px + edgeWave, bannerY - px, 3, 1, topColor, px, batch);
+}
+
+// Draw coreo overlay (tifo badge, banners, etc.)
+function drawCoreoOverlay(ctx, coreo, w, h, now) {
+    if (!coreo.showOverlay) return;
+
+    switch (coreo.overlayRenderer) {
+        case 'drawTifoOverlay':
+            drawTifoOverlay(ctx, w, h, now);
+            break;
+
+        case 'drawInfernoOverlay':
+            drawInfernoOverlay(ctx, w, h, now);
+            break;
+
+        default:
+            break;
+    }
+}
+
+// Get arms position based on coreo config
+function getCoreoArmsPosition(coreo) {
+    return coreo.armsPosition || 'normal';
+}
+
+// Export coreo system for external access/configuration
+export { COREO_TYPES, getCoreoConfig, getCoreoType };
+
+// ============================================
 // Tifo Display System - supporters hold placards to form club logo
 // ============================================
 
@@ -205,37 +548,71 @@ function getTifoColor(supporter, canvasWidth, canvasHeight) {
 
 class DrawBatch {
     constructor() {
-        this.rects = new Map();  // color -> array of {x, y, w, h}
-        this.faceQueue = [];     // faces to draw after main batch (ensures eyes on top)
+        this.colorGroups = {};  // color -> {rects: [], count: 0}
+        this.faceQueue = [];
+        this.faceCount = 0;
     }
 
     add(color, x, y, w, h) {
-        if (!this.rects.has(color)) {
-            this.rects.set(color, []);
+        let group = this.colorGroups[color];
+        if (!group) {
+            group = { rects: new Float32Array(400), count: 0 };  // Pre-allocate for ~100 rects
+            this.colorGroups[color] = group;
         }
-        this.rects.get(color).push({ x: Math.floor(x), y: Math.floor(y), w, h });
+        const idx = group.count * 4;
+        if (idx + 4 > group.rects.length) {
+            // Grow array if needed (rare)
+            const newRects = new Float32Array(group.rects.length * 2);
+            newRects.set(group.rects);
+            group.rects = newRects;
+        }
+        group.rects[idx] = x | 0;      // Faster floor for positive numbers
+        group.rects[idx + 1] = y | 0;
+        group.rects[idx + 2] = w;
+        group.rects[idx + 3] = h;
+        group.count++;
     }
 
     flush(ctx) {
-        // Draw all body parts first
-        for (const [color, rects] of this.rects) {
+        // Draw all body parts first, grouped by color
+        for (const color in this.colorGroups) {
+            const group = this.colorGroups[color];
+            if (group.count === 0) continue;
             ctx.fillStyle = color;
-            for (const r of rects) {
-                ctx.fillRect(r.x, r.y, r.w, r.h);
+            const rects = group.rects;
+            for (let i = 0, len = group.count * 4; i < len; i += 4) {
+                ctx.fillRect(rects[i], rects[i + 1], rects[i + 2], rects[i + 3]);
             }
+            group.count = 0;  // Reset count instead of clearing array
         }
-        this.rects.clear();
 
-        // Draw faces on top (eyes need to be visible over skin)
-        for (const face of this.faceQueue) {
+        // Draw faces on top
+        for (let i = 0; i < this.faceCount; i++) {
+            const face = this.faceQueue[i];
             drawFace(ctx, face.x, face.y, face.px, face.eyeOffsetY, face.mouthShape, face.emotion);
         }
-        this.faceQueue = [];
+        this.faceCount = 0;
+    }
+
+    addFace(x, y, px, eyeOffsetY, mouthShape, emotion) {
+        if (this.faceCount >= this.faceQueue.length) {
+            this.faceQueue.push({ x: 0, y: 0, px: 0, eyeOffsetY: 0, mouthShape: '', emotion: '' });
+        }
+        const face = this.faceQueue[this.faceCount];
+        face.x = x;
+        face.y = y;
+        face.px = px;
+        face.eyeOffsetY = eyeOffsetY;
+        face.mouthShape = mouthShape;
+        face.emotion = emotion;
+        this.faceCount++;
     }
 
     clear() {
-        this.rects.clear();
-        this.faceQueue = [];
+        for (const color in this.colorGroups) {
+            this.colorGroups[color].count = 0;
+        }
+        this.faceCount = 0;
     }
 }
 
@@ -264,6 +641,26 @@ function drawFace(ctx, x, y, px, eyeOffsetY, mouthShape, emotion) {
 
 // Reusable batch instance to avoid allocations
 const supporterBatch = new DrawBatch();
+
+// Reusable colors object to avoid per-supporter allocation
+const _colorsCache = { primary: '', secondary: '' };
+
+// Pooled flag/flare queue to avoid array allocations each frame
+const _flagFlarePool = [];
+let _flagFlareCount = 0;
+
+function resetFlagFlareQueue() {
+    _flagFlareCount = 0;
+}
+
+function pushFlagFlare(s, jumpY) {
+    if (_flagFlareCount >= _flagFlarePool.length) {
+        _flagFlarePool.push({ s: null, jumpY: 0 });
+    }
+    const item = _flagFlarePool[_flagFlareCount++];
+    item.s = s;
+    item.jumpY = jumpY;
+}
 
 // Stadium barrier colors
 const BARRIER_COLOR = '#1a1a2e';
@@ -589,55 +986,53 @@ function getFlagSwing(s, now) {
     return { swingX, swingY, poleAngle, t, swingSpeed };
 }
 
-function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType, batch = null) {
+function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreo, batch = null, primaryColor = null, secondaryColor = null, preCalc = {}) {
     const px = s.px;
-    const baseX = Math.floor(s.x);
-    let y = Math.floor(s.baseY + jumpOffset);
+    const baseX = s.x | 0;  // Faster than Math.floor for positive numbers
+    let y = (s.baseY + jumpOffset) | 0;
+
+    // Use passed colors or fallback (with multiple fallback levels)
+    const primary = primaryColor || state.cachedColors?.primary || state.selectedClub?.colors?.primary || '#006633';
+    const secondary = secondaryColor || state.cachedColors?.secondary || state.selectedClub?.colors?.secondary || '#FFFFFF';
 
     let currentArmsUp = armsUp;
     let currentFrenzy = frenzy;
     let currentRockX = 0;
-    let eyeOffsetX = 0;
     let eyeOffsetY = 0;
-    let mouthShape = 'normal'; // 'normal', 'frown', 'open'
+    let mouthShape = 'normal';
 
-    if (state.crowdEmotion === 'deject') {
+    const emotion = state.crowdEmotion;
+    if (emotion === 'deject') {
         currentArmsUp = false;
-        currentFrenzy = false; // Override frenzy if dejected
-        y += 2 * px; // Slight slump
-        // Make supporters look down
+        currentFrenzy = false;
+        y += 2 * px;
         eyeOffsetY = px;
         mouthShape = 'frown';
-    } else if (state.crowdEmotion === 'celebrate') {
-        currentFrenzy = true; // Force frenzy-like behavior for celebration
+    } else if (emotion === 'celebrate') {
+        currentFrenzy = true;
         currentArmsUp = true;
         mouthShape = 'open';
     } else if (currentFrenzy) {
-        // Gameplay frenzy (combo > 5): open mouth, same as celebrate
         mouthShape = 'open';
     }
 
-
-    // Coreo types 1-3: synchronized sway; type 0: individual rocking
-    // Flag carriers follow their flag motion for realistic body sway
-    if (s.hasFlag && (currentFrenzy || state.crowdEmotion === 'celebrate')) {
+    // Calculate sway based on coreo config
+    if (s.hasFlag && (currentFrenzy || emotion === 'celebrate')) {
+        // Flag carriers linked to flag swing
         const flagSwing = getFlagSwing(s, now);
-        // Body sways less than the flag pole - about 40% of flag motion
         currentRockX = flagSwing.swingX * 0.4;
-        // Also shift Y slightly for pumping/circular motions
-        y += Math.floor(flagSwing.swingY * 0.3);
-    } else if (coreoType >= 1) {
-        currentRockX = Math.sin(now / 200) * 5;
+        y += (flagSwing.swingY * 0.3) | 0;
+    } else if (coreo && coreo.id > 0) {
+        // Use coreo-defined sway
+        currentRockX = getCoreoSway(coreo, s, now, preCalc);
     } else if (currentFrenzy) {
+        // Frenzy individual rocking
         currentRockX = Math.sin(now / 120 + s.jumpPhase) * 3;
-    } else {
-        currentRockX = 0;
     }
-    const x = Math.floor(baseX + currentRockX);
+    const x = (baseX + currentRockX) | 0;
 
     if (currentFrenzy && !state.settings.reducedEffects) {
         const glowPhase = (Math.sin(now / 200 + s.jumpPhase) + 1) * 0.5;
-        const primary = state.cachedColors?.primary || '#006633';
         ctx.fillStyle = primary;
         ctx.globalAlpha = 0.12 + glowPhase * 0.1;
         ctx.fillRect(x - px, y + 2 * px, 12 * px, 12 * px);
@@ -684,9 +1079,44 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType, batch
     }
     drawPixelRect(ctx, x + 2 * px, y + 6 * px, 6, 5, shirtColor, px, batch);
 
-    // Arms
-    if ((coreoType === 2 ||coreoType === 3) && !s.hasFlag && !s.hasFlare) {
-        // Scarf coreo: arms straight up holding scarf taut
+    // Arms - use coreo config for positioning
+    const armsPos = coreo ? getCoreoArmsPosition(coreo) : 'normal';
+    const clapSpeed = coreo?.clapSpeed || 200;
+
+    if (armsPos === 'pump' && !s.hasFlag && !s.hasFlare) {
+        // Pumping arms up and down - high energy bounce coreo
+        const pumpPhase = Math.sin(now / 150);
+        if (pumpPhase > 0) {
+            // Arms up
+            drawPixelRect(ctx, x - px, y + 1 * px, 2, 4, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 9 * px, y + 1 * px, 2, 4, s.skinColor, px, batch);
+            drawPixelRect(ctx, x - px, y, 2, 1, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 9 * px, y, 2, 1, s.skinColor, px, batch);
+        } else {
+            // Arms down
+            drawPixelRect(ctx, x - px, y + 4 * px, 2, 4, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 9 * px, y + 4 * px, 2, 4, s.skinColor, px, batch);
+        }
+    } else if (armsPos === 'clap' && !s.hasFlag && !s.hasFlare) {
+        // Clapping hands together in front
+        const clapPhase = Math.sin(now / clapSpeed);
+        if (clapPhase > 0.3) {
+            // Hands together (clapping)
+            drawPixelRect(ctx, x + 3 * px, y + 5 * px, 2, 2, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 5 * px, y + 5 * px, 2, 2, s.skinColor, px, batch);
+            // Arms bent inward
+            drawPixelRect(ctx, x + px, y + 6 * px, 2, 3, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 7 * px, y + 6 * px, 2, 3, s.skinColor, px, batch);
+        } else {
+            // Hands apart (preparing to clap)
+            drawPixelRect(ctx, x - px, y + 5 * px, 2, 2, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 9 * px, y + 5 * px, 2, 2, s.skinColor, px, batch);
+            // Arms extended outward
+            drawPixelRect(ctx, x - px, y + 6 * px, 3, 2, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 8 * px, y + 6 * px, 3, 2, s.skinColor, px, batch);
+        }
+    } else if (armsPos === 'scarf-hold' && !s.hasFlag && !s.hasFlare) {
+        // Arms straight up holding item (scarf/placard/banner)
         drawPixelRect(ctx, x - px, y + 1 * px, 2, 5, s.skinColor, px, batch);
         drawPixelRect(ctx, x + 9 * px, y + 1 * px, 2, 5, s.skinColor, px, batch);
         drawPixelRect(ctx, x - px, y, 2, 1, s.skinColor, px, batch);
@@ -732,42 +1162,16 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType, batch
     // Eyes and Mouth - store for later drawing (after batch flush) to ensure they're on top
     // We return the face data so it can be drawn after the batch
     if (batch) {
-        const faceData = { x, y, px, eyeOffsetY, mouthShape, emotion: state.crowdEmotion };
-        if (!batch.faceQueue) batch.faceQueue = [];
-        batch.faceQueue.push(faceData);
+        batch.addFace(x, y, px, eyeOffsetY, mouthShape, emotion);
     } else {
-        // Direct draw mode (no batch)
-        drawFace(ctx, x, y, px, eyeOffsetY, mouthShape, state.crowdEmotion);
+        drawFace(ctx, x, y, px, eyeOffsetY, mouthShape, emotion);
     }
 
-    if (coreoType === 3 && !s.hasFlag && !s.hasFlare) {
-        // Tifo coreo: supporters hold up club-colored placards while logo displays above
-        const placardWave = Math.sin(now / 600 + s.x * 0.01) * 1.5;  // Synchronized horizontal wave
-        const placardY = y - 6 * px + Math.floor(placardWave);
-        const placardW = 12;
-        const placardH = 10;
-
-        // Alternating club colors for a nice pattern
-        const primary = state.cachedColors?.primary || '#006633';
-        const secondary = state.cachedColors?.secondary || '#FFFFFF';
-
-        // Create a wave pattern with club colors
-        const colorWave = Math.sin(now / 400 + s.x * 0.02 + s.row * 0.5);
-        const placardColor = colorWave > 0 ? primary : secondary;
-
-        // Draw placard with thin border
-        drawPixelRect(ctx, x - px, placardY, placardW + 2, placardH + 2, '#111111', px, batch);
-        drawPixelRect(ctx, x - 0.5 * px, placardY + 0.5 * px, placardW, placardH, placardColor, px, batch);
-
-    } else if (coreoType === 2 && !s.hasFlag && !s.hasFlare) {
-        // Scarf-up coreo: supporters hold scarves stretched above heads
-        const primary = state.cachedColors?.primary || '#006633';
-        const secondary = state.cachedColors?.secondary || '#FFFFFF';
-        const scarfColor = s.row % 2 === 0 ? primary : secondary;
-        const scarfWave = Math.sin(now / 300 + s.x / 40) * 2;
-        const scarfY = y - px + Math.floor(scarfWave);
-        drawPixelRect(ctx, x - 2 * px, scarfY, 14, 1, scarfColor, px, batch);
-        drawPixelRect(ctx, x - px, scarfY - px, 12, 1, scarfColor, px, batch);
+    // Draw coreo-specific items (scarves, placards, etc.)
+    if (coreo && coreo.showItem) {
+        _colorsCache.primary = primary;
+        _colorsCache.secondary = secondary;
+        drawCoreoItem(ctx, coreo, s, x, y, now, _colorsCache, batch);
     } else if (s.hasScarf && s.scarfColor) {
         drawPixelRect(ctx, x + 2 * px, y + 5 * px, 6, 1, s.scarfColor, px, batch);
         if (currentFrenzy) {
@@ -995,18 +1399,29 @@ function drawTifoOverlay(ctx, w, h, now) {
     const edgeMargin = layout?.edgeMargin || 30;
 
     // Calculate logo size - make it prominent
-    const maxW = (w - edgeMargin * 2) * 0.6;  // 60% of usable width
-    const maxH = h * 0.85;  // 85% of height
+    // Make badge prominent - use most of the height
+    const maxH = h * 0.9;
+    const minW = w * 0.25;  // Minimum width for narrow badges
 
-    const imgAspect = (img.naturalWidth || img.width) / (img.naturalHeight || img.height);
-    let drawW, drawH;
+    const imgW = img.naturalWidth || img.width || 100;
+    const imgH = img.naturalHeight || img.height || 100;
+    const imgAspect = imgW / imgH;
 
-    if (maxW / imgAspect <= maxH) {
+    // Scale to fit height first
+    let drawH = maxH;
+    let drawW = maxH * imgAspect;
+
+    // Ensure minimum width for narrow badges
+    if (drawW < minW) {
+        drawW = minW;
+        drawH = minW / imgAspect;
+    }
+
+    // Don't exceed canvas width
+    const maxW = w * 0.7;
+    if (drawW > maxW) {
         drawW = maxW;
         drawH = maxW / imgAspect;
-    } else {
-        drawH = maxH;
-        drawW = maxH * imgAspect;
     }
 
     const x = (w - drawW) / 2;
@@ -1015,50 +1430,140 @@ function drawTifoOverlay(ctx, w, h, now) {
     // Pulsing effect synced with beat
     const timeSinceBeat = (now - state.crowdBeatTime) / 1000;
     const beatPulse = Math.max(0, 1 - timeSinceBeat * 3);
-    const scale = 1 + beatPulse * 0.03;
+    const scale = 1 + beatPulse * 0.05;
 
-    ctx.save();
-    ctx.translate(w / 2, h / 2);
-    ctx.scale(scale, scale);
-    ctx.translate(-w / 2, -h / 2);
+    // Draw with transparency so supporters show through
+    ctx.globalAlpha = 0.5 + beatPulse * 0.15;
 
-    // Draw with moderate opacity so it's visible but supporters show through
-    ctx.globalAlpha = 0.7 + beatPulse * 0.15;
+    // Add glow effect only if reduced effects is off (shadows are expensive)
+    if (!state.settings.reducedEffects) {
+        ctx.save();
+        ctx.translate(w / 2, h / 2);
+        ctx.scale(scale, scale);
+        ctx.translate(-w / 2, -h / 2);
+        ctx.shadowColor = state.cachedColors?.primary || '#ffffff';
+        ctx.shadowBlur = 25 + beatPulse * 15;
+        ctx.drawImage(img, x, y, drawW, drawH);
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    } else {
+        // Simple draw without transforms/shadows
+        ctx.drawImage(img, x, y, drawW, drawH);
+    }
 
-    // Add glow effect
-    ctx.shadowColor = state.cachedColors?.primary || '#ffffff';
-    ctx.shadowBlur = 20 + beatPulse * 15;
-
-    ctx.drawImage(img, x, y, drawW, drawH);
-
-    ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
-    ctx.restore();
+}
+
+// Draw inferno overlay - fire/heat effect for maximum intensity coreo
+function drawInfernoOverlay(ctx, w, h, now) {
+    // Smooth pulsing synced with beat (slower decay for less flicker)
+    const timeSinceBeat = (now - state.crowdBeatTime) / 1000;
+    const beatPulse = Math.max(0, 1 - timeSinceBeat * 1.5);
+
+    // Smooth continuous glow pulse (independent of beat for stability)
+    const glowPulse = (Math.sin(now / 400) + 1) * 0.5;
+
+    // Simple fire gradient from bottom - no per-frame alpha changes in gradient
+    ctx.globalAlpha = 0.3 + beatPulse * 0.15 + glowPulse * 0.05;
+    const fireGrad = ctx.createLinearGradient(0, h, 0, h * 0.2);
+    fireGrad.addColorStop(0, '#ff3300');
+    fireGrad.addColorStop(0.4, '#ff6600');
+    fireGrad.addColorStop(0.7, '#ff9900');
+    fireGrad.addColorStop(1, 'rgba(255, 150, 0, 0)');
+    ctx.fillStyle = fireGrad;
+    ctx.fillRect(0, h * 0.2, w, h * 0.8);
+    ctx.globalAlpha = 1;
+
+    // Simple edge vignette (static, no animation)
+    const edgeGrad = ctx.createRadialGradient(w / 2, h / 2, h * 0.4, w / 2, h / 2, w * 0.7);
+    edgeGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    edgeGrad.addColorStop(1, 'rgba(255, 50, 0, 0.12)');
+    ctx.fillStyle = edgeGrad;
+    ctx.fillRect(0, 0, w, h);
+
+    // Top glow bar (smooth pulse)
+    ctx.globalAlpha = 0.15 + beatPulse * 0.2;
+    const topGrad = ctx.createLinearGradient(0, 0, 0, h * 0.25);
+    topGrad.addColorStop(0, '#ff4400');
+    topGrad.addColorStop(1, 'rgba(255, 68, 0, 0)');
+    ctx.fillStyle = topGrad;
+    ctx.fillRect(0, 0, w, h * 0.25);
+    ctx.globalAlpha = 1;
+
+    // "INFERNO" text - only on strong beats, simple animation
+    if (beatPulse > 0.6) {
+        const textAlpha = (beatPulse - 0.6) * 2.5; // 0 to 1 as beatPulse goes 0.6 to 1
+
+        ctx.save();
+        ctx.globalAlpha = textAlpha;
+        ctx.font = 'bold 28px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Simple glow without heavy shadow
+        if (!state.settings.reducedEffects) {
+            ctx.shadowColor = '#ff4400';
+            ctx.shadowBlur = 15;
+        }
+
+        ctx.fillStyle = '#ffcc00';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
+        ctx.strokeText('INFERNO', w / 2, h * 0.12);
+        ctx.fillText('INFERNO', w / 2, h * 0.12);
+
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+        ctx.restore();
+    }
+}
+
+// Pre-allocated rgba string buffer to avoid string creation in hot loop
+const _rgbaBuffer = { str: '' };
+function rgbaFast(r, g, b, a) {
+    return `rgba(${r},${g},${b},${a.toFixed(2)})`;
 }
 
 function updateAndDrawSmoke(ctx, w, h) {
-    for (let i = state.smokeParticles.length - 1; i >= 0; i--) {
-        const p = state.smokeParticles[i];
-        p.x += p.vx + Math.sin(p.life * 3) * 0.3;
+    const particles = state.smokeParticles;
+    let len = particles.length;
+
+    // Process in batches and remove dead particles
+    for (let i = len - 1; i >= 0; i--) {
+        const p = particles[i];
+
+        // Update physics (simplified - removed sin for performance)
+        p.x += p.vx;
         p.y += p.vy;
         p.vy *= 0.995;
-        p.vx += (Math.random() - 0.5) * 0.1;
+        p.vx += (Math.random() - 0.5) * 0.08;
         p.life -= p.decay;
-        p.size += 0.15;
+        p.size += 0.12;
 
         if (p.life <= 0 || p.y < -20) {
-            state.smokeParticles[i] = state.smokeParticles[state.smokeParticles.length - 1];
-            state.smokeParticles.pop();
+            // Swap and pop (fast removal)
+            particles[i] = particles[--len];
             continue;
         }
 
-        const alpha = p.life * 0.6;
-        const sz = Math.floor(p.size);
-        ctx.fillStyle = `rgba(${p.r},${p.g},${p.b},${alpha})`;
-        ctx.fillRect(Math.floor(p.x - sz / 2), Math.floor(p.y - sz / 2), sz, sz);
+        // Draw
+        const alpha = p.life * 0.5;
+        const sz = (p.size + 0.5) | 0;  // Fast floor
+        const px = (p.x - sz * 0.5) | 0;
+        const py = (p.y - sz * 0.5) | 0;
+
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = `rgb(${p.r},${p.g},${p.b})`;
+        ctx.fillRect(px, py, sz, sz);
     }
-    if (state.smokeParticles.length > 300) {
-        state.smokeParticles.splice(0, state.smokeParticles.length - 300);
+
+    // Trim array if needed
+    particles.length = len;
+    ctx.globalAlpha = 1;
+
+    // Hard limit
+    if (len > 250) {
+        particles.length = 250;
     }
 }
 
@@ -1074,7 +1579,7 @@ export function drawGameVisuals() {
 
     // Determine frenzy state based on crowdEmotion for visuals
     const currentFrenzy = state.crowdEmotion === 'celebrate' || state.playerCombo > 5;
-    const coreoType = state.playerCombo >= 10 ? Math.floor(state.playerCombo / 10) % 4 : 0;
+    const coreo = getCoreoConfig(state.playerCombo);
 
     if (state.supporters.length === 0) {
         initSupporters(w, h, false); // Explicitly pass false for game visuals
@@ -1108,11 +1613,6 @@ export function drawGameVisuals() {
     // Draw stadium barriers (edges, aisles, railings)
     drawStadiumBarriers(ctx, w, h);
 
-    // Draw tifo overlay when coreoType 3 is active (combo 30+)
-    if (coreoType === 3) {
-        drawTifoOverlay(ctx, w, h, now);
-    }
-
     // Stadium railing
     if (state.crowdEmotion === 'deject') {
         ctx.fillStyle = 'rgba(100,100,100,0.08)';
@@ -1121,65 +1621,79 @@ export function drawGameVisuals() {
     }
     ctx.fillRect(0, h * 0.1, w, 3);
 
+    // Cache colors locally to avoid repeated state access (with fallback to selected club)
+    const primaryColor = state.cachedColors?.primary || state.selectedClub?.colors?.primary || '#006633';
+    const secondaryColor = state.cachedColors?.secondary || state.selectedClub?.colors?.secondary || '#FFFFFF';
+
     // Beat-synced animation
     const timeSinceBeat = (now - state.crowdBeatTime) / 1000;
     const beatDecay = Math.max(0, 1 - timeSinceBeat * 4);
 
-    let jumpHeight = 0;
+    // Pre-calculate common trig values for coreo system
+    const sinNow150 = Math.sin(now / 150);
+    const preCalc = {
+        sinSway: Math.sin(now / (coreo.swaySpeed || 200)),
+        sinWaveBase: now / 250,
+        timeSinceBeat: timeSinceBeat
+    };
+
     let frenzyBounce = 0;
     let sway = Math.sin(now / 400) * 2;
 
     if (state.crowdEmotion === 'deject') {
-        // Very minimal movement
-        jumpHeight = beatDecay * 2;
         sway = Math.sin(now / 800) * 1;
     } else {
-        // Jump height scales with combo multiplier or celebration
-        const baseJump = 18 + (multiplier - 1) * 13;
-        jumpHeight = beatDecay * baseJump;
-        frenzyBounce = currentFrenzy ? Math.abs(Math.sin(now / 150)) * (4 + multiplier * 2) : 0;
+        frenzyBounce = currentFrenzy ? Math.abs(sinNow150) * (4 + multiplier * 2) : 0;
     }
 
-    // First pass: draw all supporters (base layer) - use batching for performance
+    // Pre-calculate sway addition
+    const swayAddition = (beatDecay < 0.01 && !currentFrenzy && state.crowdEmotion !== 'deject') ? sway * 0.5 : 0;
+    const showFlags = currentFrenzy || state.crowdEmotion === 'celebrate';
+
+    // Single pass: draw supporters, collect flag/flare data
     supporterBatch.clear();
-    const jumpYValues = [];
-    for (let i = 0; i < state.supporters.length; i++) {
-        const s = state.supporters[i];
+    resetFlagFlareQueue();
+
+    const supporters = state.supporters;
+    const supporterLen = supporters.length;
+
+    for (let i = 0; i < supporterLen; i++) {
+        const s = supporters[i];
 
         let personalJump;
         if (state.crowdEmotion === 'deject') {
             personalJump = -s.jumpStrength * 2;
-        } else if (coreoType === 1) {
-            const rowWave = Math.abs(Math.sin(now / 250 + s.row * (Math.PI / 2.5))) * multiplier * 3;
-            personalJump = jumpHeight * s.jumpStrength + rowWave;
         } else {
-            const phaseOffset = Math.sin(timeSinceBeat * 12 + s.jumpPhase) * 0.3;
-            personalJump = jumpHeight * s.jumpStrength * (1 + phaseOffset);
+            // Use coreo-based jump calculation
+            personalJump = getCoreoJump(coreo, s, beatDecay, multiplier, now, preCalc);
         }
-        const jumpY = -(personalJump + frenzyBounce + (beatDecay < 0.01 && !currentFrenzy && state.crowdEmotion !== 'deject' ? sway * 0.5 : 0));
-        jumpYValues.push(jumpY);
+        const jumpY = -(personalJump + frenzyBounce + swayAddition);
 
         const armsUp = !currentFrenzy && timeSinceBeat < 0.3 && s.jumpStrength > 0.7;
-        drawSupporter(ctx, s, jumpY, armsUp, currentFrenzy, now, coreoType, supporterBatch);
+        drawSupporter(ctx, s, jumpY, armsUp, currentFrenzy, now, coreo, supporterBatch, primaryColor, secondaryColor, preCalc);
+
+        // Queue flag/flare drawing (needs to be on top of all supporters)
+        if ((showFlags && s.hasFlag) || s.hasFlare) {
+            pushFlagFlare(s, jumpY);
+        }
     }
-    // Flush all batched supporter draws at once (reduces fillStyle changes)
+    // Flush all batched supporter draws at once
     supporterBatch.flush(ctx);
 
-    // Second pass: flags, flares on top of all supporters
-    for (let i = 0; i < state.supporters.length; i++) {
-        const s = state.supporters[i];
-        const jumpY = jumpYValues[i];
-
-        if ((currentFrenzy || state.crowdEmotion === 'celebrate') && s.hasFlag) {
-            drawFlag(ctx, s, jumpY, now);
+    // Draw flags/flares on top (using pooled queue)
+    for (let i = 0; i < _flagFlareCount; i++) {
+        const item = _flagFlarePool[i];
+        if (showFlags && item.s.hasFlag) {
+            drawFlag(ctx, item.s, item.jumpY, now);
         }
-
-        // Flares always visible with smoke
-        if (s.hasFlare) {
-            drawFlare(ctx, s, jumpY, now);
-            spawnSmoke(s, jumpY, now);
+        if (item.s.hasFlare) {
+            drawFlare(ctx, item.s, item.jumpY, now);
+            spawnSmoke(item.s, item.jumpY, now);
         }
     }
+
+    // Draw coreo overlay (tifo badge, banners, etc.) on top of supporters
+    drawCoreoOverlay(ctx, coreo, w, h, now);
 
     // Smoke particles on top of everything
     if (state.smokeParticles.length > 0) {
@@ -1188,11 +1702,10 @@ export function drawGameVisuals() {
 
     // Beat flash overlay
     if (beatDecay > 0.01) {
-        const primary = state.cachedColors?.primary || '#006633';
         if (state.crowdEmotion === 'deject') {
             ctx.fillStyle = 'rgba(50,50,50,0.08)';
         } else {
-            ctx.fillStyle = currentFrenzy ? '#ff4400' : primary;
+            ctx.fillStyle = currentFrenzy ? '#ff4400' : primaryColor;
             ctx.globalAlpha = beatDecay * (currentFrenzy ? 0.15 : 0.08);
         }
         ctx.fillRect(0, 0, w, h);
@@ -1465,13 +1978,21 @@ export function drawAmbientCrowd() {
     }
     ctx.fillRect(0, h * 0.1, w, 3);
 
-    // First pass: draw all supporters (base layer) - use batching for performance
-    supporterBatch.clear();
-    const jumpYValues = [];
-    for (let i = 0; i < state.supporters.length; i++) {
-        const s = state.supporters[i];
+    // Cache colors locally (with fallback to selected club)
+    const primaryColor = state.cachedColors?.primary || state.selectedClub?.colors?.primary || '#006633';
+    const secondaryColor = state.cachedColors?.secondary || state.selectedClub?.colors?.secondary || '#FFFFFF';
 
-        let jumpY = 0;
+    // Single pass: draw supporters and queue flag/flare data
+    supporterBatch.clear();
+    resetFlagFlareQueue();
+
+    const supporters = state.supporters;
+    const supporterLen = supporters.length;
+
+    for (let i = 0; i < supporterLen; i++) {
+        const s = supporters[i];
+
+        let jumpY;
         if (isCelebrate) {
             jumpY = -(Math.abs(Math.sin(now / 200 + s.jumpPhase)) * (5 + s.jumpStrength * 5));
         } else if (isDeject) {
@@ -1479,25 +2000,25 @@ export function drawAmbientCrowd() {
         } else {
             jumpY = -Math.abs(Math.sin(now / 600 + s.jumpPhase)) * 2;
         }
-        jumpYValues.push(jumpY);
 
-        drawSupporter(ctx, s, jumpY, isCelebrate, isCelebrate, now, 0, supporterBatch);
+        drawSupporter(ctx, s, jumpY, isCelebrate, isCelebrate, now, COREO_TYPES.default, supporterBatch, primaryColor, secondaryColor, {});
+
+        // Queue flag/flare drawing
+        if (isCelebrate && (s.hasFlag || s.hasFlare)) {
+            pushFlagFlare(s, jumpY);
+        }
     }
-    // Flush all batched supporter draws at once (reduces fillStyle changes)
     supporterBatch.flush(ctx);
 
-    // Second pass: flags, flares on top of all supporters
-    for (let i = 0; i < state.supporters.length; i++) {
-        const s = state.supporters[i];
-        const jumpY = jumpYValues[i];
-
-        if (isCelebrate && s.hasFlag) {
-            drawFlag(ctx, s, jumpY, now);
+    // Draw flags/flares on top
+    for (let i = 0; i < _flagFlareCount; i++) {
+        const item = _flagFlarePool[i];
+        if (item.s.hasFlag) {
+            drawFlag(ctx, item.s, item.jumpY, now);
         }
-
-        if (isCelebrate && s.hasFlare) {
-            drawFlare(ctx, s, jumpY, now);
-            spawnSmoke(s, jumpY, now);
+        if (item.s.hasFlare) {
+            drawFlare(ctx, item.s, item.jumpY, now);
+            spawnSmoke(item.s, item.jumpY, now);
         }
     }
 

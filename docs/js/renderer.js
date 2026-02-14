@@ -201,25 +201,16 @@ export function drawVisualizer() {
     const goodHalfW = (state.activeTiming.GOOD / 1000) * pxPerSec;
     const perfectHalfW = (state.activeTiming.PERFECT / 1000) * pxPerSec;
 
-    function drawZoneBand(centerX, halfW, r, g, b, maxAlpha) {
-        const edgeFade = Math.min(halfW * 0.3, 15);
-        const gradL = ctx.createLinearGradient(centerX - halfW, 0, centerX - halfW + edgeFade, 0);
-        gradL.addColorStop(0, `rgba(${r},${g},${b},0)`);
-        gradL.addColorStop(1, `rgba(${r},${g},${b},${maxAlpha})`);
-        ctx.fillStyle = gradL;
-        ctx.fillRect(centerX - halfW, 0, edgeFade, h);
-        ctx.fillStyle = `rgba(${r},${g},${b},${maxAlpha})`;
-        ctx.fillRect(centerX - halfW + edgeFade, 0, (halfW - edgeFade) * 2, h);
-        const gradR = ctx.createLinearGradient(centerX + halfW - edgeFade, 0, centerX + halfW, 0);
-        gradR.addColorStop(0, `rgba(${r},${g},${b},${maxAlpha})`);
-        gradR.addColorStop(1, `rgba(${r},${g},${b},0)`);
-        ctx.fillStyle = gradR;
-        ctx.fillRect(centerX + halfW - edgeFade, 0, edgeFade, h);
-    }
-
-    drawZoneBand(hitLineX, okHalfW, 255, 170, 0, 0.07);
-    drawZoneBand(hitLineX, goodHalfW, 136, 255, 0, 0.07);
-    drawZoneBand(hitLineX, perfectHalfW, 0, 255, 136, 0.12);
+    // Simplified zone bands - use solid fills instead of gradients for performance
+    // OK zone (orange)
+    ctx.fillStyle = 'rgba(255,170,0,0.07)';
+    ctx.fillRect(hitLineX - okHalfW, 0, okHalfW * 2, h);
+    // GOOD zone (green)
+    ctx.fillStyle = 'rgba(136,255,0,0.07)';
+    ctx.fillRect(hitLineX - goodHalfW, 0, goodHalfW * 2, h);
+    // PERFECT zone (cyan-green)
+    ctx.fillStyle = 'rgba(0,255,136,0.12)';
+    ctx.fillRect(hitLineX - perfectHalfW, 0, perfectHalfW * 2, h);
 
     // Zone boundary hairlines
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
@@ -236,19 +227,34 @@ export function drawVisualizer() {
     // --- Beat markers ---
     const beatR = SCROLL_VIS.BEAT_RADIUS;
     const leadPx = leadTime * pxPerSec;
+    const beatRMargin = beatR * 3;
 
-    // Find the next 5 upcoming beat indices
+    // Find the next 5 upcoming beat indices (cache for countdown display)
     const upcomingBeats = [];
     for (let i = state.nextBeatIndex; i < state.detectedBeats.length && upcomingBeats.length < 5; i++) {
         const x = timeToX(state.detectedBeats[i]);
-        if (x >= hitLineX - okHalfW) { upcomingBeats.push(i); }
+        if (x >= hitLineX - okHalfW) upcomingBeats.push(i);
     }
 
-    for (let i = 0; i < state.detectedBeats.length; i++) {
-        const beatTime = state.detectedBeats[i];
-        const x = timeToX(beatTime);
+    // Calculate visible beat range to avoid iterating all beats
+    const minVisibleTime = audioElapsed - trailTime - 0.5;
+    const maxVisibleTime = audioElapsed + leadTime + 0.5;
 
-        if (x < -beatR * 3 || x > w + beatR * 3) continue;
+    // Find starting index using binary search approximation
+    let startIdx = Math.max(0, state.nextBeatIndex - 10);
+    const beats = state.detectedBeats;
+    const beatsLen = beats.length;
+
+    for (let i = startIdx; i < beatsLen; i++) {
+        const beatTime = beats[i];
+
+        // Skip beats too far in the past
+        if (beatTime < minVisibleTime) continue;
+        // Stop if beats are too far in the future
+        if (beatTime > maxVisibleTime) break;
+
+        const x = timeToX(beatTime);
+        if (x < -beatRMargin || x > w + beatRMargin) continue;
 
         const isPast = i < state.nextBeatIndex;
         let color, alpha, radius;
