@@ -9,6 +9,7 @@ export const clubs = {
         colors: { primary: '#f4f800', secondary: '#000000' },
         badge: 'Logos/AEK_logo.svg',
         chants: [
+            { id: 'Mastourosame_dikefale_aete', name: 'Mastourosame_dikefale_aete', audio: 'chants/AEK/Mastourosame_dikefale_aete.mp3', duration: 15 },
             { id: '100_xronia', name: '100_xronia', audio: 'chants/AEK/100_xronia.mp3', duration: 15 },
             { id: 'aekara_agapi_mou', name: 'aekara_agapi_mou', audio: 'chants/AEK/aekara_agapi_mou.mp3', duration: 15 },
             { id: 'aekara_vale_ena_goal', name: 'aekara_vale_ena_goal', audio: 'chants/AEK/aekara_vale_ena_goal.mp3', duration: 15 },

@@ -135,10 +135,10 @@ export function setCrowdEmotion(emotion) {
 
 export function initSupporters(canvasWidth, canvasHeight) {
     state.supporters = [];
-    const PX = 3;
+    const PX = 2.5;
     const supporterW = 5 * PX;
     // Same density on all devices - other optimizations handle performance
-    const spacing = 20;
+    const spacing = 13;
     const cols = Math.floor(canvasWidth / (supporterW + spacing));
     const supporterH = 14 * PX;
     const rows = Math.floor(canvasHeight / (supporterH));
