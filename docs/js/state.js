@@ -77,6 +77,13 @@ export const state = {
     smokeParticles: [],
     cachedColors: null,  // Set by updateCrowdClub for performance
 
+    // Tifo display (coreoType 3)
+    tifoMap: null,        // 2D array of colors sampled from club logo
+    tifoReady: false,     // True when tifo map is loaded and ready
+    tifoImage: null,      // Cached Image element of club badge
+    tifoGridCols: 80,     // Grid columns for tifo mapping
+    tifoGridRows: 6,      // Grid rows for tifo mapping
+
     // Player stats
     playerScore: 0,
     playerCombo: 0,

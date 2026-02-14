@@ -7,6 +7,199 @@ import { elements } from './ui.js';
 import { getComboMultiplier } from './input.js';
 
 // ============================================
+// Tifo Display System - supporters hold placards to form club logo
+// ============================================
+
+// Generate tifo map from club badge - samples the logo image into a grid
+export function generateTifoMap(badgePath, canvasWidth, canvasHeight) {
+    return new Promise((resolve) => {
+        const img = new Image();
+
+        img.onload = () => {
+            // Use naturalWidth/Height for SVGs, fallback to width/height
+            let imgW = img.naturalWidth || img.width;
+            let imgH = img.naturalHeight || img.height;
+
+            // SVGs might report 0 dimensions - use a default
+            if (!imgW || !imgH || imgW === 0 || imgH === 0) {
+                imgW = 100;
+                imgH = 100;
+            }
+
+            console.log('Tifo: Loading badge', badgePath, 'dimensions:', imgW, 'x', imgH);
+
+            // The crowd area is wide (~1140px usable) and short (~300px with ~6 rows)
+            // We need a grid that matches the actual supporter density
+            const gridCols = 80;   // More columns for horizontal detail
+            const gridRows = 6;    // Match actual supporter rows
+
+            // Create intermediate canvas matching the crowd's aspect ratio
+            const crowdAspect = 4;  // roughly 1200:300
+            const canvasW = 400;
+            const canvasH = 100;
+
+            const intermediateCanvas = document.createElement('canvas');
+            const intermediateCtx = intermediateCanvas.getContext('2d', { willReadFrequently: true });
+            intermediateCanvas.width = canvasW;
+            intermediateCanvas.height = canvasH;
+
+            // Fill with transparent
+            intermediateCtx.clearRect(0, 0, canvasW, canvasH);
+
+            // Scale logo to fit in center, maintaining aspect ratio
+            const logoAspect = imgW / imgH;
+            let drawW, drawH;
+
+            // Fit logo height to canvas height, then check width
+            drawH = canvasH * 0.95;
+            drawW = drawH * logoAspect;
+
+            // If too wide, fit to width instead
+            if (drawW > canvasW * 0.5) {
+                drawW = canvasW * 0.5;
+                drawH = drawW / logoAspect;
+            }
+
+            const offsetX = (canvasW - drawW) / 2;
+            const offsetY = (canvasH - drawH) / 2;
+
+            try {
+                intermediateCtx.drawImage(img, offsetX, offsetY, drawW, drawH);
+            } catch (e) {
+                console.warn('Tifo: Failed to draw image to canvas', e);
+                state.tifoReady = false;
+                resolve(null);
+                return;
+            }
+
+            let imageData;
+            try {
+                imageData = intermediateCtx.getImageData(0, 0, canvasW, canvasH);
+            } catch (e) {
+                console.warn('Tifo: getImageData failed (CORS?)', e);
+                state.tifoReady = false;
+                resolve(null);
+                return;
+            }
+
+            const pixels = imageData.data;
+
+            // Create tifo map - 2D array of colors with area sampling
+            const tifoMap = [];
+            let colorCount = 0;
+
+            const cellW = canvasW / gridCols;
+            const cellH = canvasH / gridRows;
+
+            for (let row = 0; row < gridRows; row++) {
+                const rowColors = [];
+                for (let col = 0; col < gridCols; col++) {
+                    // Area sample: average colors in this cell
+                    const startX = Math.floor(col * cellW);
+                    const startY = Math.floor(row * cellH);
+                    const endX = Math.floor((col + 1) * cellW);
+                    const endY = Math.floor((row + 1) * cellH);
+
+                    let totalR = 0, totalG = 0, totalB = 0, totalA = 0;
+                    let sampleCount = 0;
+
+                    for (let sy = startY; sy < endY; sy++) {
+                        for (let sx = startX; sx < endX; sx++) {
+                            const idx = (sy * canvasW + sx) * 4;
+                            totalR += pixels[idx];
+                            totalG += pixels[idx + 1];
+                            totalB += pixels[idx + 2];
+                            totalA += pixels[idx + 3];
+                            sampleCount++;
+                        }
+                    }
+
+                    const avgA = totalA / sampleCount;
+
+                    // Skip mostly transparent cells
+                    if (avgA < 40) {
+                        rowColors.push(null);
+                    } else {
+                        const avgR = Math.round(totalR / sampleCount);
+                        const avgG = Math.round(totalG / sampleCount);
+                        const avgB = Math.round(totalB / sampleCount);
+                        const hex = '#' + [avgR, avgG, avgB].map(c => c.toString(16).padStart(2, '0')).join('');
+                        rowColors.push(hex);
+                        colorCount++;
+                    }
+                }
+                tifoMap.push(rowColors);
+            }
+
+            state.tifoMap = tifoMap;
+            state.tifoImage = img;
+            state.tifoReady = true;
+            state.tifoGridCols = gridCols;
+            state.tifoGridRows = gridRows;
+            console.log('Tifo: Map generated', gridCols, 'x', gridRows, '- colored cells:', colorCount);
+
+            resolve(tifoMap);
+        };
+
+        img.onerror = (e) => {
+            console.warn('Tifo: Failed to load badge', badgePath, e);
+            state.tifoReady = false;
+            resolve(null);
+        };
+
+        img.src = badgePath;
+    });
+}
+
+// Get tifo color for a supporter based on their position
+function getTifoColor(supporter, canvasWidth, canvasHeight) {
+    if (!state.tifoReady || !state.tifoMap) return null;
+
+    const tifoMap = state.tifoMap;
+    const gridRows = tifoMap.length;
+    const gridCols = tifoMap[0]?.length || 0;
+
+    if (gridRows === 0 || gridCols === 0) return null;
+
+    // Map supporter position to tifo grid
+    const layout = state.stadiumLayout;
+    const edgeMargin = layout?.edgeMargin || 30;
+
+    // Calculate usable width (excluding edges and aisles)
+    let usableWidth = canvasWidth - (edgeMargin * 2);
+    if (layout?.aislePositions) {
+        usableWidth -= layout.aislePositions.length * (layout.aisleWidth || 40);
+    }
+
+    // Calculate relative X position (0-1)
+    // Adjust for aisles by finding which section the supporter is in
+    let adjustedX = supporter.x - edgeMargin;
+    if (layout?.aislePositions) {
+        for (const aisle of layout.aislePositions) {
+            if (supporter.x > aisle.end) {
+                adjustedX -= (layout.aisleWidth || 40);
+            }
+        }
+    }
+    const relativeX = Math.max(0, Math.min(1, adjustedX / usableWidth));
+
+    // Row mapping: front row (0) = bottom of tifo, back rows = top
+    // Invert so back rows show top of logo (more visible)
+    const maxRow = 5;  // 0-5 rows typically
+    const relativeY = Math.max(0, Math.min(1, (maxRow - supporter.row) / maxRow));
+
+    const col = Math.floor(relativeX * (gridCols - 1));
+    const row = Math.floor(relativeY * (gridRows - 1));
+
+    // Bounds check
+    if (col < 0 || col >= gridCols || row < 0 || row >= gridRows) {
+        return null;
+    }
+
+    return tifoMap[row]?.[col] || null;
+}
+
+// ============================================
 // Batched Drawing System - reduces fillStyle changes for performance
 // ============================================
 
@@ -77,6 +270,112 @@ const BARRIER_COLOR = '#1a1a2e';
 const BARRIER_HIGHLIGHT = '#2a2a4e';
 const RAILING_COLOR = '#444466';
 
+// Bleacher colors (concrete/metal steps)
+const BLEACHER_COLORS = {
+    step: '#2a2a3a',        // Main step surface
+    stepLight: '#363648',   // Lighter variation
+    stepDark: '#1e1e2a',    // Shadow/edge
+    riser: '#222230',       // Vertical face between steps
+    seat: '#3a3a4a',        // Seat back (if visible)
+    seatDark: '#2e2e3e'     // Seat shadow
+};
+
+// Draw stadium bleachers (tiered concrete steps behind crowd)
+function drawStadiumBleachers(ctx, w, h) {
+    const layout = state.stadiumLayout;
+    if (!layout) return;
+
+    const { edgeMargin, aisleWidth, aislePositions } = layout;
+
+    // Calculate row positions matching supporter layout
+    const PX = 2.7;
+    const supporterH = 14 * PX;
+    const rowSpacing = supporterH + 6;
+    const groundY = h - supporterH;
+    const numRows = Math.floor(h / supporterH) + 1;
+
+    // Draw from back to front (top to bottom on screen)
+    for (let row = numRows - 1; row >= 0; row--) {
+        const rowY = groundY - row * rowSpacing;
+        const stepHeight = 12;  // Visible step height
+        const riserHeight = 6;  // Vertical face between steps
+
+        // Step surface (horizontal tread)
+        const stepTop = rowY + supporterH - stepHeight;
+
+        // Alternate colors slightly per row for visual interest
+        const isEvenRow = row % 2 === 0;
+        const stepColor = isEvenRow ? BLEACHER_COLORS.step : BLEACHER_COLORS.stepLight;
+
+        // Draw step segments (between aisles)
+        let segmentStart = edgeMargin;
+
+        for (let a = 0; a <= aislePositions.length; a++) {
+            const segmentEnd = a < aislePositions.length ? aislePositions[a].start : w - edgeMargin;
+            const segmentWidth = segmentEnd - segmentStart;
+
+            if (segmentWidth > 0) {
+                // Step tread (top surface)
+                ctx.fillStyle = stepColor;
+                ctx.fillRect(segmentStart, stepTop, segmentWidth, stepHeight);
+
+                // Step edge highlight (front edge catches light)
+                ctx.fillStyle = BLEACHER_COLORS.stepLight;
+                ctx.fillRect(segmentStart, stepTop, segmentWidth, 2);
+
+                // Riser (vertical face below step) - only visible for rows above ground
+                if (row > 0) {
+                    ctx.fillStyle = BLEACHER_COLORS.riser;
+                    ctx.fillRect(segmentStart, stepTop + stepHeight, segmentWidth, riserHeight);
+
+                    // Shadow at bottom of riser
+                    ctx.fillStyle = BLEACHER_COLORS.stepDark;
+                    ctx.fillRect(segmentStart, stepTop + stepHeight + riserHeight - 2, segmentWidth, 2);
+                }
+
+                // Seat backs (small rectangles indicating folded seats)
+                // Only draw every few pixels for a subtle effect
+                const seatSpacing = 20;
+                const seatWidth = 8;
+                const seatHeight = 6;
+                ctx.fillStyle = BLEACHER_COLORS.seat;
+                for (let sx = segmentStart + 10; sx < segmentEnd - seatWidth; sx += seatSpacing) {
+                    // Add slight variation
+                    if ((sx + row * 7) % 3 !== 0) {
+                        ctx.fillRect(sx, stepTop - seatHeight + 2, seatWidth, seatHeight);
+                        // Seat shadow
+                        ctx.fillStyle = BLEACHER_COLORS.seatDark;
+                        ctx.fillRect(sx, stepTop - 2, seatWidth, 2);
+                        ctx.fillStyle = BLEACHER_COLORS.seat;
+                    }
+                }
+            }
+
+            // Move to next segment (after aisle)
+            if (a < aislePositions.length) {
+                segmentStart = aislePositions[a].end;
+            }
+        }
+    }
+
+    // Add subtle vertical dividers (seat section markers)
+    ctx.fillStyle = BLEACHER_COLORS.stepDark;
+    const dividerSpacing = 120;
+    for (let x = edgeMargin + dividerSpacing; x < w - edgeMargin; x += dividerSpacing) {
+        // Check if divider would be in an aisle - skip if so
+        let inAisle = false;
+        for (const aisle of aislePositions) {
+            if (x >= aisle.start && x <= aisle.end) {
+                inAisle = true;
+                break;
+            }
+        }
+        if (!inAisle) {
+            ctx.fillRect(x, 0, 2, h);
+        }
+    }
+}
+
 // Draw stadium barriers (edges and aisles) - called each frame after background gradient
 function drawStadiumBarriers(ctx, w, h) {
     const layout = state.stadiumLayout;
@@ -135,7 +434,7 @@ export function setCrowdEmotion(emotion) {
 
 export function initSupporters(canvasWidth, canvasHeight) {
     state.supporters = [];
-    const PX = 2.5;
+    const PX = 2.7;
     const supporterW = 5 * PX;
     // Same density on all devices - other optimizations handle performance
     const spacing = 13;
@@ -441,7 +740,26 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreoType, batch
         drawFace(ctx, x, y, px, eyeOffsetY, mouthShape, state.crowdEmotion);
     }
 
-    if (coreoType === 2 && !s.hasFlag && !s.hasFlare) {
+    if (coreoType === 3 && !s.hasFlag && !s.hasFlare) {
+        // Tifo coreo: supporters hold up club-colored placards while logo displays above
+        const placardWave = Math.sin(now / 600 + s.x * 0.01) * 1.5;  // Synchronized horizontal wave
+        const placardY = y - 6 * px + Math.floor(placardWave);
+        const placardW = 12;
+        const placardH = 10;
+
+        // Alternating club colors for a nice pattern
+        const primary = state.cachedColors?.primary || '#006633';
+        const secondary = state.cachedColors?.secondary || '#FFFFFF';
+
+        // Create a wave pattern with club colors
+        const colorWave = Math.sin(now / 400 + s.x * 0.02 + s.row * 0.5);
+        const placardColor = colorWave > 0 ? primary : secondary;
+
+        // Draw placard with thin border
+        drawPixelRect(ctx, x - px, placardY, placardW + 2, placardH + 2, '#111111', px, batch);
+        drawPixelRect(ctx, x - 0.5 * px, placardY + 0.5 * px, placardW, placardH, placardColor, px, batch);
+
+    } else if (coreoType === 2 && !s.hasFlag && !s.hasFlare) {
         // Scarf-up coreo: supporters hold scarves stretched above heads
         const primary = state.cachedColors?.primary || '#006633';
         const secondary = state.cachedColors?.secondary || '#FFFFFF';
@@ -668,6 +986,56 @@ function spawnSmoke(s, jumpOffset, now) {
     });
 }
 
+// Draw tifo logo overlay (large badge displayed by the crowd)
+function drawTifoOverlay(ctx, w, h, now) {
+    if (!state.tifoImage || !state.tifoReady) return;
+
+    const img = state.tifoImage;
+    const layout = state.stadiumLayout;
+    const edgeMargin = layout?.edgeMargin || 30;
+
+    // Calculate logo size - make it prominent
+    const maxW = (w - edgeMargin * 2) * 0.6;  // 60% of usable width
+    const maxH = h * 0.85;  // 85% of height
+
+    const imgAspect = (img.naturalWidth || img.width) / (img.naturalHeight || img.height);
+    let drawW, drawH;
+
+    if (maxW / imgAspect <= maxH) {
+        drawW = maxW;
+        drawH = maxW / imgAspect;
+    } else {
+        drawH = maxH;
+        drawW = maxH * imgAspect;
+    }
+
+    const x = (w - drawW) / 2;
+    const y = (h - drawH) / 2;
+
+    // Pulsing effect synced with beat
+    const timeSinceBeat = (now - state.crowdBeatTime) / 1000;
+    const beatPulse = Math.max(0, 1 - timeSinceBeat * 3);
+    const scale = 1 + beatPulse * 0.03;
+
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+    ctx.scale(scale, scale);
+    ctx.translate(-w / 2, -h / 2);
+
+    // Draw with moderate opacity so it's visible but supporters show through
+    ctx.globalAlpha = 0.7 + beatPulse * 0.15;
+
+    // Add glow effect
+    ctx.shadowColor = state.cachedColors?.primary || '#ffffff';
+    ctx.shadowBlur = 20 + beatPulse * 15;
+
+    ctx.drawImage(img, x, y, drawW, drawH);
+
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+    ctx.restore();
+}
+
 function updateAndDrawSmoke(ctx, w, h) {
     for (let i = state.smokeParticles.length - 1; i >= 0; i--) {
         const p = state.smokeParticles[i];
@@ -734,8 +1102,16 @@ export function drawGameVisuals() {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
+    // Draw stadium bleachers (tiered concrete steps behind crowd)
+    drawStadiumBleachers(ctx, w, h);
+
     // Draw stadium barriers (edges, aisles, railings)
     drawStadiumBarriers(ctx, w, h);
+
+    // Draw tifo overlay when coreoType 3 is active (combo 30+)
+    if (coreoType === 3) {
+        drawTifoOverlay(ctx, w, h, now);
+    }
 
     // Stadium railing
     if (state.crowdEmotion === 'deject') {
@@ -1074,6 +1450,9 @@ export function drawAmbientCrowd() {
     }
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
+
+    // Draw stadium bleachers (tiered concrete steps behind crowd)
+    drawStadiumBleachers(ctx, w, h);
 
     // Draw stadium barriers (edges, aisles, railings)
     drawStadiumBarriers(ctx, w, h);
