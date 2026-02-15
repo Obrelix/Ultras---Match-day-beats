@@ -135,10 +135,12 @@ export function handleInput() {
     if (bestBeat.isEarly && rating !== 'MISS') {
         if (state.activeBeat) {
             // Silently mark the skipped active beat as missed (no SFX/feedback — player already got hit feedback)
+            // NOTE: Don't increment miss stats here - the player successfully hit a beat, they just
+            // hit the next one early. The skipped beat is marked for visualization only.
             if (state.activeBeat.index !== undefined) {
                 state.beatResults[state.activeBeat.index] = 'miss';
             }
-            state.playerStats.miss++;
+            // Don't count this as a miss in stats - player got a hit
         }
         state.nextBeatIndex = bestBeat.index + 1;
         state.activeBeat = null;

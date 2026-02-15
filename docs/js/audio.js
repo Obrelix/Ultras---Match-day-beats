@@ -14,6 +14,17 @@ export async function initAudio() {
         await state.audioContext.resume();
     }
 
+    // Disconnect and clean up old nodes to prevent memory leaks
+    if (state.analyser) {
+        try { state.analyser.disconnect(); } catch (e) {}
+    }
+    if (state.masterGain) {
+        try { state.masterGain.disconnect(); } catch (e) {}
+    }
+    if (state.sfxGain) {
+        try { state.sfxGain.disconnect(); } catch (e) {}
+    }
+
     state.analyser = state.audioContext.createAnalyser();
     state.analyser.fftSize = 256;
     state.analyser.smoothingTimeConstant = 0.6;
@@ -31,14 +42,23 @@ export async function initAudio() {
 }
 
 export async function loadAudio(url) {
-    const response = await fetch(url);
-    const arrayBuffer = await response.arrayBuffer();
-    state.audioBuffer = await state.audioContext.decodeAudioData(arrayBuffer);
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch audio: ${response.status} ${response.statusText}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        state.audioBuffer = await state.audioContext.decodeAudioData(arrayBuffer);
+    } catch (error) {
+        console.error('Audio load error:', error);
+        throw error; // Re-throw so caller can handle
+    }
 }
 
 export function playAudio(onEnded) {
     if (state.audioSource) {
-        state.audioSource.stop();
+        try { state.audioSource.stop(); } catch (e) {}
+        try { state.audioSource.disconnect(); } catch (e) {}
     }
 
     state.audioSource = state.audioContext.createBufferSource();
@@ -61,6 +81,9 @@ export function stopAudio() {
     if (state.audioSource) {
         try {
             state.audioSource.stop();
+        } catch (e) {}
+        try {
+            state.audioSource.disconnect();
         } catch (e) {}
         state.audioSource = null;
     }

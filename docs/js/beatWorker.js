@@ -447,20 +447,26 @@ function analyzeBeats(samples, sampleRate, totalDuration) {
 
 // Worker message handler
 self.onmessage = function(e) {
-    const { channelData, numChannels, sampleRate, duration, config } = e.data;
+    try {
+        const { channelData, numChannels, sampleRate, duration, config } = e.data;
 
-    // Set the config
-    BEAT_DETECTION = config;
+        // Set the config
+        BEAT_DETECTION = config;
 
-    // Convert channel data back to Float32Arrays (they come as regular arrays after transfer)
-    const channels = channelData.map(ch => new Float32Array(ch));
+        // Convert channel data back to Float32Arrays (they come as regular arrays after transfer)
+        const channels = channelData.map(ch => new Float32Array(ch));
 
-    // Mix to mono
-    const samples = mixToMono(channels, numChannels);
+        // Mix to mono
+        const samples = mixToMono(channels, numChannels);
 
-    // Analyze beats
-    const beats = analyzeBeats(samples, sampleRate, duration);
+        // Analyze beats
+        const beats = analyzeBeats(samples, sampleRate, duration);
 
-    // Send results back
-    self.postMessage({ beats });
+        // Send results back
+        self.postMessage({ beats, error: null });
+    } catch (error) {
+        console.error('Beat worker error:', error);
+        // Send error back to main thread
+        self.postMessage({ beats: [], error: error.message || 'Beat analysis failed' });
+    }
 };

@@ -108,7 +108,7 @@ const COREO_TYPES = {
         pogoHeight: 22,
         pogoSpeed: 200,              // Synced with clap rhythm
         clapSpeed: 200,              // ms per clap cycle
-        showItem: null,
+        showItem: 'placard',
         showOverlay: false,
         overlayRenderer: null
     },
@@ -661,6 +661,14 @@ class DrawBatch {
         }
         this.faceCount = 0;
     }
+
+    // Full reset - clears all color groups to prevent memory accumulation
+    // Call this between games when club changes
+    fullReset() {
+        this.colorGroups = {};
+        this.faceCount = 0;
+        // Keep faceQueue allocated for reuse
+    }
 }
 
 // Draw face features (eyes and mouth) - called after batch flush to ensure visibility
@@ -688,6 +696,11 @@ function drawFace(ctx, x, y, px, eyeOffsetY, mouthShape, emotion) {
 
 // Reusable batch instance to avoid allocations
 const supporterBatch = new DrawBatch();
+
+// Reset batch memory between games to prevent color group accumulation
+export function resetDrawBatch() {
+    supporterBatch.fullReset();
+}
 
 // Reusable colors object to avoid per-supporter allocation
 const _colorsCache = { primary: '', secondary: '' };

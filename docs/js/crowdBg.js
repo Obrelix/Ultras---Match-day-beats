@@ -3,7 +3,7 @@
 // ============================================
 
 import { state } from './state.js';
-import { drawGameVisuals, drawAmbientCrowd, initSupporters, generateTifoMap } from './crowd.js';
+import { drawGameVisuals, drawAmbientCrowd, initSupporters, generateTifoMap, resetDrawBatch } from './crowd.js';
 
 let _resizeHandler = null;
 let _lastIdleFrame = 0;
@@ -106,7 +106,16 @@ export function updateCrowdClub() {
         state.tifoMap = null;
         const canvasWidth = state.crowdBgCanvas?.width || 1200;
         const canvasHeight = state.crowdBgCanvas?.height || 300;
-        generateTifoMap(state.selectedClub.badge, canvasWidth, canvasHeight);
+        // Properly handle the async tifo generation with error catching
+        generateTifoMap(state.selectedClub.badge, canvasWidth, canvasHeight)
+            .then(() => {
+                // tifoReady is set inside generateTifoMap on success
+            })
+            .catch((err) => {
+                console.warn('Failed to generate tifo map:', err);
+                state.tifoReady = false;
+                state.tifoMap = null;
+            });
     } else {
         state.cachedColors = { primary: '#006633', secondary: '#FFFFFF' };
         state.tifoReady = false;
@@ -115,4 +124,6 @@ export function updateCrowdClub() {
     // Reinit supporters with new club colors
     state.supporters = [];
     state.smokeParticles = [];
+    // Reset draw batch to clear accumulated color groups from previous club
+    resetDrawBatch();
 }

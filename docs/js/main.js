@@ -38,7 +38,11 @@ function analyzeBeatsAsync(audioBuffer) {
 
         // Set up one-time message handler for this analysis
         beatWorker.onmessage = (e) => {
-            resolve(e.data.beats);
+            if (e.data.error) {
+                reject(new Error(e.data.error));
+            } else {
+                resolve(e.data.beats);
+            }
         };
 
         beatWorker.onerror = (e) => {
@@ -55,6 +59,14 @@ function analyzeBeatsAsync(audioBuffer) {
             config: BEAT_DETECTION
         });
     });
+}
+
+// Terminate worker when no longer needed (call on game quit/cleanup)
+function terminateBeatWorker() {
+    if (beatWorker) {
+        beatWorker.terminate();
+        beatWorker = null;
+    }
 }
 
 // ============================================
@@ -155,35 +167,45 @@ async function startMatchdayChant() {
     // Clear canvas effects
     elements.gameCanvas.classList.remove('beat-pulse', 'hit-perfect', 'hit-good', 'hit-ok', 'hit-miss');
 
-    // Initialize audio and visualizer
-    await initAudio();
-    initVisualizer();
-    await loadAudio(chant.audio);
-
-    // Show loading overlay and yield for render
+    // Show loading overlay
     elements.loadingOverlay.classList.remove('hidden');
-    await new Promise(resolve => setTimeout(resolve, 50));
 
-    // Pre-analyze beats in Web Worker (non-blocking) and waveform
-    state.detectedBeats = await analyzeBeatsAsync(state.audioBuffer);
-    computeWaveformPeaks();
-    buildWaveformCache();
+    try {
+        // Initialize audio and visualizer
+        await initAudio();
+        initVisualizer();
+        await loadAudio(chant.audio);
 
-    elements.loadingOverlay.classList.add('hidden');
+        // Yield for render
+        await new Promise(resolve => setTimeout(resolve, 50));
 
-    // Tutorial on first play
-    if (!hasTutorialSeen()) {
-        await showTutorial();
+        // Pre-analyze beats in Web Worker (non-blocking) and waveform
+        state.detectedBeats = await analyzeBeatsAsync(state.audioBuffer);
+        computeWaveformPeaks();
+        buildWaveformCache();
+
+        elements.loadingOverlay.classList.add('hidden');
+
+        // Tutorial on first play
+        if (!hasTutorialSeen()) {
+            await showTutorial();
+        }
+
+        // Start countdown then game
+        await countdown();
+
+        playAudio(endGame);
+        state.audioStartTime = state.audioContext.currentTime;
+        state.gameStartTime = performance.now();
+
+        gameLoop();
+    } catch (error) {
+        console.error('Failed to start chant:', error);
+        elements.loadingOverlay.classList.add('hidden');
+        // Show error and return to menu
+        alert('Failed to load audio. Please try again.');
+        quitToMenu();
     }
-
-    // Start countdown then game
-    await countdown();
-
-    playAudio(endGame);
-    state.audioStartTime = state.audioContext.currentTime;
-    state.gameStartTime = performance.now();
-
-    gameLoop();
 }
 
 // Register the chant starter with ui.js so it can auto-advance
@@ -215,35 +237,45 @@ async function startGame() {
     // Clear canvas effects
     elements.gameCanvas.classList.remove('beat-pulse', 'hit-perfect', 'hit-good', 'hit-ok', 'hit-miss');
 
-    // Initialize audio and visualizer
-    await initAudio();
-    initVisualizer();
-    await loadAudio(state.selectedChant.audio);
-
-    // Show loading overlay and yield for render
+    // Show loading overlay
     elements.loadingOverlay.classList.remove('hidden');
-    await new Promise(resolve => setTimeout(resolve, 50));
 
-    // Pre-analyze beats in Web Worker (non-blocking) and waveform
-    state.detectedBeats = await analyzeBeatsAsync(state.audioBuffer);
-    computeWaveformPeaks();
-    buildWaveformCache();
+    try {
+        // Initialize audio and visualizer
+        await initAudio();
+        initVisualizer();
+        await loadAudio(state.selectedChant.audio);
 
-    elements.loadingOverlay.classList.add('hidden');
+        // Yield for render
+        await new Promise(resolve => setTimeout(resolve, 50));
 
-    // Tutorial on first play
-    if (!hasTutorialSeen()) {
-        await showTutorial();
+        // Pre-analyze beats in Web Worker (non-blocking) and waveform
+        state.detectedBeats = await analyzeBeatsAsync(state.audioBuffer);
+        computeWaveformPeaks();
+        buildWaveformCache();
+
+        elements.loadingOverlay.classList.add('hidden');
+
+        // Tutorial on first play
+        if (!hasTutorialSeen()) {
+            await showTutorial();
+        }
+
+        // Start countdown then game
+        await countdown();
+
+        playAudio(endGame);
+        state.audioStartTime = state.audioContext.currentTime;
+        state.gameStartTime = performance.now();
+
+        gameLoop();
+    } catch (error) {
+        console.error('Failed to start game:', error);
+        elements.loadingOverlay.classList.add('hidden');
+        // Show error and return to menu
+        alert('Failed to load audio. Please try again.');
+        quitToMenu();
     }
-
-    // Start countdown then game
-    await countdown();
-
-    playAudio(endGame);
-    state.audioStartTime = state.audioContext.currentTime;
-    state.gameStartTime = performance.now();
-
-    gameLoop();
 }
 
 async function showTutorial() {
@@ -384,12 +416,17 @@ async function resumeGame() {
     if (state.activeBeat) {
         state.activeBeat.time += pauseDuration;
     }
+    // Also shift crowdBeatTime to keep visual sync
+    if (state.crowdBeatTime > 0) {
+        state.crowdBeatTime += pauseDuration;
+    }
     state.isPaused = false;
     if (state.audioContext) await state.audioContext.resume();
     elements.pauseOverlay.classList.add('hidden');
     // Close volume panel if open
     elements.volumePanel.classList.add('hidden');
-    gameLoop();
+    // Use requestAnimationFrame instead of direct call to prevent race conditions
+    state.gameLoopId = requestAnimationFrame(gameLoop);
 }
 
 function quitToMenu() {
