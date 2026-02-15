@@ -20,7 +20,8 @@ export const screens = {
     chantResult: document.getElementById('chant-result-screen'),
     halftime: document.getElementById('halftime-screen'),
     results: document.getElementById('results-screen'),
-    fulltime: document.getElementById('fulltime-screen')
+    fulltime: document.getElementById('fulltime-screen'),
+    leaderboard: document.getElementById('leaderboard-screen')
 };
 
 export const elements = {
@@ -122,6 +123,10 @@ export const elements = {
     // High score
     highScoreDisplay: document.getElementById('high-score-display'),
     highScoreValue: document.getElementById('high-score-value'),
+
+    // Leaderboard
+    viewLeaderboardBtn: document.getElementById('view-leaderboard-btn'),
+    playerRank: document.getElementById('player-rank'),
 };
 
 export function showScreen(screenName) {
@@ -282,6 +287,29 @@ export function endGame() {
         const best = loadHighScore(state.selectedClub.id, state.selectedChant.id);
         elements.highScoreValue.textContent = best;
         elements.highScoreDisplay.classList.remove('hidden');
+
+        // Submit to leaderboard
+        if (_onScoreSubmit) {
+            const totalHits = state.playerStats.perfect + state.playerStats.good + state.playerStats.ok;
+            const accuracy = state.totalBeats > 0
+                ? Math.round((totalHits / state.totalBeats) * 100)
+                : 0;
+
+            _onScoreSubmit({
+                clubId: state.selectedClub.id,
+                chantId: state.selectedChant.id,
+                difficulty: state.settings.difficulty,
+                score: state.playerScore,
+                maxCombo: state.playerMaxCombo,
+                accuracy,
+                stats: { ...state.playerStats }
+            });
+        }
+    }
+
+    // Reset player rank display
+    if (elements.playerRank) {
+        elements.playerRank.classList.add('hidden');
     }
 
     showScreen('results');
@@ -293,6 +321,14 @@ let _startNextChant = null;
 
 export function setMatchdayChantStarter(fn) {
     _startNextChant = fn;
+}
+
+// Leaderboard: called when a score should be submitted
+// Set by main.js via setScoreSubmitHandler
+let _onScoreSubmit = null;
+
+export function setScoreSubmitHandler(fn) {
+    _onScoreSubmit = fn;
 }
 
 function endMatchdayChant() {

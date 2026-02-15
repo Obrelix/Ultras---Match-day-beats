@@ -80,7 +80,7 @@ const _frameCache = {
 
 function updateFrameCache(now) {
     _frameCache.now = now;
-    _frameCache.reducedEffects = state.settings.reducedEffects;  // Read from state, not self
+    _frameCache.reducedEffects = state.settings.reducedEffects === true;  // Explicit boolean (guards against undefined)
     _frameCache.primaryColor = state.cachedColors?.primary || '#006633';
     _frameCache.secondaryColor = state.cachedColors?.secondary || '#FFFFFF';
     _frameCache.crowdEmotion = state.crowdEmotion;

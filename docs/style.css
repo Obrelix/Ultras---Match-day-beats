@@ -1749,3 +1749,320 @@ body {
         font-size: 0.85rem;
     }
 }
+
+/* ============================================
+   Leaderboard Screen
+   ============================================ */
+
+#leaderboard-screen {
+    max-width: 600px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+#leaderboard-title {
+    font-size: 1.5rem;
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+#leaderboard-filters {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.leaderboard-filter-btn {
+    padding: 8px 20px;
+    font-size: 0.9rem;
+    border: 2px solid var(--text-muted);
+    background: transparent;
+    color: var(--text-light);
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.leaderboard-filter-btn:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
+.leaderboard-filter-btn.active {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: var(--bg-dark);
+}
+
+#leaderboard-container {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 15px;
+    padding: 20px;
+    margin-bottom: 20px;
+    min-height: 300px;
+}
+
+#leaderboard-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    color: var(--text-muted);
+}
+
+#leaderboard-offline {
+    text-align: center;
+    padding: 10px;
+    background: rgba(255, 170, 0, 0.2);
+    border-radius: 8px;
+    margin-bottom: 15px;
+    color: var(--ok-color);
+    font-size: 0.85rem;
+}
+
+#leaderboard-empty {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-muted);
+}
+
+#leaderboard-entries {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.leaderboard-entry {
+    display: grid;
+    grid-template-columns: 50px 1fr 100px 60px;
+    align-items: center;
+    padding: 12px 15px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    transition: all 0.2s ease;
+}
+
+.leaderboard-entry:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.leaderboard-entry.current-player {
+    background: rgba(0, 102, 51, 0.3);
+    border: 2px solid var(--primary-color);
+}
+
+.entry-rank {
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: var(--text-muted);
+}
+
+.entry-name {
+    font-size: 1rem;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.entry-score {
+    font-size: 1.1rem;
+    font-weight: bold;
+    text-align: right;
+    color: var(--accent-gold);
+}
+
+.entry-combo {
+    font-size: 0.9rem;
+    text-align: right;
+    color: var(--text-muted);
+}
+
+/* Medal styling for top 3 */
+.medal {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    font-size: 0.9rem;
+    font-weight: bold;
+}
+
+.medal.gold {
+    background: linear-gradient(135deg, #ffd700, #ffaa00);
+    color: #1a1a2e;
+}
+
+.medal.silver {
+    background: linear-gradient(135deg, #c0c0c0, #a0a0a0);
+    color: #1a1a2e;
+}
+
+.medal.bronze {
+    background: linear-gradient(135deg, #cd7f32, #a05a20);
+    color: #1a1a2e;
+}
+
+/* ============================================
+   Name Modal
+   ============================================ */
+
+#name-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+#name-modal.hidden {
+    display: none;
+}
+
+#name-modal-content {
+    background: linear-gradient(135deg, var(--bg-dark), var(--bg-darker));
+    padding: 30px 40px;
+    border-radius: 20px;
+    text-align: center;
+    max-width: 400px;
+    width: 90%;
+    border: 2px solid var(--primary-color);
+}
+
+#name-modal-content h3 {
+    font-size: 1.5rem;
+    margin-bottom: 10px;
+}
+
+#name-modal-content p {
+    color: var(--text-muted);
+    margin-bottom: 20px;
+}
+
+#player-name-input {
+    width: 100%;
+    padding: 12px 15px;
+    font-size: 1.1rem;
+    border: 2px solid var(--text-muted);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-light);
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+#player-name-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+#name-error {
+    color: var(--miss-color);
+    font-size: 0.85rem;
+    margin-bottom: 15px;
+}
+
+#name-error.hidden {
+    display: none;
+}
+
+#name-modal-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+#name-modal-buttons .btn-primary,
+#name-modal-buttons .btn-secondary {
+    padding: 10px 25px;
+    font-size: 1rem;
+}
+
+/* ============================================
+   Player Rank Display (Results Screen)
+   ============================================ */
+
+#player-rank {
+    font-size: 1.2rem;
+    color: var(--accent-gold);
+    margin: 10px 0;
+    padding: 8px 20px;
+    background: rgba(255, 215, 0, 0.1);
+    border-radius: 20px;
+    border: 1px solid var(--accent-gold);
+}
+
+#player-rank.hidden {
+    display: none;
+}
+
+#results-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+    margin-top: 15px;
+}
+
+#view-leaderboard-btn {
+    margin-top: 0;
+}
+
+/* ============================================
+   Leaderboard Responsive
+   ============================================ */
+
+@media (max-width: 600px) {
+    .leaderboard-entry {
+        grid-template-columns: 40px 1fr 80px 50px;
+        padding: 10px 12px;
+    }
+
+    .entry-rank {
+        font-size: 1rem;
+    }
+
+    .entry-name {
+        font-size: 0.9rem;
+    }
+
+    .entry-score {
+        font-size: 1rem;
+    }
+
+    .entry-combo {
+        font-size: 0.8rem;
+    }
+
+    .medal {
+        width: 24px;
+        height: 24px;
+        font-size: 0.8rem;
+    }
+
+    #name-modal-content {
+        padding: 20px 25px;
+    }
+
+    #name-modal-content h3 {
+        font-size: 1.3rem;
+    }
+
+    #leaderboard-filters {
+        gap: 6px;
+    }
+
+    .leaderboard-filter-btn {
+        padding: 6px 14px;
+        font-size: 0.8rem;
+    }
+}

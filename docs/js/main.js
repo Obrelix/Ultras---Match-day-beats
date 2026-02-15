@@ -11,9 +11,11 @@ import { initCrowdBg, setCrowdMode, updateCrowdClub } from './crowdBg.js';
 import {
     showScreen, applyClubTheme, renderClubSelection, renderChantSelection,
     renderMatchdayIntro, updateMatchScoreboard, updateScoreboardTeams,
-    setMatchdayChantStarter, endGame, elements, screens
+    setMatchdayChantStarter, setScoreSubmitHandler, endGame, elements, screens
 } from './ui.js';
 import { loadSettings, saveSettings, hasTutorialSeen, markTutorialSeen } from './storage.js';
+import { initLeaderboard } from './leaderboard.js';
+import { setupLeaderboardUI, handleScoreSubmission } from './leaderboardUI.js';
 
 // ============================================
 // Beat Detection Worker (runs off main thread)
@@ -622,6 +624,12 @@ document.querySelectorAll('.difficulty-btn').forEach(btn => {
 
 // Initialize persistent crowd background canvas
 initCrowdBg();
+
+// Initialize leaderboard system
+setScoreSubmitHandler(handleScoreSubmission);
+initLeaderboard().then(() => {
+    setupLeaderboardUI();
+});
 
 // Initialize on load
 showScreen('title');

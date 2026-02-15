@@ -20,14 +20,16 @@ function setStore(data) {
 }
 
 export function loadSettings() {
-    const store = getStore();
-    return store.settings || {
+    const defaults = {
         volume: 1.0,
         sfxVolume: 0.5,
         difficulty: 'normal',
         reducedEffects: false,
         tutorialSeen: false
     };
+    const store = getStore();
+    // Merge stored settings with defaults to handle missing properties from older versions
+    return store.settings ? { ...defaults, ...store.settings } : defaults;
 }
 
 export function saveSettings(settings) {
@@ -71,4 +73,49 @@ export function markTutorialSeen() {
     const settings = loadSettings();
     settings.tutorialSeen = true;
     saveSettings(settings);
+}
+
+// ============================================
+// Player Profile (for leaderboards)
+// ============================================
+
+export function loadPlayerProfile() {
+    const store = getStore();
+    return store.playerProfile || null;
+}
+
+export function savePlayerProfile(profile) {
+    const store = getStore();
+    store.playerProfile = profile;
+    setStore(store);
+}
+
+// ============================================
+// Offline Queue (pending leaderboard submissions)
+// ============================================
+
+export function loadOfflineQueue() {
+    const store = getStore();
+    return store.offlineQueue || [];
+}
+
+export function saveOfflineQueue(queue) {
+    const store = getStore();
+    store.offlineQueue = queue;
+    setStore(store);
+}
+
+// ============================================
+// Leaderboard Cache
+// ============================================
+
+export function loadLeaderboardCache() {
+    const store = getStore();
+    return store.leaderboardCache || {};
+}
+
+export function saveLeaderboardCache(cache) {
+    const store = getStore();
+    store.leaderboardCache = cache;
+    setStore(store);
 }

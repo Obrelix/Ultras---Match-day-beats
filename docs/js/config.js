@@ -176,3 +176,19 @@ export const MATCHDAY = {
     AI_GOAL_CHANCE: 0.45,
     CHANT_TRANSITION_MS: 3000,
 };
+
+export const LEADERBOARD = {
+    ENABLED: true,
+    CACHE_TTL: 60000,
+    TOP_ENTRIES: 10,
+    NAME_MIN_LENGTH: 2,
+    NAME_MAX_LENGTH: 16,
+    OFFLINE_QUEUE_MAX: 20,
+    MIN_SUBMIT_INTERVAL: 5000,
+    FIREBASE: {
+        apiKey: "AIzaSyCVc2VeW2zDk5-TPDAJt8AO1k5O82hHBdM",
+        authDomain: "ultras---match-day-beats.firebaseapp.com",
+        projectId: "ultras---match-day-beats",
+        databaseURL: "https://ultras---match-day-beats-default-rtdb.europe-west1.firebasedatabase.app"
+    }
+};
