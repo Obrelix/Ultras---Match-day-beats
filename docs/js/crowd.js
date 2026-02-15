@@ -692,6 +692,288 @@ const supporterBatch = new DrawBatch();
 // Reusable colors object to avoid per-supporter allocation
 const _colorsCache = { primary: '', secondary: '' };
 
+// ============================================
+// Sprite Cache System (#11) - Pre-rendered supporter sprites
+// Caches basic supporter body (head + torso + standing legs) for common color combos
+// ============================================
+
+const SPRITE_CACHE = {
+    canvas: null,
+    ctx: null,
+    ready: false,
+    sprites: new Map(),  // Key: "shirtColor_skinColor" -> {x, y, w, h}
+    PX: 2.7,
+    SPRITE_W: 12,  // pixels (not px units)
+    SPRITE_H: 15,
+    COLS: 20,      // sprites per row in cache
+    nextSlot: 0
+};
+
+// Common skin tones to pre-cache (must match initSupporters)
+const CACHE_SKIN_TONES = ['#f5d0a9', '#d4a373', '#f79c9c', '#c68642', '#e0ac69'];
+
+// Initialize sprite cache with common color combinations
+function initSpriteCache(shirtColors) {
+    const px = SPRITE_CACHE.PX;
+    const spriteW = Math.ceil(SPRITE_CACHE.SPRITE_W * px);
+    const spriteH = Math.ceil(SPRITE_CACHE.SPRITE_H * px);
+    const cols = SPRITE_CACHE.COLS;
+
+    // Calculate total sprites needed
+    const totalSprites = shirtColors.length * CACHE_SKIN_TONES.length;
+    const rows = Math.ceil(totalSprites / cols);
+
+    // Create cache canvas
+    const cacheW = cols * spriteW;
+    const cacheH = rows * spriteH;
+
+    try {
+        SPRITE_CACHE.canvas = new OffscreenCanvas(cacheW, cacheH);
+    } catch (e) {
+        SPRITE_CACHE.canvas = document.createElement('canvas');
+        SPRITE_CACHE.canvas.width = cacheW;
+        SPRITE_CACHE.canvas.height = cacheH;
+    }
+    SPRITE_CACHE.ctx = SPRITE_CACHE.canvas.getContext('2d');
+    SPRITE_CACHE.sprites.clear();
+    SPRITE_CACHE.nextSlot = 0;
+
+    // Pre-render all combinations
+    for (const shirtColor of shirtColors) {
+        for (const skinColor of CACHE_SKIN_TONES) {
+            renderSpriteToCache(shirtColor, skinColor);
+        }
+    }
+
+    SPRITE_CACHE.ready = true;
+}
+
+// Render a single supporter body sprite to the cache
+function renderSpriteToCache(shirtColor, skinColor) {
+    const px = SPRITE_CACHE.PX;
+    const spriteW = Math.ceil(SPRITE_CACHE.SPRITE_W * px);
+    const spriteH = Math.ceil(SPRITE_CACHE.SPRITE_H * px);
+    const cols = SPRITE_CACHE.COLS;
+    const slot = SPRITE_CACHE.nextSlot++;
+
+    const col = slot % cols;
+    const row = Math.floor(slot / cols);
+    const offsetX = col * spriteW;
+    const offsetY = row * spriteH;
+
+    const ctx = SPRITE_CACHE.ctx;
+
+    // Draw basic supporter body (centered in sprite, no arms)
+    // Local coordinates within sprite
+    const x = 0;
+    const y = 0;
+
+    // Legs (standing pose)
+    ctx.fillStyle = '#222244';
+    ctx.fillRect(offsetX + 2 * px, offsetY + 11 * px, 2 * px, 3 * px);
+    ctx.fillRect(offsetX + 6 * px, offsetY + 11 * px, 2 * px, 3 * px);
+
+    // Torso/shirt
+    ctx.fillStyle = shirtColor;
+    ctx.fillRect(offsetX + 2 * px, offsetY + 6 * px, 6 * px, 5 * px);
+
+    // Head
+    ctx.fillStyle = skinColor;
+    ctx.fillRect(offsetX + 3 * px, offsetY + 2 * px, 4 * px, 4 * px);
+
+    // Hair
+    ctx.fillStyle = '#222222';
+    ctx.fillRect(offsetX + 3 * px, offsetY + 1 * px, 4 * px, 1 * px);
+
+    // Store sprite location
+    const key = `${shirtColor}_${skinColor}`;
+    SPRITE_CACHE.sprites.set(key, {
+        x: offsetX,
+        y: offsetY,
+        w: spriteW,
+        h: spriteH
+    });
+}
+
+// Get cached sprite for a supporter, or null if not cached
+function getCachedSprite(shirtColor, skinColor) {
+    if (!SPRITE_CACHE.ready) return null;
+    const key = `${shirtColor}_${skinColor}`;
+    return SPRITE_CACHE.sprites.get(key) || null;
+}
+
+// Draw supporter using cached sprite + dynamic parts
+function drawSupporterCached(ctx, s, jumpOffset, armsUp, frenzy, now, coreo, batch, primaryColor, secondaryColor, preCalc) {
+    const sprite = getCachedSprite(s.shirtColor, s.skinColor);
+
+    // Fall back to full draw if not cached or during special states
+    if (!sprite || state.crowdEmotion === 'deject' || s.hasHat) {
+        drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreo, batch, primaryColor, secondaryColor, preCalc);
+        return;
+    }
+
+    const px = s.px;
+    const baseX = s.x | 0;
+    let y = (s.baseY + jumpOffset) | 0;
+
+    const primary = primaryColor || state.cachedColors?.primary || '#006633';
+    const secondary = secondaryColor || state.cachedColors?.secondary || '#FFFFFF';
+
+    let currentFrenzy = frenzy;
+    let currentRockX = 0;
+    let eyeOffsetY = 0;
+    let mouthShape = 'normal';
+
+    const emotion = state.crowdEmotion;
+    if (emotion === 'celebrate') {
+        currentFrenzy = true;
+        mouthShape = 'open';
+    } else if (currentFrenzy) {
+        mouthShape = 'open';
+    }
+
+    // Calculate sway
+    if (s.hasFlag && currentFrenzy) {
+        const flagSwing = getFlagSwing(s, now);
+        currentRockX = flagSwing.swingX * 0.4;
+        y += (flagSwing.swingY * 0.3) | 0;
+    } else if (coreo && coreo.id > 0) {
+        currentRockX = getCoreoSway(coreo, s, now, preCalc);
+    } else if (currentFrenzy) {
+        currentRockX = Math.sin(now / 120 + s.jumpPhase) * 3;
+    }
+    const x = (baseX + currentRockX) | 0;
+
+    // Beat ripple effect
+    const timeSinceBeat = preCalc.timeSinceBeat || 0;
+    const rowDelay = s.row * 0.06;
+    const rippleProgress = Math.max(0, timeSinceBeat - rowDelay);
+    const rippleIntensity = Math.max(0, 1 - rippleProgress * 5) * 0.15;
+
+    if (rippleIntensity > 0.01 && !state.settings.reducedEffects) {
+        ctx.fillStyle = primary;
+        ctx.globalAlpha = rippleIntensity;
+        ctx.fillRect(x - px, y + 2 * px, 12 * px, 12 * px);
+        ctx.globalAlpha = 1;
+    }
+
+    // Frenzy glow
+    if (currentFrenzy && !state.settings.reducedEffects) {
+        const glowPhase = (Math.sin(now / 200 + s.jumpPhase) + 1) * 0.5;
+        ctx.fillStyle = primary;
+        ctx.globalAlpha = 0.12 + glowPhase * 0.1;
+        ctx.fillRect(x - px, y + 2 * px, 12 * px, 12 * px);
+        ctx.globalAlpha = 1;
+    }
+
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(x + px, Math.floor(s.baseY + 2 * px), 8 * px, px);
+
+    // Blit cached sprite (body without arms)
+    ctx.drawImage(
+        SPRITE_CACHE.canvas,
+        sprite.x, sprite.y, sprite.w, sprite.h,
+        x, y, sprite.w, sprite.h
+    );
+
+    // Draw dynamic arms based on state
+    const armsPos = coreo ? getCoreoArmsPosition(coreo) : 'normal';
+    drawDynamicArms(ctx, s, x, y, px, armsUp, currentFrenzy, now, coreo, armsPos, batch);
+
+    // Face (drawn directly, not batched for cached sprites)
+    drawFace(ctx, x, y, px, eyeOffsetY, mouthShape, emotion);
+
+    // Coreo items
+    if (coreo && coreo.showItem && !s.hasFlag && !s.hasFlare) {
+        _colorsCache.primary = primary;
+        _colorsCache.secondary = secondary;
+        drawCoreoItem(ctx, coreo, s, x, y, now, _colorsCache, null);
+    } else if (s.hasScarf && s.scarfColor) {
+        ctx.fillStyle = s.scarfColor;
+        ctx.fillRect(x + 2 * px, y + 5 * px, 6 * px, px);
+        if (currentFrenzy) {
+            const scarfWave = Math.sin(now / 100 + s.jumpPhase) > 0 ? 1 : -1;
+            ctx.fillRect(x + (scarfWave > 0 ? 8 : -2) * px, y + 5 * px, 2 * px, px);
+        }
+    }
+}
+
+// Draw just the arms (extracted for cached sprite system)
+function drawDynamicArms(ctx, s, x, y, px, armsUp, frenzy, now, coreo, armsPos, batch) {
+    const clapSpeed = coreo?.clapSpeed || 200;
+
+    // Arm transition
+    const targetArm = (armsUp || armsPos === 'scarf-hold' || armsPos === 'up') ? 1 : 0;
+    if (s.armTransition === undefined) s.armTransition = 0;
+    if (targetArm > s.armTransition) {
+        s.armTransition = Math.min(1, s.armTransition + 0.08);
+    } else if (targetArm < s.armTransition) {
+        s.armTransition = Math.max(0, s.armTransition - 0.056);
+    }
+    const armLerp = s.armTransition;
+
+    ctx.fillStyle = s.skinColor;
+
+    if (armsPos === 'pump' && !s.hasFlag && !s.hasFlare) {
+        const pumpPhase = Math.sin(now / 150);
+        if (pumpPhase > 0) {
+            ctx.fillRect(x - px, y + 1 * px, 2 * px, 4 * px);
+            ctx.fillRect(x + 9 * px, y + 1 * px, 2 * px, 4 * px);
+            ctx.fillRect(x - px, y, 2 * px, px);
+            ctx.fillRect(x + 9 * px, y, 2 * px, px);
+        } else {
+            ctx.fillRect(x - px, y + 4 * px, 2 * px, 4 * px);
+            ctx.fillRect(x + 9 * px, y + 4 * px, 2 * px, 4 * px);
+        }
+    } else if (armsPos === 'clap' && !s.hasFlag && !s.hasFlare) {
+        const clapPhase = Math.sin(now / clapSpeed);
+        if (clapPhase > 0.3) {
+            ctx.fillRect(x + 3 * px, y + 5 * px, 2 * px, 2 * px);
+            ctx.fillRect(x + 5 * px, y + 5 * px, 2 * px, 2 * px);
+            ctx.fillRect(x + px, y + 6 * px, 2 * px, 3 * px);
+            ctx.fillRect(x + 7 * px, y + 6 * px, 2 * px, 3 * px);
+        } else {
+            ctx.fillRect(x - px, y + 5 * px, 2 * px, 2 * px);
+            ctx.fillRect(x + 9 * px, y + 5 * px, 2 * px, 2 * px);
+            ctx.fillRect(x - px, y + 6 * px, 3 * px, 2 * px);
+            ctx.fillRect(x + 8 * px, y + 6 * px, 3 * px, 2 * px);
+        }
+    } else if (armsPos === 'scarf-hold' && !s.hasFlag && !s.hasFlare) {
+        ctx.fillRect(x - px, y + 1 * px, 2 * px, 5 * px);
+        ctx.fillRect(x + 9 * px, y + 1 * px, 2 * px, 5 * px);
+        ctx.fillRect(x - px, y, 2 * px, px);
+        ctx.fillRect(x + 9 * px, y, 2 * px, px);
+    } else if (frenzy) {
+        const armPhase = Math.sin(now / 150 + s.jumpPhase);
+        if (armPhase > 0.3) {
+            ctx.fillRect(x - px, y + 1 * px, 2 * px, 3 * px);
+            ctx.fillRect(x + 9 * px, y + 1 * px, 2 * px, 3 * px);
+            ctx.fillRect(x - px, y, 2 * px, px);
+            ctx.fillRect(x + 9 * px, y, 2 * px, px);
+        } else if (armPhase > -0.3) {
+            ctx.fillRect(x - px, y + 2 * px, 2 * px, 4 * px);
+            ctx.fillRect(x + 9 * px, y + 5 * px, 3 * px, 2 * px);
+        } else {
+            ctx.fillRect(x - px, y + 4 * px, 3 * px, 2 * px);
+            ctx.fillRect(x + 8 * px, y + 4 * px, 3 * px, 2 * px);
+        }
+    } else if (armsUp || armLerp > 0.1) {
+        const armYOffset = Math.round((7 - 5 * armLerp) * px);
+        const armLength = Math.round(4 - armLerp);
+        ctx.fillRect(x, y + armYOffset, 2 * px, armLength * px);
+        ctx.fillRect(x + 8 * px, y + armYOffset, 2 * px, armLength * px);
+        if (armLerp > 0.7) {
+            const handY = Math.round((1 + (1 - armLerp) * 2) * px);
+            ctx.fillRect(x, y + handY, 2 * px, px);
+            ctx.fillRect(x + 8 * px, y + handY, 2 * px, px);
+        }
+    } else {
+        ctx.fillRect(x, y + 7 * px, 2 * px, 4 * px);
+        ctx.fillRect(x + 8 * px, y + 7 * px, 2 * px, 4 * px);
+    }
+}
+
 // Pooled flag/flare queue to avoid array allocations each frame
 const _flagFlarePool = [];
 let _flagFlareCount = 0;
@@ -911,6 +1193,11 @@ export function initSupporters(canvasWidth, canvasHeight) {
 
     const palette = [primary, secondary, shadeColor(primary, -30), shadeColor(primary, 30), shadeColor(secondary, -40)];
     const skinTones = ['#f5d0a9', '#d4a373', '#f79c9c', '#c68642', '#e0ac69'];
+
+    // Initialize sprite cache with current palette (#11)
+    if (!SPRITE_CACHE.ready || state.cachedColors?.primary !== primary) {
+        initSpriteCache(palette);
+    }
 
     const startXOffset = 0;
     for (let row = 0; row < rows; row++) {
@@ -1791,7 +2078,17 @@ export function drawGameVisuals() {
         const jumpY = -(personalJump + frenzyBounce + swayAddition);
 
         const armsUp = !currentFrenzy && timeSinceBeat < 0.3 && s.jumpStrength > 0.7;
-        drawSupporter(ctx, s, jumpY, armsUp, currentFrenzy, now, coreo, supporterBatch, primaryColor, secondaryColor, preCalc);
+
+        // Use cached sprites for simple supporters (#11)
+        // Cached sprites work best for supporters without special accessories
+        const useCache = SPRITE_CACHE.ready && !s.hasFlag && !s.hasFlare && !s.hasHat &&
+                         state.crowdEmotion !== 'deject' && coreo.id < 3;
+
+        if (useCache) {
+            drawSupporterCached(ctx, s, jumpY, armsUp, currentFrenzy, now, coreo, null, primaryColor, secondaryColor, preCalc);
+        } else {
+            drawSupporter(ctx, s, jumpY, armsUp, currentFrenzy, now, coreo, supporterBatch, primaryColor, secondaryColor, preCalc);
+        }
 
         // Queue flag/flare drawing (needs to be on top of all supporters)
         if ((showFlags && s.hasFlag) || s.hasFlare) {
