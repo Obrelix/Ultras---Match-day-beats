@@ -24,6 +24,13 @@ export function initCrowdBg() {
     state.crowdBgCanvas = canvas;
     state.crowdBgCtx = canvas.getContext('2d');
 
+    // Remove old handler first (if exists)
+    if (_resizeHandler) {
+        window.removeEventListener('resize', _resizeHandler);
+        _resizeHandler = null;
+    }
+
+    // Create new resize handler
     function resizeCanvases() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
@@ -32,13 +39,13 @@ export function initCrowdBg() {
         // Recalculate stadium layout
         calculateStadiumLayout();
     }
-    resizeCanvases();
 
-    if (_resizeHandler) {
-        window.removeEventListener('resize', _resizeHandler);
-    }
+    // Store reference BEFORE adding listener (so we can remove it later)
     _resizeHandler = resizeCanvases;
-    window.addEventListener('resize', resizeCanvases);
+    window.addEventListener('resize', _resizeHandler);
+
+    // Initial resize
+    resizeCanvases();
 
     // Start the persistent animation loop
     requestAnimationFrame(crowdLoop);

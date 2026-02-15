@@ -7,6 +7,88 @@ import { elements } from './ui.js';
 import { getComboMultiplier } from './input.js';
 
 // ============================================
+// Performance Optimization: Gradient & Color Cache
+// Avoids creating 20+ gradients per frame
+// ============================================
+
+const _gradientCache = {
+    canvas: null,
+    ctx: null,
+    gradients: new Map(),
+    frameId: 0,
+    // Cached hex-to-rgba conversions
+    rgbaCache: new Map()
+};
+
+// Get or create cached gradient (reuse within same frame)
+function getCachedGradient(ctx, type, key, createFn) {
+    const cacheKey = `${type}_${key}`;
+    let cached = _gradientCache.gradients.get(cacheKey);
+    if (!cached || cached.frameId !== _gradientCache.frameId) {
+        cached = { gradient: createFn(), frameId: _gradientCache.frameId };
+        _gradientCache.gradients.set(cacheKey, cached);
+    }
+    return cached.gradient;
+}
+
+// Fast hex to rgba with caching
+function hexToRgbaCached(hex, alpha) {
+    if (!hex) return `rgba(100, 150, 255, ${alpha})`;
+    const cacheKey = `${hex}_${alpha}`;
+    let cached = _gradientCache.rgbaCache.get(cacheKey);
+    if (cached) return cached;
+
+    let result;
+    if (hex.startsWith('#')) {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        result = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    } else if (hex.startsWith('rgb')) {
+        result = hex.replace('rgb', 'rgba').replace(')', `, ${alpha})`);
+    } else {
+        result = `rgba(100, 150, 255, ${alpha})`;
+    }
+    _gradientCache.rgbaCache.set(cacheKey, result);
+    return result;
+}
+
+// Advance frame ID (call once per frame)
+function advanceGradientFrame() {
+    _gradientCache.frameId++;
+    // Clear old gradients less frequently (every ~30 seconds at 60fps)
+    // This preserves cache benefits while preventing unbounded memory growth
+    if (_gradientCache.frameId % 1800 === 0) {
+        _gradientCache.gradients.clear();
+    }
+}
+
+// ============================================
+// Performance Optimization: Frame-level State Cache
+// Cache frequently accessed state at frame start
+// ============================================
+
+const _frameCache = {
+    reducedEffects: false,
+    primaryColor: '#006633',
+    secondaryColor: '#FFFFFF',
+    crowdEmotion: 'neutral',
+    isFrenzy: false,
+    comboMultiplier: 1,
+    now: 0
+};
+
+function updateFrameCache(now) {
+    _frameCache.now = now;
+    _frameCache.reducedEffects = state.settings.reducedEffects;  // Read from state, not self
+    _frameCache.primaryColor = state.cachedColors?.primary || '#006633';
+    _frameCache.secondaryColor = state.cachedColors?.secondary || '#FFFFFF';
+    _frameCache.crowdEmotion = state.crowdEmotion;
+    _frameCache.isFrenzy = state.playerCombo > 5 || state.crowdEmotion === 'celebrate';
+    _frameCache.comboMultiplier = getComboMultiplier();
+}
+
+// ============================================
 // Coreo Configuration System
 // Each coreo type defines its unique crowd behavior
 // To add a new coreo: add an entry here and implement any new item/overlay renderers
@@ -317,7 +399,7 @@ function drawCoreoPlacard(ctx, coreo, supporter, x, y, now, colors, px, batch) {
     // Flash white during reveal
     const flashIntensity = revealProgress < 0.5 ? (1 - revealProgress * 2) * 0.5 : 0;
     let drawColor = placardColor;
-    if (flashIntensity > 0 && !state.settings.reducedEffects) {
+    if (flashIntensity > 0 && !_frameCache.reducedEffects) {
         // Blend with white for flash effect
         const r = parseInt(placardColor.slice(1, 3), 16);
         const g = parseInt(placardColor.slice(3, 5), 16);
@@ -863,7 +945,7 @@ function drawSupporterCached(ctx, s, jumpOffset, armsUp, frenzy, now, coreo, bat
     const rippleProgress = Math.max(0, timeSinceBeat - rowDelay);
     const rippleIntensity = Math.max(0, 1 - rippleProgress * 5) * 0.15;
 
-    if (rippleIntensity > 0.01 && !state.settings.reducedEffects) {
+    if (rippleIntensity > 0.01 && !_frameCache.reducedEffects) {
         ctx.fillStyle = primary;
         ctx.globalAlpha = rippleIntensity;
         ctx.fillRect(x - px, y + 2 * px, 12 * px, 12 * px);
@@ -871,7 +953,7 @@ function drawSupporterCached(ctx, s, jumpOffset, armsUp, frenzy, now, coreo, bat
     }
 
     // Frenzy glow
-    if (currentFrenzy && !state.settings.reducedEffects) {
+    if (currentFrenzy && !_frameCache.reducedEffects) {
         const glowPhase = (Math.sin(now / 200 + s.jumpPhase) + 1) * 0.5;
         ctx.fillStyle = primary;
         ctx.globalAlpha = 0.12 + glowPhase * 0.1;
@@ -1042,7 +1124,7 @@ const STADIUM_COLORS = {
 
 // Draw stadium roof/canopy silhouette at top
 function drawStadiumRoof(ctx, w, h) {
-    if (state.settings.reducedEffects) return;
+    if (_frameCache.reducedEffects) return;
 
     // Main roof canopy (curved profile)
     ctx.fillStyle = STADIUM_COLORS.roofSilhouette;
@@ -1096,11 +1178,14 @@ function drawStadiumRoof(ctx, w, h) {
     ctx.fillStyle = '#333348';
     ctx.fillRect(0, 9, w, 1);
 
-    // Roof edge shadow gradient
-    const roofGrad = ctx.createLinearGradient(0, 10, 0, 35);
-    roofGrad.addColorStop(0, 'rgba(0, 0, 0, 0.5)');
-    roofGrad.addColorStop(0.5, 'rgba(0, 0, 0, 0.2)');
-    roofGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    // Roof edge shadow gradient (cached)
+    const roofGrad = getCachedGradient(ctx, 'linear', `roof_${w}`, () => {
+        const g = ctx.createLinearGradient(0, 10, 0, 35);
+        g.addColorStop(0, 'rgba(0, 0, 0, 0.5)');
+        g.addColorStop(0.5, 'rgba(0, 0, 0, 0.2)');
+        g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        return g;
+    });
     ctx.fillStyle = roofGrad;
     ctx.fillRect(0, 10, w, 25);
 
@@ -1111,10 +1196,11 @@ function drawStadiumRoof(ctx, w, h) {
     }
 }
 
-// Draw floodlights with tower structures
+// Draw floodlights with tower structures (optimized - minimal gradients)
 function drawFloodlights(ctx, w, h, now, isFrenzy) {
-    if (state.settings.reducedEffects) return;
+    if (_frameCache.reducedEffects) return;
 
+    // Pre-calculate positions once (relative to width)
     const lightPositions = [
         { x: w * 0.08, scale: 0.7 },
         { x: w * 0.25, scale: 0.85 },
@@ -1122,7 +1208,7 @@ function drawFloodlights(ctx, w, h, now, isFrenzy) {
         { x: w * 0.75, scale: 0.85 },
         { x: w * 0.92, scale: 0.7 }
     ];
-    const flicker = isFrenzy ? (Math.sin(now / 100) * 0.1 + 0.9) : 1;
+    const flicker = isFrenzy ? (Math.sin(now * 0.01) * 0.1 + 0.9) : 1; // Optimized: now * 0.01 vs now / 100
 
     for (const light of lightPositions) {
         const lx = light.x;
@@ -1202,21 +1288,9 @@ function drawFloodlights(ctx, w, h, now, isFrenzy) {
     }
 }
 
-// Convert hex color to rgba string
+// Convert hex color to rgba string (use cached version for performance)
 function hexToRgba(hex, alpha) {
-    if (!hex) return `rgba(100, 150, 255, ${alpha})`;
-    // Handle hex colors
-    if (hex.startsWith('#')) {
-        const r = parseInt(hex.slice(1, 3), 16);
-        const g = parseInt(hex.slice(3, 5), 16);
-        const b = parseInt(hex.slice(5, 7), 16);
-        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-    }
-    // Handle rgb/rgba colors
-    if (hex.startsWith('rgb')) {
-        return hex.replace('rgb', 'rgba').replace(')', `, ${alpha})`);
-    }
-    return `rgba(100, 150, 255, ${alpha})`;
+    return hexToRgbaCached(hex, alpha);
 }
 
 // Draw advertising boards at bottom
@@ -1233,7 +1307,7 @@ function drawAdBoards(ctx, w, h, now, primaryColor) {
     ctx.fillRect(0, boardY, w, boardHeight);
 
     // LED panel effect
-    if (!state.settings.reducedEffects) {
+    if (!_frameCache.reducedEffects) {
         // Animated LED dots pattern
         ctx.fillStyle = 'rgba(50, 80, 120, 0.3)';
         const dotSpacing = 8;
@@ -1291,7 +1365,7 @@ function drawAdBoards(ctx, w, h, now, primaryColor) {
 
 // Draw stadium speakers/PA system at top corners
 function drawStadiumSpeakers(ctx, w, h) {
-    if (state.settings.reducedEffects) return;
+    if (_frameCache.reducedEffects) return;
 
     const speakerPositions = [
         { x: 50, angle: 0.2 },
@@ -1323,7 +1397,7 @@ function drawStadiumSpeakers(ctx, w, h) {
 
 // Draw scoreboard at top center
 function drawScoreboard(ctx, w, h, now) {
-    if (state.settings.reducedEffects) return;
+    if (_frameCache.reducedEffects) return;
 
     const boardW = 120;
     const boardH = 28;
@@ -1363,7 +1437,7 @@ function drawScoreboard(ctx, w, h, now) {
 
 // Draw club banners hanging from roof/barriers
 function drawClubBanners(ctx, w, h, now, primaryColor, secondaryColor) {
-    if (state.settings.reducedEffects) return;
+    if (_frameCache.reducedEffects) return;
 
     const bannerPositions = [
         { x: 100, y: 35, w: 40, h: 55 },
@@ -1435,7 +1509,7 @@ function drawPitchEdge(ctx, w, h) {
 
 // Draw corner flags
 function drawCornerFlags(ctx, w, h, now) {
-    if (state.settings.reducedEffects) return;
+    if (_frameCache.reducedEffects) return;
 
     const primaryColor = state.cachedColors?.primary || '#006633';
     const flagPositions = [
@@ -1489,7 +1563,7 @@ function drawCornerFlags(ctx, w, h, now) {
 
 // Draw atmospheric haze/smoke layer for stadium atmosphere
 function drawAtmosphereHaze(ctx, w, h, now, isFrenzy) {
-    if (state.settings.reducedEffects) return;
+    if (_frameCache.reducedEffects) return;
 
     const hazeOpacity = isFrenzy ? 0.08 : 0.03;
     const primaryColor = state.cachedColors?.primary || '#006633';
@@ -1525,7 +1599,7 @@ function drawAtmosphereHaze(ctx, w, h, now, isFrenzy) {
 
 // Draw goal posts silhouette in the distance
 function drawGoalPosts(ctx, w, h) {
-    if (state.settings.reducedEffects) return;
+    if (_frameCache.reducedEffects) return;
 
     const goalY = h - 6;
     const goalX = w / 2;
@@ -1597,7 +1671,7 @@ function drawStadiumBleachers(ctx, w, h) {
                 ctx.fillRect(segmentStart, stepTop, segmentWidth, stepHeight);
 
                 // Concrete texture (subtle noise pattern)
-                if (!state.settings.reducedEffects && row % 2 === 0) {
+                if (!_frameCache.reducedEffects && row % 2 === 0) {
                     ctx.fillStyle = BLEACHER_COLORS.wear;
                     for (let tx = segmentStart; tx < segmentEnd; tx += 40) {
                         if ((tx + row * 17) % 60 < 20) {
@@ -1649,7 +1723,7 @@ function drawStadiumBleachers(ctx, w, h) {
                 }
 
                 // Row number markers (on left side of each section)
-                if (!state.settings.reducedEffects && row > 0 && row < 6) {
+                if (!_frameCache.reducedEffects && row > 0 && row < 6) {
                     ctx.fillStyle = '#555566';
                     ctx.font = '8px monospace';
                     ctx.fillText(String(row), segmentStart + 4, stepTop + stepHeight - 2);
@@ -1683,7 +1757,7 @@ function drawStadiumBleachers(ctx, w, h) {
             ctx.fillRect(x, 0, 2, h - 20);
 
             // Section number at top
-            if (!state.settings.reducedEffects) {
+            if (!_frameCache.reducedEffects) {
                 ctx.fillStyle = '#444455';
                 ctx.font = 'bold 10px sans-serif';
                 ctx.fillText(`${sectionNum}`, x - 4, 45);
@@ -1760,7 +1834,7 @@ function drawStadiumBarriers(ctx, w, h) {
         }
 
         // Emergency exit sign at bottom of each aisle
-        if (!state.settings.reducedEffects) {
+        if (!_frameCache.reducedEffects) {
             ctx.fillStyle = '#004400';
             ctx.fillRect(aisle.start + aisleWidth / 2 - 12, h - 45, 24, 10);
             ctx.fillStyle = '#00ff00';
@@ -1806,7 +1880,7 @@ function drawStadiumBarriers(ctx, w, h) {
     }
 
     // Club-colored accent strip on barrier
-    if (!state.settings.reducedEffects) {
+    if (!_frameCache.reducedEffects) {
         ctx.fillStyle = primaryColor;
         ctx.globalAlpha = 0.4;
         ctx.fillRect(0, h - 6, w, 4);
@@ -2046,14 +2120,14 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreo, batch = n
     const rippleProgress = Math.max(0, timeSinceBeat - rowDelay);
     const rippleIntensity = Math.max(0, 1 - rippleProgress * 5) * 0.15;
 
-    if (rippleIntensity > 0.01 && !state.settings.reducedEffects) {
+    if (rippleIntensity > 0.01 && !_frameCache.reducedEffects) {
         ctx.fillStyle = primary;
         ctx.globalAlpha = rippleIntensity;
         ctx.fillRect(x - px, y + 2 * px, 12 * px, 12 * px);
         ctx.globalAlpha = 1;
     }
 
-    if (currentFrenzy && !state.settings.reducedEffects) {
+    if (currentFrenzy && !_frameCache.reducedEffects) {
         const glowPhase = (Math.sin(now / 200 + s.jumpPhase) + 1) * 0.5;
         ctx.fillStyle = primary;
         ctx.globalAlpha = 0.12 + glowPhase * 0.1;
@@ -2489,7 +2563,7 @@ function drawTifoOverlay(ctx, w, h, now) {
     ctx.globalAlpha = 0.5 + beatPulse * 0.15;
 
     // Add glow effect only if reduced effects is off (shadows are expensive)
-    if (!state.settings.reducedEffects) {
+    if (!_frameCache.reducedEffects) {
         ctx.save();
         ctx.translate(w / 2, h / 2);
         ctx.scale(scale, scale);
@@ -2554,7 +2628,7 @@ function drawInfernoOverlay(ctx, w, h, now) {
         ctx.textBaseline = 'middle';
 
         // Simple glow without heavy shadow
-        if (!state.settings.reducedEffects) {
+        if (!_frameCache.reducedEffects) {
             ctx.shadowColor = '#ff4400';
             ctx.shadowBlur = 15;
         }
@@ -2628,10 +2702,15 @@ export function drawGameVisuals() {
     const h = canvas.height;
     const ctx = state.crowdBgCtx;
     const now = performance.now();
-    const multiplier = getComboMultiplier();
+
+    // Performance: Update frame-level caches once at frame start
+    updateFrameCache(now);
+    advanceGradientFrame();
+
+    const multiplier = _frameCache.comboMultiplier;
 
     // Determine frenzy state based on crowdEmotion for visuals
-    const currentFrenzy = state.crowdEmotion === 'celebrate' || state.playerCombo > 5;
+    const currentFrenzy = _frameCache.isFrenzy;
     const coreo = getCoreoConfig(state.playerCombo);
 
     // Track coreo transitions for reveal animations (#10)
@@ -2647,28 +2726,42 @@ export function drawGameVisuals() {
 
     ctx.clearRect(0, 0, w, h);
 
-    // Sky / stadium background gradient
-    const grad = ctx.createLinearGradient(0, 0, 0, h);
-    if (state.crowdEmotion === 'deject') {
-        grad.addColorStop(0, '#0f0f1a');
-        grad.addColorStop(0.6, '#1a1a30');
-        grad.addColorStop(1, '#252540');
-    } else if (currentFrenzy && !state.settings.reducedEffects) {
+    // Sky / stadium background gradient (use cached for static states)
+    const emotion = _frameCache.crowdEmotion;
+    const reducedEffects = _frameCache.reducedEffects;
+
+    if (emotion === 'deject') {
+        const grad = getCachedGradient(ctx, 'linear', `sky_deject_${h}`, () => {
+            const g = ctx.createLinearGradient(0, 0, 0, h);
+            g.addColorStop(0, '#0f0f1a');
+            g.addColorStop(0.6, '#1a1a30');
+            g.addColorStop(1, '#252540');
+            return g;
+        });
+        ctx.fillStyle = grad;
+    } else if (currentFrenzy && !reducedEffects) {
+        // Frenzy gradient changes each frame, create new
         const frenzyPulse = (Math.sin(now / 300) + 1) * 0.5;
         const r = Math.floor(25 + frenzyPulse * 15);
+        const grad = ctx.createLinearGradient(0, 0, 0, h);
         grad.addColorStop(0, `rgb(${r}, 5, 8)`);
         grad.addColorStop(0.6, `rgb(${r + 10}, 8, 15)`);
         grad.addColorStop(1, '#1a0a0e');
+        ctx.fillStyle = grad;
     } else {
-        grad.addColorStop(0, '#0a0a1a');
-        grad.addColorStop(0.6, '#111128');
-        grad.addColorStop(1, '#1a1a2e');
+        const grad = getCachedGradient(ctx, 'linear', `sky_normal_${h}`, () => {
+            const g = ctx.createLinearGradient(0, 0, 0, h);
+            g.addColorStop(0, '#0a0a1a');
+            g.addColorStop(0.6, '#111128');
+            g.addColorStop(1, '#1a1a2e');
+            return g;
+        });
+        ctx.fillStyle = grad;
     }
-    ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
     // Stadium floodlight gradient overlay (#5)
-    if (!state.settings.reducedEffects) {
+    if (!_frameCache.reducedEffects) {
         const lightGrad = ctx.createLinearGradient(0, 0, 0, h);
         const lightIntensity = currentFrenzy ? 0.06 : 0.03;
         lightGrad.addColorStop(0, `rgba(255, 255, 220, ${lightIntensity})`);
@@ -3055,7 +3148,11 @@ export function drawAmbientCrowd() {
     const ctx = state.crowdBgCtx;
     const now = performance.now();
 
-    const emotion = state.crowdEmotion;
+    // Performance: Update frame cache for ambient mode
+    updateFrameCache(now);
+    advanceGradientFrame();
+
+    const emotion = _frameCache.crowdEmotion;
     const isCelebrate = emotion === 'celebrate';
     const isDeject = emotion === 'deject';
 
@@ -3071,7 +3168,7 @@ export function drawAmbientCrowd() {
         grad.addColorStop(0, '#0f0f1a');
         grad.addColorStop(0.6, '#1a1a30');
         grad.addColorStop(1, '#252540');
-    } else if (isCelebrate && !state.settings.reducedEffects) {
+    } else if (isCelebrate && !_frameCache.reducedEffects) {
         const frenzyPulse = (Math.sin(now / 300) + 1) * 0.5;
         const r = Math.floor(25 + frenzyPulse * 15);
         grad.addColorStop(0, `rgb(${r}, 5, 8)`);

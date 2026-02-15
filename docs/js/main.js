@@ -22,7 +22,9 @@ import { loadSettings, saveSettings, hasTutorialSeen, markTutorialSeen } from '.
 let beatWorker = null;
 
 function analyzeBeatsAsync(audioBuffer) {
-    return new Promise((resolve, reject) => {
+    const WORKER_TIMEOUT_MS = 30000; // 30 second timeout
+
+    const workerPromise = new Promise((resolve, reject) => {
         // Create worker if not exists
         if (!beatWorker) {
             beatWorker = new Worker('./js/beatWorker.js');
@@ -59,6 +61,13 @@ function analyzeBeatsAsync(audioBuffer) {
             config: BEAT_DETECTION
         });
     });
+
+    // Race against timeout to prevent indefinite hanging
+    const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Beat analysis timed out')), WORKER_TIMEOUT_MS);
+    });
+
+    return Promise.race([workerPromise, timeoutPromise]);
 }
 
 // Terminate worker when no longer needed (call on game quit/cleanup)
@@ -344,21 +353,21 @@ function gameLoop() {
     }
 
     // Update frenzy CSS class for visual filters (#2)
+    // Performance: Use state tracking instead of DOM queries
     const crowdCanvas = state.crowdBgCanvas;
     if (crowdCanvas) {
         const isFrenzy = state.playerCombo > 5 || state.crowdEmotion === 'celebrate';
         const isIntense = state.playerCombo >= 20;
 
-        if (isFrenzy && !crowdCanvas.classList.contains('frenzy')) {
-            crowdCanvas.classList.add('frenzy');
-        } else if (!isFrenzy && crowdCanvas.classList.contains('frenzy')) {
-            crowdCanvas.classList.remove('frenzy');
+        // Track state to avoid classList.contains() calls
+        if (isFrenzy !== state._lastFrenzyState) {
+            crowdCanvas.classList.toggle('frenzy', isFrenzy);
+            state._lastFrenzyState = isFrenzy;
         }
 
-        if (isIntense && !crowdCanvas.classList.contains('frenzy-intense')) {
-            crowdCanvas.classList.add('frenzy-intense');
-        } else if (!isIntense && crowdCanvas.classList.contains('frenzy-intense')) {
-            crowdCanvas.classList.remove('frenzy-intense');
+        if (isIntense !== state._lastIntenseState) {
+            crowdCanvas.classList.toggle('frenzy-intense', isIntense);
+            state._lastIntenseState = isIntense;
         }
     }
 
@@ -439,6 +448,12 @@ function quitToMenu() {
     if (countdownEl) countdownEl.remove();
     elements.pauseOverlay.classList.add('hidden');
     elements.volumePanel.classList.add('hidden');
+    // Clean up frenzy CSS classes
+    if (state.crowdBgCanvas) {
+        state.crowdBgCanvas.classList.remove('frenzy', 'frenzy-intense');
+    }
+    // Terminate beat worker to free memory
+    terminateBeatWorker();
     showScreen('title');
 }
 

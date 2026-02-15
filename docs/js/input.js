@@ -13,6 +13,34 @@ let lastInputTime = 0;
 // Confetti colors (club primary + celebratory colors)
 const CONFETTI_COLORS = ['#ffcc00', '#ff6600', '#00ff88', '#ff4488', '#44aaff', '#ffffff'];
 
+// ============================================
+// Performance: Object Pool for particles
+// Reuses particle objects to reduce GC pressure
+// ============================================
+
+const _particlePool = [];
+const MAX_POOL_SIZE = 100;
+
+function getParticle() {
+    return _particlePool.length > 0 ? _particlePool.pop() : {};
+}
+
+function releaseParticle(p) {
+    if (_particlePool.length < MAX_POOL_SIZE) {
+        // Clear old properties to prevent stale data from previous use
+        p.beatTime = 0;
+        p.vx = 0;
+        p.vy = 0;
+        p.color = '';
+        p.spawnTime = 0;
+        p.isConfetti = false;
+        _particlePool.push(p);
+    }
+}
+
+// Export for renderer.js to return particles
+export { releaseParticle };
+
 // Spawn confetti particles on combo milestones (#6)
 function spawnConfetti(beatTime, count, now) {
     const primary = state.selectedClub?.colors?.primary || '#ffcc00';
@@ -21,14 +49,15 @@ function spawnConfetti(beatTime, count, now) {
     for (let i = 0; i < count; i++) {
         const angle = (i / count) * Math.PI * 2 + Math.random() * 0.5;
         const speed = 2.5 + Math.random() * 2;
-        state.hitParticles.push({
-            beatTime: beatTime,
-            vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed - 2,  // Bias upward
-            color: colors[Math.floor(Math.random() * colors.length)],
-            spawnTime: now,
-            isConfetti: true  // Flag for potential special rendering
-        });
+        // Use pooled particle object
+        const p = getParticle();
+        p.beatTime = beatTime;
+        p.vx = Math.cos(angle) * speed;
+        p.vy = Math.sin(angle) * speed - 2;  // Bias upward
+        p.color = colors[Math.floor(Math.random() * colors.length)];
+        p.spawnTime = now;
+        p.isConfetti = true;  // Flag for potential special rendering
+        state.hitParticles.push(p);
     }
 
     // Trigger CSS milestone effect on crowd canvas
@@ -167,17 +196,18 @@ export function handleInput() {
             spawnTime: now
         });
 
-        // PERFECT particles: 8 radiating particles
+        // PERFECT particles: 8 radiating particles (using object pool)
         if (rating === 'PERFECT') {
-            for (let p = 0; p < 8; p++) {
-                const angle = (p / 8) * Math.PI * 2;
-                state.hitParticles.push({
-                    beatTime: beatTime,
-                    vx: Math.cos(angle) * (2 + Math.random()),
-                    vy: Math.sin(angle) * (2 + Math.random()) - 1,
-                    color: hitColor,
-                    spawnTime: now
-                });
+            for (let i = 0; i < 8; i++) {
+                const angle = (i / 8) * Math.PI * 2;
+                const particle = getParticle();
+                particle.beatTime = beatTime;
+                particle.vx = Math.cos(angle) * (2 + Math.random());
+                particle.vy = Math.sin(angle) * (2 + Math.random()) - 1;
+                particle.color = hitColor;
+                particle.spawnTime = now;
+                particle.isConfetti = false;
+                state.hitParticles.push(particle);
             }
         }
 

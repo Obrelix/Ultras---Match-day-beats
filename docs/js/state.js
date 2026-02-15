@@ -109,6 +109,10 @@ export const state = {
     aiGoals: 0,
     chantResults: [],
     crowdEmotion: 'neutral',
+
+    // Performance: CSS class state tracking (avoids DOM queries)
+    _lastFrenzyState: false,
+    _lastIntenseState: false,
 };
 
 export function resetGameState() {
@@ -146,6 +150,10 @@ export function resetGameState() {
     state.frenzyStartTime = 0;
     state.wasFrenzy = false;
     state.crowdEmotion = 'neutral';
+
+    // Reset CSS class tracking
+    state._lastFrenzyState = false;
+    state._lastIntenseState = false;
 }
 
 export function resetMatchState() {

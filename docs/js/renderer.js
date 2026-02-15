@@ -5,7 +5,7 @@
 import { SCROLL_VIS, BEAT_RESULT_COLORS } from './config.js';
 import { state } from './state.js';
 import { elements } from './ui.js';
-import { getComboMultiplier } from './input.js';
+import { getComboMultiplier, releaseParticle } from './input.js';
 
 let _resizeHandler = null;
 
@@ -13,6 +13,13 @@ export function initVisualizer() {
     const canvas = elements.gameCanvas;
     state.canvasCtx = canvas.getContext('2d');
 
+    // Remove previous handler first to prevent accumulation
+    if (_resizeHandler) {
+        window.removeEventListener('resize', _resizeHandler);
+        _resizeHandler = null;
+    }
+
+    // Create new resize handler
     function resizeCanvas() {
         const rect = canvas.getBoundingClientRect();
         canvas.width = Math.floor(rect.width);
@@ -23,14 +30,13 @@ export function initVisualizer() {
             buildWaveformCache();
         }
     }
-    resizeCanvas();
 
-    // Remove previous handler to prevent accumulation across game rounds
-    if (_resizeHandler) {
-        window.removeEventListener('resize', _resizeHandler);
-    }
+    // Store reference BEFORE adding listener
     _resizeHandler = resizeCanvas;
-    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('resize', _resizeHandler);
+
+    // Initial resize
+    resizeCanvas();
 }
 
 export function computeWaveformPeaks() {
@@ -451,13 +457,15 @@ export function drawVisualizer() {
         ctx.globalAlpha = 1;
     }
 
-    // --- PERFECT hit particles ---
+    // --- PERFECT hit particles (using object pool) ---
     {
         const now = performance.now();
         for (let i = state.hitParticles.length - 1; i >= 0; i--) {
             const p = state.hitParticles[i];
             const elapsed = now - p.spawnTime;
             if (elapsed > 350) {
+                // Return to pool before removing
+                releaseParticle(p);
                 state.hitParticles[i] = state.hitParticles[state.hitParticles.length - 1];
                 state.hitParticles.pop();
                 continue;
