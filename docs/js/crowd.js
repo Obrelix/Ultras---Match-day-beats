@@ -1017,62 +1017,175 @@ const STADIUM_COLORS = {
     floodlightCore: 'rgba(255, 255, 240, 0.8)',
     adBoard: '#111118',
     adBoardLit: '#1a1a28',
-    adBoardGlow: 'rgba(100, 150, 255, 0.3)'
+    adBoardGlow: 'rgba(100, 150, 255, 0.3)',
+    speaker: '#222233',
+    speakerGrill: '#1a1a2a',
+    scoreboard: '#0a0a12',
+    scoreboardLED: '#00ff44',
+    pitchGreen: '#1a4d1a',
+    pitchLine: '#2a6a2a',
+    bannerPole: '#444455'
 };
 
 // Draw stadium roof/canopy silhouette at top
 function drawStadiumRoof(ctx, w, h) {
     if (state.settings.reducedEffects) return;
 
-    // Roof silhouette
+    // Main roof canopy (curved profile)
     ctx.fillStyle = STADIUM_COLORS.roofSilhouette;
-    ctx.fillRect(0, 0, w, 8);
 
-    // Roof beams
+    // Draw curved roof profile
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, 10);
+    ctx.quadraticCurveTo(w * 0.25, 14, w * 0.5, 12);
+    ctx.quadraticCurveTo(w * 0.75, 10, w, 10);
+    ctx.lineTo(w, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    // Roof underside (lighter)
+    ctx.fillStyle = '#15152a';
+    ctx.beginPath();
+    ctx.moveTo(0, 10);
+    ctx.quadraticCurveTo(w * 0.25, 14, w * 0.5, 12);
+    ctx.quadraticCurveTo(w * 0.75, 10, w, 10);
+    ctx.lineTo(w, 12);
+    ctx.quadraticCurveTo(w * 0.75, 14, w * 0.5, 16);
+    ctx.quadraticCurveTo(w * 0.25, 18, 0, 14);
+    ctx.closePath();
+    ctx.fill();
+
+    // Roof support beams (diagonal trusses)
     ctx.fillStyle = STADIUM_COLORS.roofBeam;
-    const beamSpacing = 80;
-    for (let x = 0; x < w; x += beamSpacing) {
-        // Angled beam
+    const beamSpacing = 60;
+    for (let x = 20; x < w - 20; x += beamSpacing) {
+        // Main diagonal beam
         ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x + 15, 25);
-        ctx.lineTo(x + 20, 25);
-        ctx.lineTo(x + 5, 0);
+        ctx.moveTo(x, 8);
+        ctx.lineTo(x + 12, 28);
+        ctx.lineTo(x + 16, 28);
+        ctx.lineTo(x + 4, 8);
         ctx.closePath();
         ctx.fill();
+
+        // Cross brace
+        ctx.fillStyle = '#1a1a2a';
+        ctx.fillRect(x + 2, 15, 12, 2);
+        ctx.fillStyle = STADIUM_COLORS.roofBeam;
     }
 
-    // Roof edge shadow
-    const roofGrad = ctx.createLinearGradient(0, 0, 0, 30);
-    roofGrad.addColorStop(0, 'rgba(0, 0, 0, 0.4)');
+    // Horizontal roof beam
+    ctx.fillStyle = '#0d0d18';
+    ctx.fillRect(0, 6, w, 3);
+
+    // Roof edge trim (metallic highlight)
+    ctx.fillStyle = '#333348';
+    ctx.fillRect(0, 9, w, 1);
+
+    // Roof edge shadow gradient
+    const roofGrad = ctx.createLinearGradient(0, 10, 0, 35);
+    roofGrad.addColorStop(0, 'rgba(0, 0, 0, 0.5)');
+    roofGrad.addColorStop(0.5, 'rgba(0, 0, 0, 0.2)');
     roofGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = roofGrad;
-    ctx.fillRect(0, 8, w, 22);
+    ctx.fillRect(0, 10, w, 25);
+
+    // Roof panels (subtle texture)
+    ctx.fillStyle = 'rgba(30, 30, 50, 0.3)';
+    for (let px = 0; px < w; px += 40) {
+        ctx.fillRect(px, 0, 1, 10);
+    }
 }
 
-// Draw floodlights
+// Draw floodlights with tower structures
 function drawFloodlights(ctx, w, h, now, isFrenzy) {
     if (state.settings.reducedEffects) return;
 
-    const lightPositions = [w * 0.15, w * 0.5, w * 0.85];
+    const lightPositions = [
+        { x: w * 0.08, scale: 0.7 },
+        { x: w * 0.25, scale: 0.85 },
+        { x: w * 0.5, scale: 1.0 },
+        { x: w * 0.75, scale: 0.85 },
+        { x: w * 0.92, scale: 0.7 }
+    ];
     const flicker = isFrenzy ? (Math.sin(now / 100) * 0.1 + 0.9) : 1;
 
-    for (const lx of lightPositions) {
-        // Light glow cone
-        const coneGrad = ctx.createRadialGradient(lx, -20, 0, lx, -20, 150);
-        coneGrad.addColorStop(0, `rgba(255, 255, 220, ${0.08 * flicker})`);
-        coneGrad.addColorStop(0.5, `rgba(255, 255, 200, ${0.03 * flicker})`);
+    for (const light of lightPositions) {
+        const lx = light.x;
+        const scale = light.scale;
+
+        // Light glow cone (larger and more visible)
+        const coneGrad = ctx.createRadialGradient(lx, -10, 0, lx, -10, 180 * scale);
+        coneGrad.addColorStop(0, `rgba(255, 255, 220, ${0.12 * flicker * scale})`);
+        coneGrad.addColorStop(0.3, `rgba(255, 255, 200, ${0.06 * flicker * scale})`);
+        coneGrad.addColorStop(0.6, `rgba(255, 255, 180, ${0.02 * flicker * scale})`);
         coneGrad.addColorStop(1, 'rgba(255, 255, 180, 0)');
         ctx.fillStyle = coneGrad;
-        ctx.fillRect(lx - 100, 0, 200, 120);
+        ctx.fillRect(lx - 120 * scale, 0, 240 * scale, 140 * scale);
 
-        // Light fixture
-        ctx.fillStyle = '#333344';
-        ctx.fillRect(lx - 8, 0, 16, 6);
-        ctx.fillStyle = STADIUM_COLORS.floodlightCore;
-        ctx.globalAlpha = 0.6 * flicker;
-        ctx.fillRect(lx - 6, 2, 12, 3);
-        ctx.globalAlpha = 1;
+        // Tower structure (visible mast)
+        const towerHeight = 18 * scale;
+        const towerWidth = 4 * scale;
+
+        // Tower mast gradient
+        const towerGrad = ctx.createLinearGradient(lx - towerWidth, 0, lx + towerWidth, 0);
+        towerGrad.addColorStop(0, '#222233');
+        towerGrad.addColorStop(0.5, '#3a3a4a');
+        towerGrad.addColorStop(1, '#222233');
+        ctx.fillStyle = towerGrad;
+        ctx.fillRect(lx - towerWidth / 2, 0, towerWidth, towerHeight);
+
+        // Light array housing
+        const housingW = 22 * scale;
+        const housingH = 8 * scale;
+        ctx.fillStyle = '#2a2a3a';
+        ctx.fillRect(lx - housingW / 2, towerHeight - 2, housingW, housingH);
+
+        // Individual light bulbs (3 per fixture)
+        const bulbSpacing = 6 * scale;
+        for (let b = -1; b <= 1; b++) {
+            const bulbX = lx + b * bulbSpacing;
+            const bulbY = towerHeight + 2;
+
+            // Bulb glow
+            ctx.fillStyle = `rgba(255, 255, 200, ${0.3 * flicker})`;
+            ctx.beginPath();
+            ctx.arc(bulbX, bulbY, 3 * scale, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Bulb core
+            ctx.fillStyle = STADIUM_COLORS.floodlightCore;
+            ctx.globalAlpha = 0.8 * flicker;
+            ctx.beginPath();
+            ctx.arc(bulbX, bulbY, 2 * scale, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+        }
+
+        // Light rays in frenzy mode
+        if (isFrenzy && scale >= 0.85) {
+            ctx.save();
+            ctx.globalAlpha = 0.04 * flicker;
+            ctx.fillStyle = '#ffffff';
+            ctx.translate(lx, towerHeight + 4);
+
+            for (let ray = 0; ray < 5; ray++) {
+                const rayAngle = (ray - 2) * 0.15 + Math.sin(now / 500 + ray) * 0.05;
+                ctx.save();
+                ctx.rotate(rayAngle);
+                ctx.beginPath();
+                ctx.moveTo(-2, 0);
+                ctx.lineTo(-8, 100);
+                ctx.lineTo(8, 100);
+                ctx.lineTo(2, 0);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            }
+
+            ctx.restore();
+        }
     }
 }
 
@@ -1095,34 +1208,333 @@ function hexToRgba(hex, alpha) {
 
 // Draw advertising boards at bottom
 function drawAdBoards(ctx, w, h, now, primaryColor) {
-    const boardHeight = 12;
+    const boardHeight = 14;
     const boardY = h - boardHeight;
 
-    // Main board background
-    ctx.fillStyle = STADIUM_COLORS.adBoard;
+    // Main board background with gradient
+    const boardGrad = ctx.createLinearGradient(0, boardY, 0, h);
+    boardGrad.addColorStop(0, '#1a1a28');
+    boardGrad.addColorStop(0.3, STADIUM_COLORS.adBoard);
+    boardGrad.addColorStop(1, '#080810');
+    ctx.fillStyle = boardGrad;
     ctx.fillRect(0, boardY, w, boardHeight);
 
-    // LED glow effect
+    // LED panel effect
     if (!state.settings.reducedEffects) {
-        const glowPhase = (now / 50) % w;
-        const grad = ctx.createLinearGradient(glowPhase - 100, 0, glowPhase + 100, 0);
+        // Animated LED dots pattern
+        ctx.fillStyle = 'rgba(50, 80, 120, 0.3)';
+        const dotSpacing = 8;
+        for (let dx = 0; dx < w; dx += dotSpacing) {
+            for (let dy = boardY + 4; dy < h - 2; dy += 4) {
+                ctx.fillRect(dx, dy, 2, 2);
+            }
+        }
+
+        // Scrolling glow wave
+        const glowPhase = (now / 40) % w;
+        const grad = ctx.createLinearGradient(glowPhase - 150, 0, glowPhase + 150, 0);
         grad.addColorStop(0, 'rgba(100, 150, 255, 0)');
-        grad.addColorStop(0.5, hexToRgba(primaryColor, 0.15));
+        grad.addColorStop(0.5, hexToRgba(primaryColor, 0.2));
         grad.addColorStop(1, 'rgba(100, 150, 255, 0)');
         ctx.fillStyle = grad;
-        ctx.fillRect(0, boardY, w, boardHeight);
+        ctx.fillRect(0, boardY + 2, w, boardHeight - 4);
+
+        // Scrolling club name text
+        const clubName = state.selectedClub?.name?.toUpperCase() || 'ULTRAS';
+        const textWidth = clubName.length * 12;
+        const scrollX = -((now / 30) % (textWidth + w));
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, boardY, w, boardHeight);
+        ctx.clip();
+
+        ctx.font = 'bold 9px monospace';
+        ctx.fillStyle = hexToRgba(primaryColor, 0.6);
+
+        // Draw text multiple times for seamless scroll
+        for (let tx = scrollX; tx < w + textWidth; tx += textWidth + 100) {
+            ctx.fillText(clubName, tx, boardY + 10);
+            ctx.fillText('★', tx + textWidth + 40, boardY + 10);
+        }
+
+        ctx.restore();
     }
 
-    // Board segments/panels
-    ctx.fillStyle = STADIUM_COLORS.adBoardLit;
-    const panelWidth = 60;
+    // Board segments/panels (frame effect)
+    ctx.strokeStyle = '#2a2a3a';
+    ctx.lineWidth = 1;
+    const panelWidth = 80;
     for (let x = 0; x < w; x += panelWidth) {
-        ctx.fillRect(x, boardY, panelWidth - 2, boardHeight);
+        ctx.strokeRect(x + 1, boardY + 1, panelWidth - 2, boardHeight - 2);
     }
 
-    // Top edge highlight
-    ctx.fillStyle = '#2a2a3a';
+    // Top edge frame (metallic)
+    ctx.fillStyle = '#3a3a4a';
     ctx.fillRect(0, boardY, w, 2);
+    ctx.fillStyle = '#222230';
+    ctx.fillRect(0, boardY + 2, w, 1);
+}
+
+// Draw stadium speakers/PA system at top corners
+function drawStadiumSpeakers(ctx, w, h) {
+    if (state.settings.reducedEffects) return;
+
+    const speakerPositions = [
+        { x: 50, angle: 0.2 },
+        { x: w - 50, angle: -0.2 }
+    ];
+
+    for (const sp of speakerPositions) {
+        ctx.save();
+        ctx.translate(sp.x, 15);
+        ctx.rotate(sp.angle);
+
+        // Speaker housing
+        ctx.fillStyle = STADIUM_COLORS.speaker;
+        ctx.fillRect(-12, 0, 24, 18);
+
+        // Speaker grill pattern
+        ctx.fillStyle = STADIUM_COLORS.speakerGrill;
+        for (let gy = 3; gy < 16; gy += 4) {
+            ctx.fillRect(-10, gy, 20, 2);
+        }
+
+        // Mounting bracket
+        ctx.fillStyle = RAILING_CHROME;
+        ctx.fillRect(-4, -5, 8, 8);
+
+        ctx.restore();
+    }
+}
+
+// Draw scoreboard at top center
+function drawScoreboard(ctx, w, h, now) {
+    if (state.settings.reducedEffects) return;
+
+    const boardW = 120;
+    const boardH = 28;
+    const boardX = (w - boardW) / 2;
+    const boardY = 12;
+
+    // Scoreboard frame
+    ctx.fillStyle = STADIUM_COLORS.scoreboard;
+    ctx.fillRect(boardX, boardY, boardW, boardH);
+
+    // Frame border
+    ctx.strokeStyle = '#333344';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(boardX, boardY, boardW, boardH);
+
+    // Inner display area
+    ctx.fillStyle = '#060610';
+    ctx.fillRect(boardX + 4, boardY + 4, boardW - 8, boardH - 8);
+
+    // LED glow effect
+    const glowIntensity = 0.4 + Math.sin(now / 500) * 0.1;
+    ctx.fillStyle = `rgba(0, 255, 68, ${glowIntensity * 0.15})`;
+    ctx.fillRect(boardX + 4, boardY + 4, boardW - 8, boardH - 8);
+
+    // Display player vs AI score
+    ctx.fillStyle = STADIUM_COLORS.scoreboardLED;
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+
+    // Format scores
+    const pScore = String(state.playerScore).padStart(4, ' ');
+    const aScore = String(state.aiScore).padStart(4, ' ');
+    ctx.fillText(`${pScore} - ${aScore}`, boardX + boardW / 2, boardY + 22);
+
+    ctx.textAlign = 'left';
+}
+
+// Draw club banners hanging from roof/barriers
+function drawClubBanners(ctx, w, h, now, primaryColor, secondaryColor) {
+    if (state.settings.reducedEffects) return;
+
+    const bannerPositions = [
+        { x: 100, y: 35, w: 40, h: 55 },
+        { x: w - 140, y: 35, w: 40, h: 55 }
+    ];
+
+    for (const bp of bannerPositions) {
+        // Banner wave animation
+        const wave = Math.sin(now / 400 + bp.x * 0.01) * 3;
+
+        // Banner pole
+        ctx.fillStyle = STADIUM_COLORS.bannerPole;
+        ctx.fillRect(bp.x + bp.w / 2 - 2, bp.y - 10, 4, 12);
+
+        // Banner fabric with wave
+        ctx.save();
+        ctx.translate(bp.x + bp.w / 2, bp.y);
+
+        // Main banner body
+        ctx.beginPath();
+        ctx.moveTo(-bp.w / 2, 0);
+        ctx.lineTo(-bp.w / 2 + wave, bp.h * 0.5);
+        ctx.lineTo(-bp.w / 2, bp.h);
+        ctx.lineTo(bp.w / 2, bp.h);
+        ctx.lineTo(bp.w / 2 + wave, bp.h * 0.5);
+        ctx.lineTo(bp.w / 2, 0);
+        ctx.closePath();
+
+        // Banner gradient (club colors)
+        const bannerGrad = ctx.createLinearGradient(0, 0, 0, bp.h);
+        bannerGrad.addColorStop(0, primaryColor || '#006633');
+        bannerGrad.addColorStop(0.5, secondaryColor || '#ffffff');
+        bannerGrad.addColorStop(1, primaryColor || '#006633');
+        ctx.fillStyle = bannerGrad;
+        ctx.fill();
+
+        // Banner shadow/fold line
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(wave, bp.h * 0.3);
+        ctx.lineTo(wave * 0.5, bp.h * 0.7);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+}
+
+// Draw pitch edge visible at the very bottom
+function drawPitchEdge(ctx, w, h) {
+    const pitchH = 8;
+    const pitchY = h - pitchH;
+
+    // Pitch gradient
+    const pitchGrad = ctx.createLinearGradient(0, pitchY, 0, h);
+    pitchGrad.addColorStop(0, STADIUM_COLORS.pitchGreen);
+    pitchGrad.addColorStop(1, '#0d2a0d');
+    ctx.fillStyle = pitchGrad;
+    ctx.fillRect(0, pitchY, w, pitchH);
+
+    // Pitch line (touchline)
+    ctx.fillStyle = STADIUM_COLORS.pitchLine;
+    ctx.fillRect(0, pitchY, w, 2);
+
+    // White touchline marking
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.fillRect(0, pitchY + 2, w, 1);
+}
+
+// Draw corner flags
+function drawCornerFlags(ctx, w, h, now) {
+    if (state.settings.reducedEffects) return;
+
+    const primaryColor = state.cachedColors?.primary || '#006633';
+    const flagPositions = [
+        { x: 20, side: 1 },
+        { x: w - 20, side: -1 }
+    ];
+
+    for (const fp of flagPositions) {
+        const flagY = h - 25;
+
+        // Flag pole
+        ctx.fillStyle = '#cccccc';
+        ctx.fillRect(fp.x - 1, flagY, 2, 25);
+
+        // Pole top ball
+        ctx.beginPath();
+        ctx.arc(fp.x, flagY, 3, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffcc00';
+        ctx.fill();
+
+        // Flag fabric waving
+        const wave1 = Math.sin(now / 200 + fp.x) * 4;
+        const wave2 = Math.sin(now / 150 + fp.x + 1) * 3;
+
+        ctx.save();
+        ctx.translate(fp.x, flagY);
+
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(8 * fp.side + wave1, 5, 15 * fp.side + wave2, 3);
+        ctx.lineTo(15 * fp.side + wave2, 12);
+        ctx.quadraticCurveTo(8 * fp.side + wave1, 10, 0, 15);
+        ctx.closePath();
+
+        ctx.fillStyle = primaryColor;
+        ctx.fill();
+
+        // Flag highlight
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(4 * fp.side + wave1 * 0.5, 3, 8 * fp.side + wave2 * 0.5, 2);
+        ctx.lineTo(8 * fp.side + wave2 * 0.5, 5);
+        ctx.quadraticCurveTo(4 * fp.side + wave1 * 0.5, 5, 0, 7);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+    }
+}
+
+// Draw atmospheric haze/smoke layer for stadium atmosphere
+function drawAtmosphereHaze(ctx, w, h, now, isFrenzy) {
+    if (state.settings.reducedEffects) return;
+
+    const hazeOpacity = isFrenzy ? 0.08 : 0.03;
+    const primaryColor = state.cachedColors?.primary || '#006633';
+
+    // Ambient haze gradient from top
+    const hazeGrad = ctx.createLinearGradient(0, 0, 0, h * 0.4);
+    hazeGrad.addColorStop(0, `rgba(200, 200, 255, ${hazeOpacity})`);
+    hazeGrad.addColorStop(1, 'rgba(200, 200, 255, 0)');
+    ctx.fillStyle = hazeGrad;
+    ctx.fillRect(0, 0, w, h * 0.4);
+
+    // Frenzy mode: colored atmosphere from floodlights
+    if (isFrenzy) {
+        const pulseOpacity = 0.03 + Math.sin(now / 300) * 0.02;
+        ctx.fillStyle = hexToRgba(primaryColor, pulseOpacity);
+        ctx.fillRect(0, 0, w, h * 0.5);
+    }
+
+    // Subtle horizontal smoke wisps
+    const wispCount = isFrenzy ? 4 : 2;
+    for (let i = 0; i < wispCount; i++) {
+        const wispY = 30 + i * 40 + Math.sin(now / 800 + i) * 10;
+        const wispX = ((now / (10 + i * 5)) + i * 200) % (w + 200) - 100;
+        const wispOpacity = isFrenzy ? 0.06 : 0.03;
+
+        const wispGrad = ctx.createRadialGradient(wispX, wispY, 0, wispX, wispY, 60);
+        wispGrad.addColorStop(0, `rgba(255, 255, 255, ${wispOpacity})`);
+        wispGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = wispGrad;
+        ctx.fillRect(wispX - 60, wispY - 30, 120, 60);
+    }
+}
+
+// Draw goal posts silhouette in the distance
+function drawGoalPosts(ctx, w, h) {
+    if (state.settings.reducedEffects) return;
+
+    const goalY = h - 6;
+    const goalX = w / 2;
+    const postWidth = 3;
+    const postHeight = 35;
+    const crossbarWidth = 60;
+
+    // Goal net (subtle mesh behind)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+    ctx.fillRect(goalX - crossbarWidth / 2, goalY - postHeight, crossbarWidth, postHeight);
+
+    // Posts and crossbar
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+
+    // Left post
+    ctx.fillRect(goalX - crossbarWidth / 2 - postWidth / 2, goalY - postHeight, postWidth, postHeight);
+
+    // Right post
+    ctx.fillRect(goalX + crossbarWidth / 2 - postWidth / 2, goalY - postHeight, postWidth, postHeight);
+
+    // Crossbar
+    ctx.fillRect(goalX - crossbarWidth / 2, goalY - postHeight - postWidth, crossbarWidth, postWidth);
 }
 
 // Draw stadium bleachers (tiered concrete steps behind crowd)
@@ -2262,11 +2674,27 @@ export function drawGameVisuals() {
         }
     }
 
+    // Draw atmospheric haze/smoke layer (behind everything)
+    drawAtmosphereHaze(ctx, w, h, now, currentFrenzy);
+
     // Draw stadium roof silhouette at top
     drawStadiumRoof(ctx, w, h);
 
+    // Draw stadium speakers
+    drawStadiumSpeakers(ctx, w, h);
+
+    // Draw scoreboard
+    drawScoreboard(ctx, w, h, now);
+
     // Draw floodlights
     drawFloodlights(ctx, w, h, now, currentFrenzy);
+
+    // Cache colors locally to avoid repeated state access (with fallback to selected club)
+    const primaryColor = state.cachedColors?.primary || state.selectedClub?.colors?.primary || '#006633';
+    const secondaryColor = state.cachedColors?.secondary || state.selectedClub?.colors?.secondary || '#FFFFFF';
+
+    // Draw club banners
+    drawClubBanners(ctx, w, h, now, primaryColor, secondaryColor);
 
     // Draw stadium bleachers (tiered concrete steps behind crowd)
     drawStadiumBleachers(ctx, w, h);
@@ -2274,9 +2702,14 @@ export function drawGameVisuals() {
     // Draw stadium barriers (edges, aisles, railings)
     drawStadiumBarriers(ctx, w, h);
 
-    // Cache colors locally to avoid repeated state access (with fallback to selected club)
-    const primaryColor = state.cachedColors?.primary || state.selectedClub?.colors?.primary || '#006633';
-    const secondaryColor = state.cachedColors?.secondary || state.selectedClub?.colors?.secondary || '#FFFFFF';
+    // Draw goal posts silhouette in distance
+    drawGoalPosts(ctx, w, h);
+
+    // Draw pitch edge at bottom
+    drawPitchEdge(ctx, w, h);
+
+    // Draw corner flags
+    drawCornerFlags(ctx, w, h, now);
 
     // Draw advertising boards at bottom
     drawAdBoards(ctx, w, h, now, primaryColor);
@@ -2643,17 +3076,35 @@ export function drawAmbientCrowd() {
     const primaryColor = state.cachedColors?.primary || state.selectedClub?.colors?.primary || '#006633';
     const secondaryColor = state.cachedColors?.secondary || state.selectedClub?.colors?.secondary || '#FFFFFF';
 
+    // Draw atmospheric haze
+    drawAtmosphereHaze(ctx, w, h, now, isCelebrate);
+
     // Draw stadium roof silhouette at top
     drawStadiumRoof(ctx, w, h);
 
+    // Draw stadium speakers
+    drawStadiumSpeakers(ctx, w, h);
+
     // Draw floodlights (subtle for ambient)
     drawFloodlights(ctx, w, h, now, isCelebrate);
+
+    // Draw club banners
+    drawClubBanners(ctx, w, h, now, primaryColor, secondaryColor);
 
     // Draw stadium bleachers (tiered concrete steps behind crowd)
     drawStadiumBleachers(ctx, w, h);
 
     // Draw stadium barriers (edges, aisles, railings)
     drawStadiumBarriers(ctx, w, h);
+
+    // Draw goal posts silhouette
+    drawGoalPosts(ctx, w, h);
+
+    // Draw pitch edge
+    drawPitchEdge(ctx, w, h);
+
+    // Draw corner flags
+    drawCornerFlags(ctx, w, h, now);
 
     // Draw advertising boards at bottom
     drawAdBoards(ctx, w, h, now, primaryColor);
