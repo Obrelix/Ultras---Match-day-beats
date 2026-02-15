@@ -349,6 +349,32 @@ body {
     100% { transform: scale(1); border-color: rgba(255, 255, 255, 0.1); box-shadow: none; }
 }
 
+/* Frenzy mode visual enhancement (#2) */
+#crowd-bg.frenzy {
+    filter: brightness(1.08) saturate(1.25) contrast(1.05);
+    transition: filter 0.3s ease-out;
+}
+
+#crowd-bg.frenzy-intense {
+    filter: brightness(1.12) saturate(1.4) contrast(1.08);
+}
+
+#crowd-bg:not(.frenzy) {
+    filter: none;
+    transition: filter 0.5s ease-out;
+}
+
+/* Combo milestone pulse animation */
+@keyframes milestonePulse {
+    0% { filter: brightness(1.2) saturate(1.5); }
+    50% { filter: brightness(1.4) saturate(1.8); }
+    100% { filter: brightness(1.08) saturate(1.25); }
+}
+
+#crowd-bg.milestone {
+    animation: milestonePulse 0.4s ease-out;
+}
+
 #scoreboard {
     display: flex;
     align-items: center;

@@ -5,6 +5,7 @@
 import { SCROLL_VIS, BEAT_RESULT_COLORS } from './config.js';
 import { state } from './state.js';
 import { elements } from './ui.js';
+import { getComboMultiplier } from './input.js';
 
 let _resizeHandler = null;
 
@@ -275,14 +276,27 @@ export function drawVisualizer() {
             radius = beatR * (0.5 + 0.7 * approach);
             alpha = 0.4 + 0.6 * approach;
 
-            // Motion trails
+            // Enhanced motion trails (#3) - more trails at higher combos
             if (approach > 0.2 && approach < 0.95) {
-                for (let t = 1; t <= 3; t++) {
-                    const trailX = x + t * 12;
+                const comboMult = getComboMultiplier();
+                const trailCount = comboMult >= 2 ? 5 : comboMult >= 1.5 ? 4 : 3;
+                const trailIntensity = 0.15 + (comboMult - 1) * 0.05;
+
+                for (let t = 1; t <= trailCount; t++) {
+                    const trailX = x + t * 10;
                     if (trailX > w) break;
-                    ctx.globalAlpha = alpha * (0.15 - t * 0.04);
+                    ctx.globalAlpha = alpha * (trailIntensity - t * 0.03);
                     ctx.beginPath();
-                    ctx.arc(trailX, midY, radius * (0.7 - t * 0.1), 0, Math.PI * 2);
+                    ctx.arc(trailX, midY, radius * (0.75 - t * 0.08), 0, Math.PI * 2);
+                    ctx.fillStyle = color;
+                    ctx.fill();
+                }
+
+                // Glow trail for high combos
+                if (comboMult >= 2 && !state.settings.reducedEffects) {
+                    ctx.globalAlpha = alpha * 0.1;
+                    ctx.beginPath();
+                    ctx.arc(x + 8, midY, radius * 1.3, 0, Math.PI * 2);
                     ctx.fillStyle = color;
                     ctx.fill();
                 }
@@ -459,17 +473,37 @@ export function drawVisualizer() {
         ctx.globalAlpha = 1;
     }
 
-    // --- Hit line (multi-layer glow) ---
-    ctx.strokeStyle = primary;
+    // --- Hit line (multi-layer glow) with dynamic color (#4) ---
+    const comboMult = getComboMultiplier();
+    let hitLineColor = primary;
+    let hitLineGlow = primary;
+
+    // Dynamic hit line color based on combo multiplier
+    if (comboMult >= 3) {
+        hitLineColor = '#ff3300';  // Red-orange at max combo
+        hitLineGlow = '#ff6600';
+    } else if (comboMult >= 2.5) {
+        hitLineColor = '#ff6600';  // Orange
+        hitLineGlow = '#ff8800';
+    } else if (comboMult >= 2) {
+        hitLineColor = '#ffaa00';  // Gold
+        hitLineGlow = '#ffcc00';
+    } else if (comboMult >= 1.5) {
+        hitLineColor = '#ffcc00';  // Yellow
+        hitLineGlow = '#ffdd44';
+    }
+
+    ctx.strokeStyle = hitLineGlow;
     ctx.lineWidth = 8;
-    ctx.globalAlpha = 0.15;
+    ctx.globalAlpha = 0.15 + (comboMult - 1) * 0.05;
     ctx.beginPath();
     ctx.moveTo(hitLineX, 0);
     ctx.lineTo(hitLineX, h);
     ctx.stroke();
 
+    ctx.strokeStyle = hitLineColor;
     ctx.lineWidth = 4;
-    ctx.globalAlpha = 0.3;
+    ctx.globalAlpha = 0.3 + (comboMult - 1) * 0.08;
     ctx.beginPath();
     ctx.moveTo(hitLineX, 0);
     ctx.lineTo(hitLineX, h);

@@ -84,6 +84,10 @@ export const state = {
     tifoGridCols: 80,     // Grid columns for tifo mapping
     tifoGridRows: 6,      // Grid rows for tifo mapping
 
+    // Coreo transition state (#10 - tifo reveal)
+    lastCoreoId: 0,       // Track coreo changes for reveal animations
+    coreoStartTime: 0,    // When current coreo started
+
     // Player stats
     playerScore: 0,
     playerCombo: 0,
@@ -130,6 +134,8 @@ export function resetGameState() {
 
     state.crowdBeatTime = 0;
     state.smokeParticles = [];
+    state.lastCoreoId = 0;
+    state.coreoStartTime = 0;
 
     state.feedbackText = '';
     state.feedbackAlpha = 0;

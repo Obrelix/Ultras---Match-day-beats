@@ -311,6 +311,25 @@ function gameLoop() {
         state.activeBeat = null;
     }
 
+    // Update frenzy CSS class for visual filters (#2)
+    const crowdCanvas = state.crowdBgCanvas;
+    if (crowdCanvas) {
+        const isFrenzy = state.playerCombo > 5 || state.crowdEmotion === 'celebrate';
+        const isIntense = state.playerCombo >= 20;
+
+        if (isFrenzy && !crowdCanvas.classList.contains('frenzy')) {
+            crowdCanvas.classList.add('frenzy');
+        } else if (!isFrenzy && crowdCanvas.classList.contains('frenzy')) {
+            crowdCanvas.classList.remove('frenzy');
+        }
+
+        if (isIntense && !crowdCanvas.classList.contains('frenzy-intense')) {
+            crowdCanvas.classList.add('frenzy-intense');
+        } else if (!isIntense && crowdCanvas.classList.contains('frenzy-intense')) {
+            crowdCanvas.classList.remove('frenzy-intense');
+        }
+    }
+
     // Draw audio visualizer (crowd is drawn by persistent crowdBg loop)
     drawVisualizer();
 

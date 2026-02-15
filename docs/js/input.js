@@ -10,6 +10,34 @@ import { playSFX } from './audio.js';
 const INPUT_COOLDOWN_MS = 80;
 let lastInputTime = 0;
 
+// Confetti colors (club primary + celebratory colors)
+const CONFETTI_COLORS = ['#ffcc00', '#ff6600', '#00ff88', '#ff4488', '#44aaff', '#ffffff'];
+
+// Spawn confetti particles on combo milestones (#6)
+function spawnConfetti(beatTime, count, now) {
+    const primary = state.selectedClub?.colors?.primary || '#ffcc00';
+    const colors = [primary, ...CONFETTI_COLORS];
+
+    for (let i = 0; i < count; i++) {
+        const angle = (i / count) * Math.PI * 2 + Math.random() * 0.5;
+        const speed = 2.5 + Math.random() * 2;
+        state.hitParticles.push({
+            beatTime: beatTime,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed - 2,  // Bias upward
+            color: colors[Math.floor(Math.random() * colors.length)],
+            spawnTime: now,
+            isConfetti: true  // Flag for potential special rendering
+        });
+    }
+
+    // Trigger CSS milestone effect on crowd canvas
+    if (state.crowdBgCanvas) {
+        state.crowdBgCanvas.classList.add('milestone');
+        setTimeout(() => state.crowdBgCanvas.classList.remove('milestone'), 400);
+    }
+}
+
 export function handleInput() {
     if (state.currentState !== GameState.PLAYING) return;
     if (state.isPaused) return;
@@ -138,6 +166,14 @@ export function handleInput() {
                     spawnTime: now
                 });
             }
+        }
+
+        // Confetti burst on combo milestones (#6)
+        const combo = state.playerCombo;
+        if (combo === 50 || combo === 100 || combo % 100 === 0) {
+            spawnConfetti(beatTime, combo >= 100 ? 30 : 20, now);
+        } else if (combo === 25 || combo === 75) {
+            spawnConfetti(beatTime, 12, now);
         }
     }
 

@@ -253,39 +253,86 @@ function drawCoreoItem(ctx, coreo, supporter, x, y, now, colors, batch) {
     }
 }
 
-// Draw stretched scarf above head
+// Draw stretched scarf above head with reveal animation (#10)
 function drawCoreoScarf(ctx, coreo, supporter, x, y, now, colors, px, batch) {
     const primary = colors.primary || '#006633';
     const secondary = colors.secondary || '#FFFFFF';
     const scarfColor = supporter.row % 2 === 0 ? primary : secondary;
     const waveSpeed = coreo.scarfWaveSpeed || 300;
     const waveAmp = coreo.scarfWaveAmplitude || 2;
-    const scarfWave = Math.sin(now / waveSpeed + supporter.x * 0.025) * waveAmp;
+
+    // Reveal animation - scarf unfurls from center
+    const coreoAge = now - state.coreoStartTime;
+    const rowRevealDelay = supporter.row * 60;
+    const revealProgress = Math.min(1, Math.max(0, (coreoAge - rowRevealDelay) / 180));
+
+    if (revealProgress < 0.1) return;
+
+    // Scarf width grows as it unfurls
+    const fullWidth = 14;
+    const scarfWidth = Math.round(fullWidth * revealProgress);
+    const offsetX = Math.round((fullWidth - scarfWidth) / 2);
+
+    const scarfWave = Math.sin(now / waveSpeed + supporter.x * 0.025) * waveAmp * revealProgress;
     const scarfY = (y - px + scarfWave) | 0;
 
-    drawPixelRect(ctx, x - 2 * px, scarfY, 14, 1, scarfColor, px, batch);
-    drawPixelRect(ctx, x - px, scarfY - px, 12, 1, scarfColor, px, batch);
+    if (scarfWidth > 2) {
+        drawPixelRect(ctx, x - 2 * px + offsetX, scarfY, scarfWidth, 1, scarfColor, px, batch);
+    }
+    if (scarfWidth > 4) {
+        const innerWidth = Math.max(2, scarfWidth - 2);
+        drawPixelRect(ctx, x - px + Math.round(offsetX * 0.5), scarfY - px, innerWidth, 1, scarfColor, px, batch);
+    }
 }
 
-// Draw placard held above head
+// Draw placard held above head with reveal animation (#10)
 function drawCoreoPlacard(ctx, coreo, supporter, x, y, now, colors, px, batch) {
     const primary = colors.primary || '#006633';
     const secondary = colors.secondary || '#FFFFFF';
     const waveSpeed = coreo.placardWaveSpeed || 600;
     const colorSpeed = coreo.placardColorWaveSpeed || 400;
 
-    const placardWave = Math.sin(now / waveSpeed + supporter.x * 0.01) * 1.5;
-    const placardY = (y - 6 * px + placardWave) | 0;
+    // Tifo reveal animation (#10) - placards flip up row by row
+    const coreoAge = now - state.coreoStartTime;
+    const rowRevealDelay = supporter.row * 80;  // 80ms delay per row
+    const revealProgress = Math.min(1, Math.max(0, (coreoAge - rowRevealDelay) / 200));
+
+    // Skip drawing if not yet revealed
+    if (revealProgress < 0.05) return;
+
+    // Animate placard flipping up (scale Y from 0 to 1)
+    const scaleY = revealProgress;
     const placardW = 12;
-    const placardH = 10;
+    const placardH = Math.round(10 * scaleY);
+
+    if (placardH < 1) return;
+
+    const placardWave = Math.sin(now / waveSpeed + supporter.x * 0.01) * 1.5 * revealProgress;
+    const placardY = (y - 6 * px + placardWave + (10 - placardH) * px * 0.5) | 0;
 
     // Alternating color wave pattern
     const colorWave = Math.sin(now / colorSpeed + supporter.x * 0.02 + supporter.row * 0.5);
     const placardColor = colorWave > 0 ? primary : secondary;
 
+    // Flash white during reveal
+    const flashIntensity = revealProgress < 0.5 ? (1 - revealProgress * 2) * 0.5 : 0;
+    let drawColor = placardColor;
+    if (flashIntensity > 0 && !state.settings.reducedEffects) {
+        // Blend with white for flash effect
+        const r = parseInt(placardColor.slice(1, 3), 16);
+        const g = parseInt(placardColor.slice(3, 5), 16);
+        const b = parseInt(placardColor.slice(5, 7), 16);
+        const fr = Math.round(r + (255 - r) * flashIntensity);
+        const fg = Math.round(g + (255 - g) * flashIntensity);
+        const fb = Math.round(b + (255 - b) * flashIntensity);
+        drawColor = `rgb(${fr},${fg},${fb})`;
+    }
+
     // Draw placard with 3D border effect
-    drawPixelRect(ctx, x - px, placardY, placardW + 2, placardH + 2, placardColor, px, batch);
-    drawPixelRect(ctx, x - px, placardY, placardW + 2, 1, '#333333', px, batch);
+    drawPixelRect(ctx, x - px, placardY, placardW + 2, placardH + 2, drawColor, px, batch);
+    if (placardH > 2) {
+        drawPixelRect(ctx, x - px, placardY, placardW + 2, 1, '#333333', px, batch);
+    }
 }
 
 // Draw large banner waving above head (inferno coreo)
@@ -932,7 +979,10 @@ export function initSupporters(canvasWidth, canvasHeight) {
                 flagSwingSpeed: 0.7 + Math.random() * 0.6,
                 hasFlare: hasFlare,
                 flareColor: flareColors[Math.floor(Math.random() * flareColors.length)],
-                flareHand: Math.random() < 0.5 ? 'left' : 'right'
+                flareHand: Math.random() < 0.5 ? 'left' : 'right',
+                // Arm transition state (#7)
+                armTransition: 0,  // 0 = down, 1 = up
+                lastArmState: 'normal'
             });
         }
     }
@@ -1031,6 +1081,19 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreo, batch = n
     }
     const x = (baseX + currentRockX) | 0;
 
+    // Beat ripple effect across crowd rows (#9)
+    const timeSinceBeat = preCalc.timeSinceBeat || 0;
+    const rowDelay = s.row * 0.06;  // Wave propagates back through rows
+    const rippleProgress = Math.max(0, timeSinceBeat - rowDelay);
+    const rippleIntensity = Math.max(0, 1 - rippleProgress * 5) * 0.15;
+
+    if (rippleIntensity > 0.01 && !state.settings.reducedEffects) {
+        ctx.fillStyle = primary;
+        ctx.globalAlpha = rippleIntensity;
+        ctx.fillRect(x - px, y + 2 * px, 12 * px, 12 * px);
+        ctx.globalAlpha = 1;
+    }
+
     if (currentFrenzy && !state.settings.reducedEffects) {
         const glowPhase = (Math.sin(now / 200 + s.jumpPhase) + 1) * 0.5;
         ctx.fillStyle = primary;
@@ -1082,6 +1145,17 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreo, batch = n
     // Arms - use coreo config for positioning
     const armsPos = coreo ? getCoreoArmsPosition(coreo) : 'normal';
     const clapSpeed = coreo?.clapSpeed || 200;
+
+    // Smooth arm transition (#7) - update transition state
+    const targetArm = (currentArmsUp || armsPos === 'scarf-hold' || armsPos === 'up') ? 1 : 0;
+    const transitionSpeed = 0.08;  // How fast arms move (0-1 per frame)
+    if (s.armTransition === undefined) s.armTransition = 0;
+    if (targetArm > s.armTransition) {
+        s.armTransition = Math.min(1, s.armTransition + transitionSpeed);
+    } else if (targetArm < s.armTransition) {
+        s.armTransition = Math.max(0, s.armTransition - transitionSpeed * 0.7);  // Slower down
+    }
+    const armLerp = s.armTransition;  // 0 = down, 1 = up
 
     if (armsPos === 'pump' && !s.hasFlag && !s.hasFlare) {
         // Pumping arms up and down - high energy bounce coreo
@@ -1135,11 +1209,21 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreo, batch = n
             drawPixelRect(ctx, x - px, y + 4 * px, 3, 2, s.skinColor, px, batch);
             drawPixelRect(ctx, x + 8 * px, y + 4 * px, 3, 2, s.skinColor, px, batch);
         }
-    } else if (currentArmsUp) {
-        drawPixelRect(ctx, x, y + 2 * px, 2, 4, s.skinColor, px, batch);
-        drawPixelRect(ctx, x + 8 * px, y + 2 * px, 2, 4, s.skinColor, px, batch);
-        drawPixelRect(ctx, x, y + 1 * px, 2, 1, s.skinColor, px, batch);
-        drawPixelRect(ctx, x + 8 * px, y + 1 * px, 2, 1, s.skinColor, px, batch);
+    } else if (currentArmsUp || armLerp > 0.1) {
+        // Smooth arm transition using armLerp (#7)
+        // Interpolate Y position: down (7*px) to up (2*px)
+        const armYOffset = Math.round((7 - 5 * armLerp) * px);
+        const armLength = Math.round(4 - armLerp);  // Shorter when up
+
+        drawPixelRect(ctx, x, y + armYOffset, 2, armLength, s.skinColor, px, batch);
+        drawPixelRect(ctx, x + 8 * px, y + armYOffset, 2, armLength, s.skinColor, px, batch);
+
+        // Draw hands/fists when arms are mostly up
+        if (armLerp > 0.7) {
+            const handY = Math.round((1 + (1 - armLerp) * 2) * px);
+            drawPixelRect(ctx, x, y + handY, 2, 1, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 8 * px, y + handY, 2, 1, s.skinColor, px, batch);
+        }
     } else if (state.crowdEmotion === 'deject') {
         // Arms down, slightly inward
         drawPixelRect(ctx, x + px, y + 8 * px, 2, 4, s.skinColor, px, batch);
@@ -1372,20 +1456,30 @@ function spawnSmoke(s, jumpOffset, now) {
     if (s.flareColor === '#00ff44') { smokeR = 100; smokeG = 200; smokeB = 100; }
     else if (s.flareColor === '#ff2200' || s.flareColor === '#ff4400') { smokeR = 200; smokeG = 160; smokeB = 150; }
 
-    // Limit smoke particles for performance
-    if (state.smokeParticles.length > 300) return;
+    // Smoke density scaling based on combo (#8)
+    const combo = state.playerCombo;
+    const multiplier = getComboMultiplier();
 
-    // Spawn 1 particle per call (reduced from 2) with 50% chance for less density
-    if (Math.random() < 0.5) return;
+    // Dynamic max particles based on combo
+    const maxParticles = combo >= 50 ? 400 : combo >= 20 ? 350 : 300;
+    if (state.smokeParticles.length > maxParticles) return;
+
+    // Spawn probability scales with combo (30% base, up to 80% at high combos)
+    const spawnChance = 0.3 + Math.min(0.5, (multiplier - 1) * 0.2);
+    if (Math.random() > spawnChance) return;
+
+    // Bigger, more intense smoke at higher combos
+    const sizeBonus = Math.min(6, (multiplier - 1) * 3);
+    const spreadBonus = Math.min(4, (multiplier - 1) * 2);
 
     state.smokeParticles.push({
-        x: handX + px + (Math.random() - 0.5) * 6 * px,
+        x: handX + px + (Math.random() - 0.5) * (6 + spreadBonus) * px,
         y: flareY - 6 * px,
-        vx: (Math.random() - 0.5) * 1.0,
-        vy: -(0.3 + Math.random() * 0.7),
+        vx: (Math.random() - 0.5) * (1.0 + spreadBonus * 0.2),
+        vy: -(0.3 + Math.random() * (0.7 + multiplier * 0.1)),
         life: 1,
         decay: 0.002 + Math.random() * 0.003,
-        size: 6 + Math.random() * 8,
+        size: 6 + sizeBonus + Math.random() * (8 + sizeBonus),
         r: smokeR, g: smokeG, b: smokeB
     });
 }
@@ -1581,6 +1675,13 @@ export function drawGameVisuals() {
     const currentFrenzy = state.crowdEmotion === 'celebrate' || state.playerCombo > 5;
     const coreo = getCoreoConfig(state.playerCombo);
 
+    // Track coreo transitions for reveal animations (#10)
+    if (coreo.id !== state.lastCoreoId) {
+        state.lastCoreoId = coreo.id;
+        state.coreoStartTime = now;
+    }
+    const coreoAge = now - state.coreoStartTime;  // ms since coreo started
+
     if (state.supporters.length === 0) {
         initSupporters(w, h, false); // Explicitly pass false for game visuals
     }
@@ -1606,6 +1707,26 @@ export function drawGameVisuals() {
     }
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
+
+    // Stadium floodlight gradient overlay (#5)
+    if (!state.settings.reducedEffects) {
+        const lightGrad = ctx.createLinearGradient(0, 0, 0, h);
+        const lightIntensity = currentFrenzy ? 0.06 : 0.03;
+        lightGrad.addColorStop(0, `rgba(255, 255, 220, ${lightIntensity})`);
+        lightGrad.addColorStop(0.3, `rgba(255, 255, 200, ${lightIntensity * 0.5})`);
+        lightGrad.addColorStop(0.6, 'rgba(255, 255, 180, 0)');
+        lightGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = lightGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // Add subtle horizontal light beams during frenzy
+        if (currentFrenzy) {
+            const beamPhase = (now / 2000) % 1;
+            ctx.fillStyle = `rgba(255, 255, 255, ${0.02 + Math.sin(beamPhase * Math.PI * 2) * 0.01})`;
+            ctx.fillRect(0, h * 0.05, w, 2);
+            ctx.fillRect(0, h * 0.15, w, 1);
+        }
+    }
 
     // Draw stadium bleachers (tiered concrete steps behind crowd)
     drawStadiumBleachers(ctx, w, h);
