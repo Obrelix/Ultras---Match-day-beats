@@ -995,6 +995,7 @@ function pushFlagFlare(s, jumpY) {
 const BARRIER_COLOR = '#1a1a2e';
 const BARRIER_HIGHLIGHT = '#2a2a4e';
 const RAILING_COLOR = '#444466';
+const RAILING_CHROME = '#666688';
 
 // Bleacher colors (concrete/metal steps)
 const BLEACHER_COLORS = {
@@ -1003,8 +1004,126 @@ const BLEACHER_COLORS = {
     stepDark: '#1e1e2a',    // Shadow/edge
     riser: '#222230',       // Vertical face between steps
     seat: '#3a3a4a',        // Seat back (if visible)
-    seatDark: '#2e2e3e'     // Seat shadow
+    seatDark: '#2e2e3e',    // Seat shadow
+    concrete: '#282838',    // Concrete texture base
+    wear: '#252535'         // Worn areas
 };
+
+// Stadium structure colors
+const STADIUM_COLORS = {
+    roofSilhouette: '#0a0a14',
+    roofBeam: '#12121e',
+    floodlightGlow: 'rgba(255, 255, 220, 0.15)',
+    floodlightCore: 'rgba(255, 255, 240, 0.8)',
+    adBoard: '#111118',
+    adBoardLit: '#1a1a28',
+    adBoardGlow: 'rgba(100, 150, 255, 0.3)'
+};
+
+// Draw stadium roof/canopy silhouette at top
+function drawStadiumRoof(ctx, w, h) {
+    if (state.settings.reducedEffects) return;
+
+    // Roof silhouette
+    ctx.fillStyle = STADIUM_COLORS.roofSilhouette;
+    ctx.fillRect(0, 0, w, 8);
+
+    // Roof beams
+    ctx.fillStyle = STADIUM_COLORS.roofBeam;
+    const beamSpacing = 80;
+    for (let x = 0; x < w; x += beamSpacing) {
+        // Angled beam
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x + 15, 25);
+        ctx.lineTo(x + 20, 25);
+        ctx.lineTo(x + 5, 0);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    // Roof edge shadow
+    const roofGrad = ctx.createLinearGradient(0, 0, 0, 30);
+    roofGrad.addColorStop(0, 'rgba(0, 0, 0, 0.4)');
+    roofGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = roofGrad;
+    ctx.fillRect(0, 8, w, 22);
+}
+
+// Draw floodlights
+function drawFloodlights(ctx, w, h, now, isFrenzy) {
+    if (state.settings.reducedEffects) return;
+
+    const lightPositions = [w * 0.15, w * 0.5, w * 0.85];
+    const flicker = isFrenzy ? (Math.sin(now / 100) * 0.1 + 0.9) : 1;
+
+    for (const lx of lightPositions) {
+        // Light glow cone
+        const coneGrad = ctx.createRadialGradient(lx, -20, 0, lx, -20, 150);
+        coneGrad.addColorStop(0, `rgba(255, 255, 220, ${0.08 * flicker})`);
+        coneGrad.addColorStop(0.5, `rgba(255, 255, 200, ${0.03 * flicker})`);
+        coneGrad.addColorStop(1, 'rgba(255, 255, 180, 0)');
+        ctx.fillStyle = coneGrad;
+        ctx.fillRect(lx - 100, 0, 200, 120);
+
+        // Light fixture
+        ctx.fillStyle = '#333344';
+        ctx.fillRect(lx - 8, 0, 16, 6);
+        ctx.fillStyle = STADIUM_COLORS.floodlightCore;
+        ctx.globalAlpha = 0.6 * flicker;
+        ctx.fillRect(lx - 6, 2, 12, 3);
+        ctx.globalAlpha = 1;
+    }
+}
+
+// Convert hex color to rgba string
+function hexToRgba(hex, alpha) {
+    if (!hex) return `rgba(100, 150, 255, ${alpha})`;
+    // Handle hex colors
+    if (hex.startsWith('#')) {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+    // Handle rgb/rgba colors
+    if (hex.startsWith('rgb')) {
+        return hex.replace('rgb', 'rgba').replace(')', `, ${alpha})`);
+    }
+    return `rgba(100, 150, 255, ${alpha})`;
+}
+
+// Draw advertising boards at bottom
+function drawAdBoards(ctx, w, h, now, primaryColor) {
+    const boardHeight = 12;
+    const boardY = h - boardHeight;
+
+    // Main board background
+    ctx.fillStyle = STADIUM_COLORS.adBoard;
+    ctx.fillRect(0, boardY, w, boardHeight);
+
+    // LED glow effect
+    if (!state.settings.reducedEffects) {
+        const glowPhase = (now / 50) % w;
+        const grad = ctx.createLinearGradient(glowPhase - 100, 0, glowPhase + 100, 0);
+        grad.addColorStop(0, 'rgba(100, 150, 255, 0)');
+        grad.addColorStop(0.5, hexToRgba(primaryColor, 0.15));
+        grad.addColorStop(1, 'rgba(100, 150, 255, 0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, boardY, w, boardHeight);
+    }
+
+    // Board segments/panels
+    ctx.fillStyle = STADIUM_COLORS.adBoardLit;
+    const panelWidth = 60;
+    for (let x = 0; x < w; x += panelWidth) {
+        ctx.fillRect(x, boardY, panelWidth - 2, boardHeight);
+    }
+
+    // Top edge highlight
+    ctx.fillStyle = '#2a2a3a';
+    ctx.fillRect(0, boardY, w, 2);
+}
 
 // Draw stadium bleachers (tiered concrete steps behind crowd)
 function drawStadiumBleachers(ctx, w, h) {
@@ -1012,6 +1131,7 @@ function drawStadiumBleachers(ctx, w, h) {
     if (!layout) return;
 
     const { edgeMargin, aisleWidth, aislePositions } = layout;
+    const primaryColor = state.cachedColors?.primary || '#006633';
 
     // Calculate row positions matching supporter layout
     const PX = 2.7;
@@ -1023,8 +1143,8 @@ function drawStadiumBleachers(ctx, w, h) {
     // Draw from back to front (top to bottom on screen)
     for (let row = numRows - 1; row >= 0; row--) {
         const rowY = groundY - row * rowSpacing;
-        const stepHeight = 12;  // Visible step height
-        const riserHeight = 6;  // Vertical face between steps
+        const stepHeight = 14;  // Visible step height
+        const riserHeight = 8;  // Vertical face between steps
 
         // Step surface (horizontal tread)
         const stepTop = rowY + supporterH - stepHeight;
@@ -1035,58 +1155,94 @@ function drawStadiumBleachers(ctx, w, h) {
 
         // Draw step segments (between aisles)
         let segmentStart = edgeMargin;
+        let sectionIndex = 0;
 
         for (let a = 0; a <= aislePositions.length; a++) {
             const segmentEnd = a < aislePositions.length ? aislePositions[a].start : w - edgeMargin;
             const segmentWidth = segmentEnd - segmentStart;
 
             if (segmentWidth > 0) {
-                // Step tread (top surface)
-                ctx.fillStyle = stepColor;
+                // Step tread (top surface) with gradient for depth
+                const stepGrad = ctx.createLinearGradient(0, stepTop, 0, stepTop + stepHeight);
+                stepGrad.addColorStop(0, BLEACHER_COLORS.stepLight);
+                stepGrad.addColorStop(0.15, stepColor);
+                stepGrad.addColorStop(0.85, stepColor);
+                stepGrad.addColorStop(1, BLEACHER_COLORS.stepDark);
+                ctx.fillStyle = stepGrad;
                 ctx.fillRect(segmentStart, stepTop, segmentWidth, stepHeight);
 
+                // Concrete texture (subtle noise pattern)
+                if (!state.settings.reducedEffects && row % 2 === 0) {
+                    ctx.fillStyle = BLEACHER_COLORS.wear;
+                    for (let tx = segmentStart; tx < segmentEnd; tx += 40) {
+                        if ((tx + row * 17) % 60 < 20) {
+                            ctx.fillRect(tx, stepTop + 4, 15, 3);
+                        }
+                    }
+                }
+
                 // Step edge highlight (front edge catches light)
-                ctx.fillStyle = BLEACHER_COLORS.stepLight;
+                ctx.fillStyle = '#4a4a5a';
                 ctx.fillRect(segmentStart, stepTop, segmentWidth, 2);
 
                 // Riser (vertical face below step) - only visible for rows above ground
                 if (row > 0) {
-                    ctx.fillStyle = BLEACHER_COLORS.riser;
+                    // Riser with gradient
+                    const riserGrad = ctx.createLinearGradient(0, stepTop + stepHeight, 0, stepTop + stepHeight + riserHeight);
+                    riserGrad.addColorStop(0, BLEACHER_COLORS.riser);
+                    riserGrad.addColorStop(1, BLEACHER_COLORS.stepDark);
+                    ctx.fillStyle = riserGrad;
                     ctx.fillRect(segmentStart, stepTop + stepHeight, segmentWidth, riserHeight);
-
-                    // Shadow at bottom of riser
-                    ctx.fillStyle = BLEACHER_COLORS.stepDark;
-                    ctx.fillRect(segmentStart, stepTop + stepHeight + riserHeight - 2, segmentWidth, 2);
                 }
 
-                // Seat backs (small rectangles indicating folded seats)
-                // Only draw every few pixels for a subtle effect
-                const seatSpacing = 20;
-                const seatWidth = 8;
-                const seatHeight = 6;
-                ctx.fillStyle = BLEACHER_COLORS.seat;
-                for (let sx = segmentStart + 10; sx < segmentEnd - seatWidth; sx += seatSpacing) {
-                    // Add slight variation
-                    if ((sx + row * 7) % 3 !== 0) {
-                        ctx.fillRect(sx, stepTop - seatHeight + 2, seatWidth, seatHeight);
-                        // Seat shadow
-                        ctx.fillStyle = BLEACHER_COLORS.seatDark;
-                        ctx.fillRect(sx, stepTop - 2, seatWidth, 2);
-                        ctx.fillStyle = BLEACHER_COLORS.seat;
+                // Individual seats with club-colored accents
+                const seatSpacing = 18;
+                const seatWidth = 10;
+                const seatHeight = 8;
+                const seatBack = 5;
+
+                for (let sx = segmentStart + 8; sx < segmentEnd - seatWidth; sx += seatSpacing) {
+                    // Vary which seats are shown
+                    const seatHash = (sx * 7 + row * 13) % 100;
+                    if (seatHash > 25) continue;  // Only show some seats (most hidden by supporters)
+
+                    // Seat base
+                    ctx.fillStyle = BLEACHER_COLORS.seat;
+                    ctx.fillRect(sx, stepTop - seatBack, seatWidth, seatBack + 2);
+
+                    // Seat back with subtle club color tint (every few seats)
+                    if (seatHash < 8) {
+                        ctx.fillStyle = primaryColor;
+                        ctx.globalAlpha = 0.3;
+                        ctx.fillRect(sx + 1, stepTop - seatBack + 1, seatWidth - 2, seatBack - 1);
+                        ctx.globalAlpha = 1;
                     }
+
+                    // Seat shadow
+                    ctx.fillStyle = BLEACHER_COLORS.seatDark;
+                    ctx.fillRect(sx, stepTop - 1, seatWidth, 2);
+                }
+
+                // Row number markers (on left side of each section)
+                if (!state.settings.reducedEffects && row > 0 && row < 6) {
+                    ctx.fillStyle = '#555566';
+                    ctx.font = '8px monospace';
+                    ctx.fillText(String(row), segmentStart + 4, stepTop + stepHeight - 2);
                 }
             }
 
             // Move to next segment (after aisle)
             if (a < aislePositions.length) {
                 segmentStart = aislePositions[a].end;
+                sectionIndex++;
             }
         }
     }
 
-    // Add subtle vertical dividers (seat section markers)
+    // Section dividers with numbers
     ctx.fillStyle = BLEACHER_COLORS.stepDark;
-    const dividerSpacing = 120;
+    const dividerSpacing = 100;
+    let sectionNum = 1;
     for (let x = edgeMargin + dividerSpacing; x < w - edgeMargin; x += dividerSpacing) {
         // Check if divider would be in an aisle - skip if so
         let inAisle = false;
@@ -1097,7 +1253,17 @@ function drawStadiumBleachers(ctx, w, h) {
             }
         }
         if (!inAisle) {
-            ctx.fillRect(x, 0, 2, h);
+            // Divider line
+            ctx.fillStyle = BLEACHER_COLORS.stepDark;
+            ctx.fillRect(x, 0, 2, h - 20);
+
+            // Section number at top
+            if (!state.settings.reducedEffects) {
+                ctx.fillStyle = '#444455';
+                ctx.font = 'bold 10px sans-serif';
+                ctx.fillText(`${sectionNum}`, x - 4, 45);
+            }
+            sectionNum++;
         }
     }
 }
@@ -1108,38 +1274,119 @@ function drawStadiumBarriers(ctx, w, h) {
     if (!layout) return;
 
     const { edgeMargin, aisleWidth, aislePositions } = layout;
+    const primaryColor = state.cachedColors?.primary || '#006633';
 
-    // Edge barriers (left and right walls)
-    ctx.fillStyle = BARRIER_COLOR;
+    // Edge barriers (left and right walls) with gradient
+    const edgeGrad = ctx.createLinearGradient(0, 0, edgeMargin, 0);
+    edgeGrad.addColorStop(0, '#0f0f1a');
+    edgeGrad.addColorStop(0.7, BARRIER_COLOR);
+    edgeGrad.addColorStop(1, BARRIER_HIGHLIGHT);
+    ctx.fillStyle = edgeGrad;
     ctx.fillRect(0, 0, edgeMargin, h);
+
+    const edgeGradR = ctx.createLinearGradient(w - edgeMargin, 0, w, 0);
+    edgeGradR.addColorStop(0, BARRIER_HIGHLIGHT);
+    edgeGradR.addColorStop(0.3, BARRIER_COLOR);
+    edgeGradR.addColorStop(1, '#0f0f1a');
+    ctx.fillStyle = edgeGradR;
     ctx.fillRect(w - edgeMargin, 0, edgeMargin, h);
 
-    // Edge highlights
-    ctx.fillStyle = BARRIER_HIGHLIGHT;
-    ctx.fillRect(edgeMargin - 4, 0, 4, h);
-    ctx.fillRect(w - edgeMargin, 0, 4, h);
+    // Metal edge trim
+    ctx.fillStyle = RAILING_CHROME;
+    ctx.fillRect(edgeMargin - 3, 0, 3, h);
+    ctx.fillRect(w - edgeMargin, 0, 3, h);
 
     // Aisles between sections
     for (const aisle of aislePositions) {
-        // Aisle background
-        ctx.fillStyle = BARRIER_COLOR;
+        // Aisle floor (darker, worn)
+        const aisleGrad = ctx.createLinearGradient(aisle.start, 0, aisle.end, 0);
+        aisleGrad.addColorStop(0, BARRIER_HIGHLIGHT);
+        aisleGrad.addColorStop(0.2, BARRIER_COLOR);
+        aisleGrad.addColorStop(0.8, BARRIER_COLOR);
+        aisleGrad.addColorStop(1, BARRIER_HIGHLIGHT);
+        ctx.fillStyle = aisleGrad;
         ctx.fillRect(aisle.start, 0, aisleWidth, h);
 
-        // Aisle edge highlights
-        ctx.fillStyle = BARRIER_HIGHLIGHT;
-        ctx.fillRect(aisle.start, 0, 3, h);
-        ctx.fillRect(aisle.end - 3, 0, 3, h);
+        // Aisle steps (horizontal lines showing stairs)
+        ctx.fillStyle = '#252535';
+        const stepInterval = 25;
+        for (let y = 30; y < h - 20; y += stepInterval) {
+            ctx.fillRect(aisle.start + 4, y, aisleWidth - 8, 2);
+        }
 
-        // Center railing
+        // Safety railings on sides
+        ctx.fillStyle = RAILING_CHROME;
+        ctx.fillRect(aisle.start + 2, 0, 2, h);
+        ctx.fillRect(aisle.end - 4, 0, 2, h);
+
+        // Center handrail with posts
         ctx.fillStyle = RAILING_COLOR;
-        ctx.fillRect(aisle.start + aisleWidth / 2 - 2, 0, 4, h);
+        const railX = aisle.start + aisleWidth / 2 - 2;
+        ctx.fillRect(railX, 0, 4, h);
+
+        // Handrail posts
+        ctx.fillStyle = RAILING_CHROME;
+        for (let y = 20; y < h - 30; y += 50) {
+            ctx.fillRect(railX - 2, y, 8, 6);
+            // Post cap highlight
+            ctx.fillStyle = '#888899';
+            ctx.fillRect(railX - 1, y, 6, 2);
+            ctx.fillStyle = RAILING_CHROME;
+        }
+
+        // Emergency exit sign at bottom of each aisle
+        if (!state.settings.reducedEffects) {
+            ctx.fillStyle = '#004400';
+            ctx.fillRect(aisle.start + aisleWidth / 2 - 12, h - 45, 24, 10);
+            ctx.fillStyle = '#00ff00';
+            ctx.globalAlpha = 0.7;
+            ctx.font = '7px sans-serif';
+            ctx.fillText('EXIT', aisle.start + aisleWidth / 2 - 8, h - 37);
+            ctx.globalAlpha = 1;
+        }
     }
 
-    // Bottom railing (front of stand)
+    // Bottom safety barrier (front of stand)
+    // Main barrier
+    ctx.fillStyle = BARRIER_COLOR;
+    ctx.fillRect(0, h - 14, w, 14);
+
+    // Barrier top rail
+    ctx.fillStyle = RAILING_CHROME;
+    ctx.fillRect(0, h - 16, w, 4);
+
+    // Rail highlight
+    ctx.fillStyle = '#888899';
+    ctx.fillRect(0, h - 16, w, 1);
+
+    // Barrier supports/posts
     ctx.fillStyle = RAILING_COLOR;
-    ctx.fillRect(0, h - 8, w, 8);
-    ctx.fillStyle = BARRIER_HIGHLIGHT;
-    ctx.fillRect(0, h - 10, w, 2);
+    const postSpacing = 50;
+    for (let x = edgeMargin; x < w - edgeMargin; x += postSpacing) {
+        // Skip posts in aisles
+        let inAisle = false;
+        for (const aisle of aislePositions) {
+            if (x >= aisle.start && x <= aisle.end) {
+                inAisle = true;
+                break;
+            }
+        }
+        if (!inAisle) {
+            ctx.fillRect(x - 2, h - 20, 4, 20);
+            // Post cap
+            ctx.fillStyle = RAILING_CHROME;
+            ctx.fillRect(x - 3, h - 22, 6, 4);
+            ctx.fillStyle = RAILING_COLOR;
+        }
+    }
+
+    // Club-colored accent strip on barrier
+    if (!state.settings.reducedEffects) {
+        ctx.fillStyle = primaryColor;
+        ctx.globalAlpha = 0.4;
+        ctx.fillRect(0, h - 6, w, 4);
+        ctx.globalAlpha = 1;
+    }
 }
 
 function shadeColor(hex, percent) {
@@ -2015,23 +2262,32 @@ export function drawGameVisuals() {
         }
     }
 
+    // Draw stadium roof silhouette at top
+    drawStadiumRoof(ctx, w, h);
+
+    // Draw floodlights
+    drawFloodlights(ctx, w, h, now, currentFrenzy);
+
     // Draw stadium bleachers (tiered concrete steps behind crowd)
     drawStadiumBleachers(ctx, w, h);
 
     // Draw stadium barriers (edges, aisles, railings)
     drawStadiumBarriers(ctx, w, h);
 
-    // Stadium railing
+    // Cache colors locally to avoid repeated state access (with fallback to selected club)
+    const primaryColor = state.cachedColors?.primary || state.selectedClub?.colors?.primary || '#006633';
+    const secondaryColor = state.cachedColors?.secondary || state.selectedClub?.colors?.secondary || '#FFFFFF';
+
+    // Draw advertising boards at bottom
+    drawAdBoards(ctx, w, h, now, primaryColor);
+
+    // Stadium railing accent
     if (state.crowdEmotion === 'deject') {
         ctx.fillStyle = 'rgba(100,100,100,0.08)';
     } else {
         ctx.fillStyle = currentFrenzy ? 'rgba(255,100,0,0.12)' : 'rgba(255,255,255,0.08)';
     }
     ctx.fillRect(0, h * 0.1, w, 3);
-
-    // Cache colors locally to avoid repeated state access (with fallback to selected club)
-    const primaryColor = state.cachedColors?.primary || state.selectedClub?.colors?.primary || '#006633';
-    const secondaryColor = state.cachedColors?.secondary || state.selectedClub?.colors?.secondary || '#FFFFFF';
 
     // Beat-synced animation
     const timeSinceBeat = (now - state.crowdBeatTime) / 1000;
@@ -2081,8 +2337,9 @@ export function drawGameVisuals() {
 
         // Use cached sprites for simple supporters (#11)
         // Cached sprites work best for supporters without special accessories
-        const useCache = SPRITE_CACHE.ready && !s.hasFlag && !s.hasFlare && !s.hasHat &&
-                         state.crowdEmotion !== 'deject' && coreo.id < 3;
+        // TEMPORARILY DISABLED - using batched drawing for all supporters
+        const useCache = false; // SPRITE_CACHE.ready && !s.hasFlag && !s.hasFlare && !s.hasHat &&
+                         // state.crowdEmotion !== 'deject' && coreo.id < 3;
 
         if (useCache) {
             drawSupporterCached(ctx, s, jumpY, armsUp, currentFrenzy, now, coreo, null, primaryColor, secondaryColor, preCalc);
@@ -2382,23 +2639,32 @@ export function drawAmbientCrowd() {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
+    // Cache colors locally (with fallback to selected club)
+    const primaryColor = state.cachedColors?.primary || state.selectedClub?.colors?.primary || '#006633';
+    const secondaryColor = state.cachedColors?.secondary || state.selectedClub?.colors?.secondary || '#FFFFFF';
+
+    // Draw stadium roof silhouette at top
+    drawStadiumRoof(ctx, w, h);
+
+    // Draw floodlights (subtle for ambient)
+    drawFloodlights(ctx, w, h, now, isCelebrate);
+
     // Draw stadium bleachers (tiered concrete steps behind crowd)
     drawStadiumBleachers(ctx, w, h);
 
     // Draw stadium barriers (edges, aisles, railings)
     drawStadiumBarriers(ctx, w, h);
 
-    // Stadium railing
+    // Draw advertising boards at bottom
+    drawAdBoards(ctx, w, h, now, primaryColor);
+
+    // Stadium railing accent
     if (isDeject) {
         ctx.fillStyle = 'rgba(100,100,100,0.08)';
     } else {
         ctx.fillStyle = isCelebrate ? 'rgba(255,100,0,0.12)' : 'rgba(255,255,255,0.08)';
     }
     ctx.fillRect(0, h * 0.1, w, 3);
-
-    // Cache colors locally (with fallback to selected club)
-    const primaryColor = state.cachedColors?.primary || state.selectedClub?.colors?.primary || '#006633';
-    const secondaryColor = state.cachedColors?.secondary || state.selectedClub?.colors?.secondary || '#FFFFFF';
 
     // Single pass: draw supporters and queue flag/flare data
     supporterBatch.clear();

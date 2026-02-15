@@ -310,7 +310,7 @@ body {
 
 #game-canvas {
     width: 100%;
-    max-width: 1200px;
+    max-width: 800px;
     height: 100px;
     background: rgba(26, 26, 46, 0.85);
     border-radius: 15px;
