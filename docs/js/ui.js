@@ -75,6 +75,11 @@ export const elements = {
     chantResultAiGoals: document.getElementById('chant-result-ai-goals'),
     chantResultMessage: document.getElementById('chant-result-message'),
     chantResultDetail: document.getElementById('chant-result-detail'),
+    chantStatPerfect: document.getElementById('chant-stat-perfect'),
+    chantStatGood: document.getElementById('chant-stat-good'),
+    chantStatOk: document.getElementById('chant-stat-ok'),
+    chantStatMiss: document.getElementById('chant-stat-miss'),
+    chantStatMaxCombo: document.getElementById('chant-stat-max-combo'),
     nextChantBtn: document.getElementById('next-chant-btn'),
 
     // Halftime
@@ -353,9 +358,16 @@ function showChantResult(playerScored, aiScored) {
         setCrowdMode('deject');
     }
 
+    // Populate detailed stats (like practice mode)
+    elements.chantStatPerfect.textContent = state.playerStats.perfect;
+    elements.chantStatGood.textContent = state.playerStats.good;
+    elements.chantStatOk.textContent = state.playerStats.ok;
+    elements.chantStatMiss.textContent = state.playerStats.miss;
+    elements.chantStatMaxCombo.textContent = state.playerMaxCombo;
+
     const prevResult = state.chantResults[state.chantResults.length - 1];
     elements.chantResultDetail.textContent =
-        `Accuracy: ${Math.round(prevResult.accuracy * 100)}% | Max combo: ${prevResult.maxCombo} — Score 40% to score a goal!`;
+        `Accuracy: ${Math.round(prevResult.accuracy * 100)}% — Score 40%+ to score a goal!`;
 
     // Set up next-chant button
     let btnText, btnAction;
