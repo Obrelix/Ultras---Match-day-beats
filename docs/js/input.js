@@ -89,6 +89,17 @@ export function handleInput() {
         score = SCORE.PERFECT;
         state.playerStats.perfect++;
         state.playerCombo++;
+
+        // Screen shake on perfect streaks (#1)
+        if (!state.settings.reducedEffects && state.crowdBgCanvas) {
+            const combo = state.playerCombo;
+            if (combo >= 10) {
+                const shakeClass = combo >= 30 ? 'shake-intense' : 'shake';
+                state.crowdBgCanvas.classList.remove('shake', 'shake-intense');
+                void state.crowdBgCanvas.offsetWidth;  // Force reflow for re-animation
+                state.crowdBgCanvas.classList.add(shakeClass);
+            }
+        }
     } else if (bestDiff <= state.activeTiming.GOOD) {
         rating = 'GOOD';
         score = SCORE.GOOD;
