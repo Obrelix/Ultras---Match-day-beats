@@ -235,8 +235,14 @@ async function startMatchdayChant() {
         // Yield for render
         await new Promise(resolve => setTimeout(resolve, 50));
 
-        // Pre-analyze beats in Web Worker (non-blocking) and waveform
-        state.detectedBeats = await analyzeBeatsAsync(state.audioBuffer);
+        // Use manual beats if defined in chant config, otherwise detect automatically
+        if (state.selectedChant.beats && state.selectedChant.beats.length > 0) {
+            state.detectedBeats = [...state.selectedChant.beats];
+            console.log('Using manual beats:', state.detectedBeats.length);
+        } else {
+            // Pre-analyze beats in Web Worker (non-blocking)
+            state.detectedBeats = await analyzeBeatsAsync(state.audioBuffer);
+        }
         computeWaveformPeaks();
         buildWaveformCache();
 
@@ -319,8 +325,14 @@ async function startGame() {
         // Yield for render
         await new Promise(resolve => setTimeout(resolve, 50));
 
-        // Pre-analyze beats in Web Worker (non-blocking) and waveform
-        state.detectedBeats = await analyzeBeatsAsync(state.audioBuffer);
+        // Use manual beats if defined in chant config, otherwise detect automatically
+        if (state.selectedChant.beats && state.selectedChant.beats.length > 0) {
+            state.detectedBeats = [...state.selectedChant.beats];
+            console.log('Using manual beats:', state.detectedBeats.length);
+        } else {
+            // Pre-analyze beats in Web Worker (non-blocking)
+            state.detectedBeats = await analyzeBeatsAsync(state.audioBuffer);
+        }
         computeWaveformPeaks();
         buildWaveformCache();
 

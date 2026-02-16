@@ -122,25 +122,26 @@ export const BEAT_DETECTION = {
     FFT_SIZE: 2048,
     HOP_SIZE: 512,
     FLUX_SMOOTH_WINDOW: 3,
-    ONSET_THRESHOLD_MULTIPLIER: 1.2,
+    ONSET_THRESHOLD_MULTIPLIER: 1.1,      // Lowered from 1.2 to catch weaker vocal onsets
     ONSET_THRESHOLD_OFFSET: 0.005,
     ONSET_MEDIAN_WINDOW: 11,
     ONSET_MIN_GAP_SEC: 0.10,
     MIN_BPM: 60,
     MAX_BPM: 200,
-    GRID_PHASE_CANDIDATES: 50,
+    GRID_PHASE_CANDIDATES: 100,           // Increased from 50 for finer phase resolution
     GRID_SNAP_WINDOW_SEC: 0.08,
-    GRID_SNAP_WEIGHT: 0.5,
-    BASS_CUTOFF_HZ: 150,
+    GRID_SNAP_WEIGHT: 0.3,                // Lowered from 0.5 to keep beats closer to detected onsets
+    BASS_CUTOFF_HZ: 100,                  // Lowered from 150 to include more low-frequency drum content
     LOW_VOCAL_HZ: 250,
-    LOW_VOCAL_WEIGHT: 0.3,
+    LOW_VOCAL_WEIGHT: 0.5,                // Increased from 0.3 to boost low vocal contribution
     VOCAL_CORE_HZ: 3500,
     VOCAL_CORE_WEIGHT: 3.0,
     SIBILANCE_HZ: 6000,
     SIBILANCE_WEIGHT: 0.5,
-    MIN_PLAYABLE_GAP_SEC: 0.28,
-    MIN_ONSETS_FOR_DIRECT_USE: 6,
-    MAX_BEATS_PER_SECOND: 3.5
+    MIN_PLAYABLE_GAP_SEC: 0.22,           // Lowered from 0.28 to allow faster rhythms (~270 BPM max)
+    MIN_ONSETS_FOR_DIRECT_USE: 5,         // Lowered from 6 to prefer direct onsets over tempo grid
+    MAX_BEATS_PER_SECOND: 3.5,
+    ABSOLUTE_MIN_FLUX: 0.01               // New: minimum flux to reject peaks in near-silence
 };
 
 export const SCROLL_VIS = {

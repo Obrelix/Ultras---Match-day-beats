@@ -173,6 +173,7 @@ function pickOnsets(spectralFlux, hopSize, sampleRate) {
     const numFrames = spectralFlux.length;
     const frameDuration = hopSize / sampleRate;
     const medianWindow = BEAT_DETECTION.ONSET_MEDIAN_WINDOW;
+    const absoluteMinFlux = BEAT_DETECTION.ABSOLUTE_MIN_FLUX || 0.01;
 
     const threshold = new Float32Array(numFrames);
     for (let i = 0; i < numFrames; i++) {
@@ -193,6 +194,8 @@ function pickOnsets(spectralFlux, hopSize, sampleRate) {
     let lastOnsetFrame = -minGapFrames;
 
     for (let i = 1; i < numFrames - 1; i++) {
+        // Reject peaks in near-silence (prevents false positives in quiet sections)
+        if (spectralFlux[i] < absoluteMinFlux) continue;
         if (spectralFlux[i] <= threshold[i]) continue;
         if (spectralFlux[i] <= spectralFlux[i - 1] || spectralFlux[i] <= spectralFlux[i + 1]) continue;
         if ((i - lastOnsetFrame) < minGapFrames) continue;
