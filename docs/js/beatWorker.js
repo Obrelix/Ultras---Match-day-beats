@@ -447,14 +447,17 @@ function analyzeBeats(samples, sampleRate, totalDuration) {
 
 // Worker message handler
 self.onmessage = function(e) {
+    const requestId = e.data.requestId;  // Track request ID for race condition prevention
+
     try {
         const { channelData, numChannels, sampleRate, duration, config } = e.data;
 
         // Set the config
         BEAT_DETECTION = config;
 
-        // Convert channel data back to Float32Arrays (they come as regular arrays after transfer)
-        const channels = channelData.map(ch => new Float32Array(ch));
+        // Channel data is already Float32Array (transferred via Transferable)
+        // No conversion needed - just use directly
+        const channels = channelData;
 
         // Mix to mono
         const samples = mixToMono(channels, numChannels);
@@ -462,11 +465,11 @@ self.onmessage = function(e) {
         // Analyze beats
         const beats = analyzeBeats(samples, sampleRate, duration);
 
-        // Send results back
-        self.postMessage({ beats, error: null });
+        // Send results back with requestId
+        self.postMessage({ requestId, beats, error: null });
     } catch (error) {
         console.error('Beat worker error:', error);
-        // Send error back to main thread
-        self.postMessage({ beats: [], error: error.message || 'Beat analysis failed' });
+        // Send error back to main thread with requestId
+        self.postMessage({ requestId, beats: [], error: error.message || 'Beat analysis failed' });
     }
 };

@@ -75,16 +75,24 @@ const _frameCache = {
     crowdEmotion: 'neutral',
     isFrenzy: false,
     comboMultiplier: 1,
-    now: 0
+    now: 0,
+    // Cached combo strings (avoid allocation during frenzy)
+    lastComboCount: -1,
+    lastMultiplier: -1,
+    comboStr: '',
+    multiStr: '',
+    fullStr: ''
 };
 
 function updateFrameCache(now) {
     _frameCache.now = now;
-    _frameCache.reducedEffects = state.settings.reducedEffects === true;  // Explicit boolean (guards against undefined)
-    _frameCache.primaryColor = state.cachedColors?.primary || '#006633';
-    _frameCache.secondaryColor = state.cachedColors?.secondary || '#FFFFFF';
-    _frameCache.crowdEmotion = state.crowdEmotion;
-    _frameCache.isFrenzy = state.playerCombo > 5 || state.crowdEmotion === 'celebrate';
+    _frameCache.reducedEffects = state.settings?.reducedEffects === true;  // Guard against undefined settings
+    // Safely access colors with fallbacks
+    const colors = state.cachedColors || (state.selectedClub?.colors) || null;
+    _frameCache.primaryColor = colors?.primary || '#006633';
+    _frameCache.secondaryColor = colors?.secondary || '#FFFFFF';
+    _frameCache.crowdEmotion = state.crowdEmotion || 'neutral';
+    _frameCache.isFrenzy = (state.playerCombo || 0) > 5 || state.crowdEmotion === 'celebrate';
     _frameCache.comboMultiplier = getComboMultiplier();
 }
 
@@ -1196,7 +1204,7 @@ function drawStadiumRoof(ctx, w, h) {
     }
 }
 
-// Draw floodlights with tower structures (optimized - minimal gradients)
+// Draw floodlights with tower structures (optimized - cached gradients)
 function drawFloodlights(ctx, w, h, now, isFrenzy) {
     if (_frameCache.reducedEffects) return;
 
@@ -1208,31 +1216,24 @@ function drawFloodlights(ctx, w, h, now, isFrenzy) {
         { x: w * 0.75, scale: 0.85 },
         { x: w * 0.92, scale: 0.7 }
     ];
-    const flicker = isFrenzy ? (Math.sin(now * 0.01) * 0.1 + 0.9) : 1; // Optimized: now * 0.01 vs now / 100
+    const flicker = isFrenzy ? (Math.sin(now * 0.01) * 0.1 + 0.9) : 1;
 
     for (const light of lightPositions) {
         const lx = light.x;
         const scale = light.scale;
 
-        // Light glow cone (larger and more visible)
-        const coneGrad = ctx.createRadialGradient(lx, -10, 0, lx, -10, 180 * scale);
-        coneGrad.addColorStop(0, `rgba(255, 255, 220, ${0.12 * flicker * scale})`);
-        coneGrad.addColorStop(0.3, `rgba(255, 255, 200, ${0.06 * flicker * scale})`);
-        coneGrad.addColorStop(0.6, `rgba(255, 255, 180, ${0.02 * flicker * scale})`);
-        coneGrad.addColorStop(1, 'rgba(255, 255, 180, 0)');
-        ctx.fillStyle = coneGrad;
-        ctx.fillRect(lx - 120 * scale, 0, 240 * scale, 140 * scale);
+        // Light glow cone - use solid fills instead of expensive radial gradients
+        // This is a significant performance win with minimal visual difference
+        const coneAlpha = 0.08 * flicker * scale;
+        ctx.fillStyle = `rgba(255, 255, 210, ${coneAlpha})`;
+        ctx.fillRect(lx - 100 * scale, 0, 200 * scale, 120 * scale);
+        ctx.fillStyle = `rgba(255, 255, 200, ${coneAlpha * 0.5})`;
+        ctx.fillRect(lx - 60 * scale, 0, 120 * scale, 80 * scale);
 
-        // Tower structure (visible mast)
+        // Tower structure (visible mast) - use solid color instead of gradient
         const towerHeight = 18 * scale;
         const towerWidth = 4 * scale;
-
-        // Tower mast gradient
-        const towerGrad = ctx.createLinearGradient(lx - towerWidth, 0, lx + towerWidth, 0);
-        towerGrad.addColorStop(0, '#222233');
-        towerGrad.addColorStop(0.5, '#3a3a4a');
-        towerGrad.addColorStop(1, '#222233');
-        ctx.fillStyle = towerGrad;
+        ctx.fillStyle = '#333344';
         ctx.fillRect(lx - towerWidth / 2, 0, towerWidth, towerHeight);
 
         // Light array housing
@@ -1298,11 +1299,14 @@ function drawAdBoards(ctx, w, h, now, primaryColor) {
     const boardHeight = 14;
     const boardY = h - boardHeight;
 
-    // Main board background with gradient
-    const boardGrad = ctx.createLinearGradient(0, boardY, 0, h);
-    boardGrad.addColorStop(0, '#1a1a28');
-    boardGrad.addColorStop(0.3, STADIUM_COLORS.adBoard);
-    boardGrad.addColorStop(1, '#080810');
+    // Main board background - use cached gradient (static, only depends on h)
+    const boardGrad = getCachedGradient(ctx, 'adboard', h, () => {
+        const grad = ctx.createLinearGradient(0, boardY, 0, h);
+        grad.addColorStop(0, '#1a1a28');
+        grad.addColorStop(0.3, STADIUM_COLORS.adBoard);
+        grad.addColorStop(1, '#080810');
+        return grad;
+    });
     ctx.fillStyle = boardGrad;
     ctx.fillRect(0, boardY, w, boardHeight);
 
@@ -2485,33 +2489,41 @@ function spawnSmoke(s, jumpOffset, now) {
     const handX = s.flareHand === 'left' ? x - px : x + 9 * px;
     const flareY = y - 2 * px;
 
+    // Skip smoke if reduced effects is enabled
+    if (_frameCache.reducedEffects) return;
+
     let smokeR = 180, smokeG = 180, smokeB = 180;
     if (s.flareColor === '#00ff44') { smokeR = 100; smokeG = 200; smokeB = 100; }
     else if (s.flareColor === '#ff2200' || s.flareColor === '#ff4400') { smokeR = 200; smokeG = 160; smokeB = 150; }
 
-    // Smoke density scaling based on combo (#8)
+    // Smoke density scaling based on combo (#8) - enhanced with intensity multiplier
     const combo = state.playerCombo;
     const multiplier = getComboMultiplier();
+    const intensityMult = getSmokeIntensityMultiplier();
 
-    // Dynamic max particles based on combo
-    const maxParticles = combo >= 50 ? 400 : combo >= 20 ? 350 : 300;
+    // Dynamic max particles based on combo (scales with intensity)
+    const baseMax = 250;
+    const maxParticles = Math.floor(baseMax * intensityMult);
     if (state.smokeParticles.length > maxParticles) return;
 
-    // Spawn probability scales with combo (30% base, up to 80% at high combos)
-    const spawnChance = 0.3 + Math.min(0.5, (multiplier - 1) * 0.2);
+    // Spawn probability scales with combo (30% base, up to 90% at max intensity)
+    const spawnChance = 0.3 + Math.min(0.6, (intensityMult - 1) * 0.3);
     if (Math.random() > spawnChance) return;
 
     // Bigger, more intense smoke at higher combos
-    const sizeBonus = Math.min(6, (multiplier - 1) * 3);
-    const spreadBonus = Math.min(4, (multiplier - 1) * 2);
+    const sizeBonus = Math.min(10, (intensityMult - 1) * 5);
+    const spreadBonus = Math.min(6, (intensityMult - 1) * 3);
+
+    // Slower decay at high intensity = longer lasting smoke
+    const decayReduction = Math.max(0.5, 1.0 - (intensityMult - 1) * 0.15);
 
     state.smokeParticles.push({
         x: handX + px + (Math.random() - 0.5) * (6 + spreadBonus) * px,
         y: flareY - 6 * px,
-        vx: (Math.random() - 0.5) * (1.0 + spreadBonus * 0.2),
-        vy: -(0.3 + Math.random() * (0.7 + multiplier * 0.1)),
+        vx: (Math.random() - 0.5) * (1.0 + spreadBonus * 0.3),
+        vy: -(0.3 + Math.random() * (0.7 + intensityMult * 0.15)),
         life: 1,
-        decay: 0.002 + Math.random() * 0.003,
+        decay: (0.002 + Math.random() * 0.003) * decayReduction,
         size: 6 + sizeBonus + Math.random() * (8 + sizeBonus),
         r: smokeR, g: smokeG, b: smokeB
     });
@@ -2667,11 +2679,15 @@ function updateAndDrawSmoke(ctx, w, h) {
         p.life -= p.decay;
         p.size += 0.12;
 
-        if (p.life <= 0 || p.y < -20) {
+        // Remove dead or off-screen particles (expanded bounds check)
+        if (p.life <= 0 || p.y < -50 || p.x < -50 || p.x > w + 50) {
             // Swap and pop (fast removal)
             particles[i] = particles[--len];
             continue;
         }
+
+        // Skip drawing if above visible area (but keep updating physics)
+        if (p.y < -20) continue;
 
         // Draw
         const alpha = p.life * 0.5;
@@ -2691,6 +2707,264 @@ function updateAndDrawSmoke(ctx, w, h) {
     // Hard limit
     if (len > 250) {
         particles.length = 250;
+    }
+}
+
+// ============================================
+// Weather Effects System
+// ============================================
+
+// Rain particle colors (bluish-gray shades)
+const RAIN_COLORS = ['#aabbcc', '#99aacc', '#88aadd', '#7799cc'];
+
+// Confetti colors (bright celebration colors)
+const CONFETTI_COLORS = ['#ff3366', '#ffcc00', '#00ff88', '#ff6600', '#44aaff', '#ff44aa', '#88ff00', '#ffffff'];
+
+/**
+ * Spawns rain particles for deject/losing atmosphere
+ * @param {number} w - Canvas width
+ * @param {number} h - Canvas height
+ */
+function spawnRainParticles(w, h) {
+    // Skip if reduced effects is enabled
+    if (_frameCache.reducedEffects) return;
+
+    const particles = state.rainParticles;
+    const maxParticles = 150;
+
+    if (particles.length >= maxParticles) return;
+
+    // Spawn 2-4 drops per frame
+    const spawnCount = 2 + Math.floor(Math.random() * 3);
+
+    for (let i = 0; i < spawnCount && particles.length < maxParticles; i++) {
+        particles.push({
+            x: Math.random() * (w + 100) - 50,  // Start slightly off-screen
+            y: -10 - Math.random() * 50,         // Start above screen
+            vx: -1 - Math.random() * 2,          // Slight wind effect
+            vy: 8 + Math.random() * 6,           // Fall speed
+            length: 10 + Math.random() * 15,     // Streak length
+            alpha: 0.3 + Math.random() * 0.4,
+            color: RAIN_COLORS[Math.floor(Math.random() * RAIN_COLORS.length)]
+        });
+    }
+}
+
+/**
+ * Updates and draws rain particles
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} w - Canvas width
+ * @param {number} h - Canvas height
+ */
+function updateAndDrawRain(ctx, w, h) {
+    const particles = state.rainParticles;
+    let len = particles.length;
+
+    ctx.lineWidth = 1;
+    ctx.lineCap = 'round';
+
+    for (let i = len - 1; i >= 0; i--) {
+        const p = particles[i];
+
+        // Update position
+        p.x += p.vx;
+        p.y += p.vy;
+
+        // Remove if off-screen
+        if (p.y > h + 20 || p.x < -50) {
+            particles[i] = particles[--len];
+            continue;
+        }
+
+        // Draw rain streak
+        ctx.globalAlpha = p.alpha;
+        ctx.strokeStyle = p.color;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x + p.vx * 2, p.y - p.length);
+        ctx.stroke();
+    }
+
+    particles.length = len;
+    ctx.globalAlpha = 1;
+}
+
+/**
+ * Spawns a confetti burst for victory celebration
+ * @param {number} w - Canvas width
+ * @param {number} h - Canvas height
+ * @param {number} count - Number of confetti pieces to spawn
+ */
+function spawnConfettiBurst(w, h, count) {
+    // Skip if reduced effects is enabled
+    if (_frameCache.reducedEffects) return;
+
+    const particles = state.confettiParticles;
+    const primaryColor = state.cachedColors?.primary || '#ffcc00';
+
+    // Include club primary color in confetti
+    const colors = [primaryColor, ...CONFETTI_COLORS];
+
+    for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 3 + Math.random() * 5;
+        const startX = w * (0.3 + Math.random() * 0.4);  // Spawn in middle area
+        const startY = h * (0.4 + Math.random() * 0.3);
+
+        particles.push({
+            x: startX,
+            y: startY,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed - 3,  // Bias upward initially
+            rotation: Math.random() * Math.PI * 2,
+            rotSpeed: (Math.random() - 0.5) * 0.3,
+            size: 4 + Math.random() * 6,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            life: 1,
+            decay: 0.005 + Math.random() * 0.005,
+            shape: Math.random() > 0.5 ? 'rect' : 'circle'
+        });
+    }
+}
+
+/**
+ * Updates and draws confetti particles
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} w - Canvas width
+ * @param {number} h - Canvas height
+ */
+function updateAndDrawConfetti(ctx, w, h) {
+    const particles = state.confettiParticles;
+    let len = particles.length;
+
+    for (let i = len - 1; i >= 0; i--) {
+        const p = particles[i];
+
+        // Update physics
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.15;  // Gravity
+        p.vx *= 0.99;  // Air resistance
+        p.rotation += p.rotSpeed;
+        p.life -= p.decay;
+
+        // Flutter effect
+        p.vx += (Math.random() - 0.5) * 0.3;
+
+        // Remove dead particles
+        if (p.life <= 0 || p.y > h + 20) {
+            particles[i] = particles[--len];
+            continue;
+        }
+
+        // Draw confetti
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation);
+
+        if (p.shape === 'rect') {
+            ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
+        } else {
+            ctx.beginPath();
+            ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        ctx.restore();
+    }
+
+    particles.length = len;
+    ctx.globalAlpha = 1;
+
+    // Hard limit
+    if (len > 300) {
+        particles.length = 300;
+    }
+}
+
+/**
+ * Gets smoke intensity multiplier based on combo
+ * @returns {number} Multiplier for smoke effects (1.0 - 3.0)
+ */
+function getSmokeIntensityMultiplier() {
+    const combo = state.playerCombo || 0;
+    const multiplier = getComboMultiplier();
+
+    // Base intensity scales from 1.0 to 3.0 based on combo
+    if (combo >= 50) return 3.0;
+    if (combo >= 30) return 2.5;
+    if (combo >= 20) return 2.0;
+    if (combo >= 10) return 1.5;
+    if (combo >= 5) return 1.2;
+    return 1.0;
+}
+
+/**
+ * Updates weather intensity for smooth transitions
+ * @param {string} emotion - Current crowd emotion
+ */
+function updateWeatherIntensity(emotion) {
+    const targetIntensity = emotion === 'deject' ? 1.0 : emotion === 'celebrate' ? 1.0 : 0;
+
+    // Smooth transition
+    const transitionSpeed = 0.02;
+    if (state.weatherIntensity < targetIntensity) {
+        state.weatherIntensity = Math.min(targetIntensity, state.weatherIntensity + transitionSpeed);
+    } else if (state.weatherIntensity > targetIntensity) {
+        state.weatherIntensity = Math.max(targetIntensity, state.weatherIntensity - transitionSpeed);
+    }
+}
+
+// Track confetti burst timing to avoid spamming
+let _lastConfettiBurst = 0;
+
+/**
+ * Main weather effects update and draw function
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} w - Canvas width
+ * @param {number} h - Canvas height
+ * @param {string} emotion - Current crowd emotion
+ */
+function updateAndDrawWeatherEffects(ctx, w, h, emotion) {
+    // Skip all weather effects if reduced effects is enabled
+    if (_frameCache.reducedEffects) {
+        // Still clear particles if they exist
+        if (state.rainParticles.length > 0) state.rainParticles.length = 0;
+        if (state.confettiParticles.length > 0) state.confettiParticles.length = 0;
+        return;
+    }
+
+    updateWeatherIntensity(emotion);
+
+    const now = performance.now();
+
+    // Rain for deject/losing state
+    if (emotion === 'deject') {
+        spawnRainParticles(w, h);
+    }
+
+    // Draw rain if particles exist
+    if (state.rainParticles.length > 0) {
+        updateAndDrawRain(ctx, w, h);
+    }
+
+    // Confetti burst for celebration (initial burst + periodic smaller bursts)
+    if (emotion === 'celebrate') {
+        if (now - _lastConfettiBurst > 2000) {  // Burst every 2 seconds
+            const burstSize = _lastConfettiBurst === 0 ? 50 : 15;  // Big initial burst
+            spawnConfettiBurst(w, h, burstSize);
+            _lastConfettiBurst = now;
+        }
+    } else {
+        _lastConfettiBurst = 0;  // Reset for next celebration
+    }
+
+    // Draw confetti if particles exist
+    if (state.confettiParticles.length > 0) {
+        updateAndDrawConfetti(ctx, w, h);
     }
 }
 
@@ -2914,6 +3188,9 @@ export function drawGameVisuals() {
         updateAndDrawSmoke(ctx, w, h);
     }
 
+    // Weather effects (rain for deject, confetti for celebrate)
+    updateAndDrawWeatherEffects(ctx, w, h, emotion);
+
     // Beat flash overlay
     if (beatDecay > 0.01) {
         if (state.crowdEmotion === 'deject') {
@@ -2934,13 +3211,8 @@ export function drawGameVisuals() {
         state.wasFrenzy = false;
     }
 
-    // Position HUD below the beat track canvas
-    const gameCanvasEl = elements.gameCanvas;
-    let hudY = 22;
-    if (gameCanvasEl) {
-        const rect = gameCanvasEl.getBoundingClientRect();
-        hudY = rect.bottom + 20;
-    }
+    // Position HUD below the beat track canvas (use cached position to avoid layout thrashing)
+    let hudY = state.hudPositionY || 22;
 
     // 1) FEVER! text (only for celebration/frenzy)
     if (currentFrenzy || state.crowdEmotion === 'celebrate') {
@@ -3059,9 +3331,17 @@ export function drawGameVisuals() {
             comboColor = '#cccccc'; glowColor = '#888888';
         }
 
-        const comboStr = state.comboDisplayCount + ' COMBO';
-        const multiStr = multiplier > 1 ? ` x${multiplier}` : '';
-        const fullStr = comboStr + multiStr;
+        // Use cached strings to avoid allocation during frenzy
+        if (_frameCache.lastComboCount !== state.comboDisplayCount || _frameCache.lastMultiplier !== multiplier) {
+            _frameCache.comboStr = state.comboDisplayCount + ' COMBO';
+            _frameCache.multiStr = multiplier > 1 ? ` x${multiplier}` : '';
+            _frameCache.fullStr = _frameCache.comboStr + _frameCache.multiStr;
+            _frameCache.lastComboCount = state.comboDisplayCount;
+            _frameCache.lastMultiplier = multiplier;
+        }
+        const comboStr = _frameCache.comboStr;
+        const multiStr = _frameCache.multiStr;
+        const fullStr = _frameCache.fullStr;
 
         ctx.save();
         ctx.translate(w / 2, hudY);
@@ -3271,4 +3551,7 @@ export function drawAmbientCrowd() {
     if (state.smokeParticles.length > 0) {
         updateAndDrawSmoke(ctx, w, h);
     }
+
+    // Weather effects (rain for deject, confetti for celebrate)
+    updateAndDrawWeatherEffects(ctx, w, h, emotion);
 }

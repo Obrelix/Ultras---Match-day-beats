@@ -83,6 +83,11 @@ function calculateStadiumLayout() {
 }
 
 function crowdLoop(timestamp) {
+    // Stop loop if canvas is removed from DOM or not connected
+    if (!state.crowdBgCanvas || !state.crowdBgCanvas.isConnected) {
+        return;
+    }
+
     if (state.crowdMode === 'gameplay') {
         // Full 60fps during gameplay
         drawGameVisuals();

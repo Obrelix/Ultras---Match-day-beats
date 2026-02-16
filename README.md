@@ -6,15 +6,66 @@ A Patapon-style browser rhythm game where football ultras compete against an AI 
 
 Pick your club, choose a chant, and hit **SPACEBAR** in time with the music. The game automatically detects beats from any MP3 using a custom spectral flux analysis pipeline — no BPM tagging needed. Score points for timing accuracy (PERFECT / GOOD / OK), chain hits to build combo multipliers, and watch the pixel crowd go wild in frenzy mode.
 
+## Game Modes
+
+### Practice Mode
+Pick any club and chant to play. Perfect for learning timing, testing custom chants, and chasing high scores.
+
+### Match Day Mode
+A full football match experience across 6 chants (2 halves, 3 chants each). Score goals based on your accuracy (40%+ required), compete against an AI rival with unique personality, and track your W/D/L record.
+
 ## Features
 
+### Core Gameplay
 - **Automatic beat detection** — Custom FFT-based spectral flux analysis extracts vocal rhythm directly from audio. No manual BPM configuration.
 - **Dual-canvas rendering** — Scrolling beat track with timing zones, approach countdown rings, and hit effects on top; pixel art supporter crowd with procedural animations on bottom.
-- **Frenzy mode** — Hit combo streaks above 5 to trigger crowd frenzy: waving flags, burning flares, billowing smoke, fire particles, and a "FEVER!" HUD.
 - **Combo multipliers** — Chain consecutive hits for up to 3x score multiplier (thresholds at 5/10/15/20).
-- **AI rival** — Compete head-to-head against an AI opponent with 75% accuracy.
-- **Club theming** — Each club has its own color palette applied across the entire UI and canvas visuals.
+- **Three difficulty levels** — Easy, Normal, and Hard with varying timing windows.
 - **Mobile friendly** — Tap/click input alongside keyboard.
+
+### Frenzy Mode & Crowd Effects
+- **Frenzy mode** — Hit combo streaks above 5 to trigger crowd frenzy: waving flags, burning flares, billowing smoke, fire particles, and a "FEVER!" HUD.
+- **Weather effects** — Rain particles when losing, confetti bursts on victory, smoke intensity scales with combo.
+- **Dynamic crowd audio** — Reactive crowd noise that cheers on hits, groans on misses, and celebrates victories.
+- **Screen shake** — Intense visual feedback on perfect hit streaks.
+
+### Modifiers & Power-ups
+- **Difficulty modifiers** — Double Time (faster beats), Hidden (fading notes), Mirror (reversed track). Stack for score bonuses up to 50%.
+- **Power-ups** — Charge by building combos:
+  - **Shield** (10 combo) — Absorbs one miss
+  - **Score Burst** (15 combo) — 2x score for 5 seconds
+  - **Slow Motion** (20 combo) — Wider timing windows for 5 seconds
+
+### AI Rivals
+- **AI personalities** — Each rival club has a unique playstyle:
+  - **Aggressive** — Starts strong, loses accuracy over time
+  - **Comeback King** — Gets stronger when losing
+  - **Consistent** — Steady performance throughout
+  - **Clutch** — Peaks in final moments
+  - **Wildcard** — Unpredictable streaks of brilliance
+- **Rubber banding** — AI adjusts difficulty based on score difference.
+- **Mood indicator** — See when the AI is confident or struggling.
+
+### Progression System
+- **XP & Leveling** — Earn XP from scores, combos, and wins. Level up through 15 ranks from "Newcomer" to "Supreme Ultra".
+- **Achievements** — Unlock 10 achievements including Perfect Chant (100% accuracy), Centurion (100 combo), and Rivalry (beat every club).
+- **Weekly challenges** — Rotating goals like "Score 10,000 with PAOK" for bonus XP.
+- **Season challenges** — Long-term goals across the quarter.
+- **Club loyalty** — Track games per club, earn badges (Loyal Fan, Fanatic, Club Legend) after 50/100/200 games.
+
+### Online Features
+- **Leaderboards** — Per-chant, per-difficulty online rankings via Firebase.
+- **Replay system** — Record inputs, watch replays with beat accuracy overlay, share replay codes.
+
+### Custom Content
+- **Custom chant upload** — Upload your own MP3s (up to 20MB, 10 min). Beat detection runs locally.
+- **Metronome mode** — Optional click track overlay to help learn timing.
+
+### Quality of Life
+- **Persistent settings** — Volume, SFX, difficulty, and effects preferences saved locally.
+- **Performance mode** — Reduces visual effects for smoother gameplay.
+- **Tutorial** — First-time player guidance.
+- **Club theming** — Each club's colors applied across UI and canvas visuals.
 
 ## Getting Started
 
@@ -32,9 +83,8 @@ Or use **VS Code Live Server** / any static file server.
 ### Run
 
 1. Clone the repository
-2. Add MP3 chant files to `chants/<ClubName>/` (see [Adding Clubs](#adding-clubs))
-3. Start a local server from the project root
-4. Open `http://localhost:3000` in your browser
+2. Start a local server from the project root
+3. Open `http://localhost:3000` (or your server's port) in your browser
 
 ### Controls
 
@@ -42,56 +92,79 @@ Or use **VS Code Live Server** / any static file server.
 |-------|--------|
 | `SPACEBAR` | Hit the beat |
 | `Click / Tap` | Hit the beat (mobile) |
+| `SHIFT` | Activate charged power-up |
+| `ESC` | Pause / Resume |
 
 ## Adding Clubs
 
-Add a new entry to the `clubs` object in `js/config.js`:
+Add a new entry to the `clubs` object in `docs/js/config.js`:
 
 ```javascript
 myClub: {
     id: 'myClub',
     name: 'My Club',
     colors: { primary: '#HEX', secondary: '#HEX' },
-    badge: '🔵',
+    badge: 'Logos/myclub.svg',
     chants: [
-        { id: 'chant_id', name: 'Chant Name', audio: 'chants/MyClub/file.mp3', duration: 15 }
+        { id: 'chant_id', name: 'Chant Name', audio: 'chants/MyClub/file.mp3' }
     ]
 }
 ```
 
-Drop the MP3 files into `chants/MyClub/`. Beats are auto-detected from the audio — no BPM or timing data needed.
+Drop the MP3 files into `docs/chants/MyClub/`. Beats are auto-detected from the audio — no BPM or timing data needed. Clubs need 6+ unique chants to be eligible for Match Day mode.
 
 ## Architecture
 
-Pure vanilla HTML + CSS + JavaScript ES6 modules. No frameworks, no build tools, no dependencies.
+Pure vanilla HTML + CSS + JavaScript ES6 modules. No frameworks, no build tools, no external dependencies.
 
 ```
-js/
-├── config.js          Constants (clubs, timing windows, beat detection params)
+docs/js/
+├── config.js          Constants (clubs, timing, beat detection, modifiers, power-ups, XP, achievements)
 ├── state.js           Centralized mutable game state
-├── audio.js           Web Audio API pipeline
+├── audio.js           Web Audio API pipeline, SFX synthesis, metronome
 ├── beatDetection.js   Spectral flux + onset detection + tempo estimation (custom FFT)
-├── input.js           Input handling, scoring, combo, AI
+├── beatWorker.js      Web Worker for off-main-thread beat analysis
+├── input.js           Input handling, scoring, combo, AI simulation
 ├── renderer.js        Beat track visualizer (top canvas)
-├── crowd.js           Pixel crowd, particles, flags, flares, smoke, HUD (bottom canvas)
-├── ui.js              Screen management, DOM elements
+├── crowd.js           Pixel crowd, particles, flags, flares, smoke, weather, HUD (bottom canvas)
+├── crowdBg.js         Persistent background canvas manager
+├── crowdAudio.js      Dynamic crowd noise layer (Web Audio API)
+├── ui.js              Screen management, DOM elements, progression UI
+├── storage.js         localStorage persistence layer
+├── progression.js     XP, leveling, achievements, challenges, loyalty
+├── replay.js          Input recording and playback
+├── customChants.js    IndexedDB storage for custom uploaded chants
+├── leaderboard.js     Firebase Realtime Database integration
+├── leaderboardUI.js   Leaderboard screen rendering
 └── main.js            Entry point, game loop, event wiring
 ```
 
 ### Beat Detection Pipeline
 
-1. **Spectral Flux** — STFT with Hann window and frequency-band weighting (vocal emphasis)
+1. **Spectral Flux** — STFT with Hann window and frequency-band weighting (vocal emphasis 250-3500 Hz)
 2. **Onset Picking** — Adaptive threshold with local mean and minimum gap enforcement
 3. **Onset Thinning** — Greedy non-maximum suppression for playable beat density
 4. **Path Selection** — Uses vocal onsets directly if enough are found (>= 8), otherwise falls back to tempo estimation via autocorrelation and a snapped beat grid
 
+Beat analysis runs in a Web Worker to prevent UI blocking.
+
 ## Tech Stack
 
 - Vanilla JavaScript (ES6 modules)
-- Web Audio API (AudioContext, AnalyserNode, BufferSource)
+- Web Audio API (AudioContext, AnalyserNode, BufferSource, oscillator synthesis)
 - Canvas 2D (dual-canvas, OffscreenCanvas waveform cache)
+- IndexedDB (custom chant storage)
+- Firebase Realtime Database (online leaderboards)
 - Custom Cooley-Tukey FFT (no library dependencies)
 - CSS custom properties for club theming
+
+## Browser Support
+
+Modern browsers with ES6 module support, Web Audio API, and Canvas 2D:
+- Chrome 80+
+- Firefox 75+
+- Safari 14+
+- Edge 80+
 
 ## License
 

@@ -9,6 +9,7 @@ function getStore() {
         const raw = localStorage.getItem(STORAGE_KEY);
         return raw ? JSON.parse(raw) : {};
     } catch (e) {
+        console.warn('Failed to read from localStorage:', e.message);
         return {};
     }
 }
@@ -16,7 +17,9 @@ function getStore() {
 function setStore(data) {
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch (e) {}
+    } catch (e) {
+        console.warn('Failed to write to localStorage:', e.message);
+    }
 }
 
 export function loadSettings() {
@@ -25,7 +28,10 @@ export function loadSettings() {
         sfxVolume: 0.5,
         difficulty: 'normal',
         reducedEffects: false,
-        tutorialSeen: false
+        tutorialSeen: false,
+        metronomeEnabled: false,
+        crowdAudioEnabled: true,
+        crowdAudioVolume: 0.3
     };
     const store = getStore();
     // Merge stored settings with defaults to handle missing properties from older versions

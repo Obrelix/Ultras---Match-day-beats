@@ -100,7 +100,9 @@ export const GameState = {
     CHANT_RESULT: 'chantResult',
     HALFTIME: 'halftime',
     RESULTS: 'results',
-    FULLTIME: 'fulltime'
+    FULLTIME: 'fulltime',
+    LEADERBOARD: 'leaderboard',
+    REPLAY: 'replay'
 };
 
 export const TIMING = {
@@ -185,10 +187,391 @@ export const LEADERBOARD = {
     NAME_MAX_LENGTH: 16,
     OFFLINE_QUEUE_MAX: 20,
     MIN_SUBMIT_INTERVAL: 5000,
+    // NOTE: Firebase API keys are intentionally public for client-side apps.
+    // Security is enforced via Firebase Security Rules in the Firebase Console.
+    // Ensure database rules restrict writes to authenticated users and validate data.
     FIREBASE: {
         apiKey: "AIzaSyCVc2VeW2zDk5-TPDAJt8AO1k5O82hHBdM",
         authDomain: "ultras---match-day-beats.firebaseapp.com",
         projectId: "ultras---match-day-beats",
         databaseURL: "https://ultras---match-day-beats-default-rtdb.europe-west1.firebasedatabase.app"
+    }
+};
+
+// ============================================
+// Game Modifiers (Double Time, Hidden, Mirror)
+// ============================================
+
+export const MODIFIERS = {
+    doubleTime: {
+        id: 'doubleTime',
+        name: 'Double Time',
+        icon: '⏩',
+        description: '1.5x speed, 2x score',
+        speedMultiplier: 1.5,
+        scoreMultiplier: 2.0
+    },
+    hidden: {
+        id: 'hidden',
+        name: 'Hidden',
+        icon: '👁',
+        description: 'Beats fade before hit line',
+        fadeStartPercent: 0.6,  // Start fading at 60% of approach
+        fadeEndPercent: 0.85    // Fully hidden at 85%
+    },
+    mirror: {
+        id: 'mirror',
+        name: 'Mirror',
+        icon: '🪞',
+        description: 'Reverse scroll direction',
+        reversed: true
+    }
+};
+
+// Score bonus for using modifiers
+export const MODIFIER_BONUSES = {
+    none: 1.0,
+    one: 1.2,    // 20% bonus for 1 modifier
+    two: 1.5,    // 50% bonus for 2 modifiers
+    three: 2.0   // 100% bonus for all 3
+};
+
+// ============================================
+// Power-ups System
+// ============================================
+
+export const POWERUPS = {
+    shield: {
+        id: 'shield',
+        name: 'Shield',
+        icon: '🛡',
+        description: 'Absorbs next miss',
+        color: '#00aaff',
+        chargeCombo: 25,      // Combo needed to charge
+        duration: null        // Instant use (one-time protection)
+    },
+    scoreBurst: {
+        id: 'scoreBurst',
+        name: 'Score Burst',
+        icon: '💥',
+        description: '5x score for 3 seconds',
+        color: '#ff6600',
+        chargeCombo: 50,
+        duration: 3000,       // 3 seconds
+        multiplier: 5.0
+    },
+    slowMotion: {
+        id: 'slowMotion',
+        name: 'Slow Motion',
+        icon: '🐌',
+        description: 'Slows time briefly',
+        color: '#aa00ff',
+        chargeCombo: 40,
+        duration: 2000,       // 2 seconds
+        speedMultiplier: 0.7  // 70% speed
+    }
+};
+
+export const POWERUP_KEY = 'ShiftLeft';  // Key to activate power-up
+
+// ============================================
+// AI Personalities (per club)
+// ============================================
+
+export const AI_PERSONALITIES = {
+    aggressive: {
+        id: 'aggressive',
+        name: 'Aggressive',
+        icon: '🔥',
+        description: 'Starts strong, tires late',
+        baseAccuracy: 0.85,
+        // Accuracy decays over time (multiplied by game progress 0-1)
+        accuracyDecay: 0.20,   // Loses up to 20% accuracy by end
+        rubberBandStrength: 0.5
+    },
+    comebackKing: {
+        id: 'comebackKing',
+        name: 'Comeback King',
+        icon: '👑',
+        description: 'Gets stronger when losing',
+        baseAccuracy: 0.70,
+        // Extra accuracy when behind
+        comebackBonus: 0.25,
+        rubberBandStrength: 2.0  // Much stronger rubber-banding
+    },
+    consistent: {
+        id: 'consistent',
+        name: 'Consistent',
+        icon: '🎯',
+        description: 'Steady performance',
+        baseAccuracy: 0.75,
+        accuracyVariance: 0.05,  // Very small variance
+        rubberBandStrength: 0.8
+    },
+    clutch: {
+        id: 'clutch',
+        name: 'Clutch',
+        icon: '⚡',
+        description: 'Peaks in final moments',
+        baseAccuracy: 0.70,
+        // Accuracy increases in last 30% of song
+        clutchBonus: 0.20,
+        clutchThreshold: 0.70,  // Last 30% of song
+        rubberBandStrength: 1.0
+    },
+    wildcard: {
+        id: 'wildcard',
+        name: 'Wildcard',
+        icon: '🎲',
+        description: 'Unpredictable streaks',
+        baseAccuracy: 0.72,
+        streakChance: 0.15,     // 15% chance per beat to enter streak
+        streakAccuracy: 0.95,   // Near-perfect during streaks
+        streakLength: 5,        // Beats per streak
+        rubberBandStrength: 0.7
+    }
+};
+
+// Map clubs to their AI personality
+export const CLUB_AI_PERSONALITIES = {
+    aek: 'aggressive',
+    aris: 'wildcard',
+    olympiacos: 'comebackKing',
+    panathinaikos: 'consistent',
+    paok: 'clutch'
+};
+
+// ============================================
+// Replay System
+// ============================================
+
+export const REPLAY = {
+    VERSION: 1,                    // Replay format version for compatibility
+    MAX_CODE_LENGTH: 50000,        // Max base64 code length
+    COMPRESSION_ENABLED: true      // Use compression for replay codes
+};
+
+// ============================================
+// XP & Leveling System
+// ============================================
+
+export const XP_CONFIG = {
+    // XP sources
+    SCORE_DIVISOR: 10,              // Score / 10 = base XP
+    COMBO_BONUS: 5,                 // XP per max combo point
+    WIN_BONUS: 100,                 // XP for winning a practice round
+    MATCHDAY_WIN: 500,              // XP for winning a match day
+    MATCHDAY_DRAW: 200,             // XP for drawing a match day
+    PERFECT_HIT_BONUS: 2,           // Extra XP per perfect hit
+    CHALLENGE_MULTIPLIER: 1.5,      // XP multiplier for challenge completion
+
+    // Level thresholds (cumulative XP needed)
+    LEVEL_THRESHOLDS: [
+        0,      // Level 1
+        500,    // Level 2
+        1500,   // Level 3
+        3000,   // Level 4
+        5000,   // Level 5
+        8000,   // Level 6
+        12000,  // Level 7
+        17000,  // Level 8
+        23000,  // Level 9
+        30000,  // Level 10
+        40000,  // Level 11
+        52000,  // Level 12
+        66000,  // Level 13
+        82000,  // Level 14
+        100000, // Level 15 (max)
+    ],
+
+    // Level titles
+    LEVEL_TITLES: [
+        'Newcomer',      // 1
+        'Supporter',     // 2
+        'Fan',           // 3
+        'Devoted Fan',   // 4
+        'Ultra',         // 5
+        'Hardcore Ultra',// 6
+        'Capo',          // 7
+        'Section Leader',// 8
+        'Legendary Capo',// 9
+        'Living Legend', // 10
+        'Icon',          // 11
+        'Hall of Famer', // 12
+        'Immortal',      // 13
+        'Demigod',       // 14
+        'Supreme Ultra', // 15
+    ]
+};
+
+// Unlockable cosmetics by level
+export const LEVEL_UNLOCKS = {
+    1: { type: 'scarf', id: 'basic', name: 'Basic Scarf' },
+    3: { type: 'effect', id: 'extra_smoke', name: 'Extra Smoke' },
+    5: { type: 'scarf', id: 'striped', name: 'Striped Scarf' },
+    7: { type: 'effect', id: 'golden_confetti', name: 'Golden Confetti' },
+    10: { type: 'scarf', id: 'premium', name: 'Premium Scarf' },
+    12: { type: 'effect', id: 'fireworks', name: 'Victory Fireworks' },
+    15: { type: 'title', id: 'supreme', name: 'Supreme Ultra Title' }
+};
+
+// ============================================
+// Achievement System
+// ============================================
+
+export const ACHIEVEMENTS = {
+    first_blood: {
+        id: 'first_blood',
+        name: 'First Blood',
+        description: 'Win your first match',
+        icon: '🩸',
+        xpReward: 100
+    },
+    perfect_chant: {
+        id: 'perfect_chant',
+        name: 'Perfect Chant',
+        description: '100% accuracy on any chant',
+        icon: '💯',
+        xpReward: 250
+    },
+    centurion: {
+        id: 'centurion',
+        name: 'Centurion',
+        description: 'Reach 100 combo',
+        icon: '💪',
+        xpReward: 200
+    },
+    rivalry: {
+        id: 'rivalry',
+        name: 'Rivalry',
+        description: 'Beat every club in Match Day',
+        icon: '🏆',
+        xpReward: 500
+    },
+    untouchable: {
+        id: 'untouchable',
+        name: 'Untouchable',
+        description: 'Win without missing a single beat',
+        icon: '🛡️',
+        xpReward: 300
+    },
+    comeback_king: {
+        id: 'comeback_king',
+        name: 'Comeback King',
+        description: 'Win after being down by 500+ points',
+        icon: '👑',
+        xpReward: 200
+    },
+    marathon: {
+        id: 'marathon',
+        name: 'Marathon',
+        description: 'Play 100 chants total',
+        icon: '🏃',
+        xpReward: 150
+    },
+    dedicated: {
+        id: 'dedicated',
+        name: 'Dedicated',
+        description: 'Play 10 Match Days',
+        icon: '⚽',
+        xpReward: 150
+    },
+    high_scorer: {
+        id: 'high_scorer',
+        name: 'High Scorer',
+        description: 'Score 5000 points in a single chant',
+        icon: '🎯',
+        xpReward: 200
+    },
+    fever_master: {
+        id: 'fever_master',
+        name: 'Fever Master',
+        description: 'Maintain FEVER mode for 30+ seconds',
+        icon: '🔥',
+        xpReward: 150
+    }
+};
+
+// ============================================
+// Weekly/Season Challenges
+// ============================================
+
+export const CHALLENGE_TYPES = {
+    score_with_club: {
+        id: 'score_with_club',
+        template: 'Score {target} points with {club}',
+        icon: '🎵'
+    },
+    win_matchdays: {
+        id: 'win_matchdays',
+        template: 'Win {target} Match Days',
+        icon: '🏟️'
+    },
+    perfect_hits: {
+        id: 'perfect_hits',
+        template: 'Get {target} PERFECT hits',
+        icon: '✨'
+    },
+    combo_total: {
+        id: 'combo_total',
+        template: 'Accumulate {target} total combo',
+        icon: '🔗'
+    },
+    play_chants: {
+        id: 'play_chants',
+        template: 'Play {target} chants',
+        icon: '🎤'
+    }
+};
+
+// Weekly challenge pool (rotates each week)
+export const WEEKLY_CHALLENGES = [
+    { type: 'score_with_club', clubId: 'paok', target: 10000, xpReward: 200 },
+    { type: 'score_with_club', clubId: 'aek', target: 10000, xpReward: 200 },
+    { type: 'score_with_club', clubId: 'olympiacos', target: 10000, xpReward: 200 },
+    { type: 'score_with_club', clubId: 'panathinaikos', target: 10000, xpReward: 200 },
+    { type: 'score_with_club', clubId: 'aris', target: 10000, xpReward: 200 },
+    { type: 'win_matchdays', target: 3, xpReward: 300 },
+    { type: 'perfect_hits', target: 100, xpReward: 150 },
+    { type: 'combo_total', target: 500, xpReward: 200 },
+    { type: 'play_chants', target: 20, xpReward: 150 }
+];
+
+// Season challenges (longer-term goals)
+export const SEASON_CHALLENGES = [
+    { type: 'win_matchdays', target: 50, xpReward: 2000, name: 'Season Champion' },
+    { type: 'perfect_hits', target: 1000, xpReward: 1500, name: 'Precision Master' },
+    { type: 'combo_total', target: 5000, xpReward: 1500, name: 'Combo Legend' },
+    { type: 'play_chants', target: 200, xpReward: 1000, name: 'Dedicated Fan' }
+];
+
+// ============================================
+// Club Loyalty System
+// ============================================
+
+export const LOYALTY_CONFIG = {
+    LOYAL_FAN_THRESHOLD: 50,        // Games needed for "Loyal Fan" badge
+    FANATIC_THRESHOLD: 100,         // Games needed for "Fanatic" badge
+    LEGEND_THRESHOLD: 200,          // Games needed for "Club Legend" badge
+
+    BADGES: {
+        loyal_fan: {
+            id: 'loyal_fan',
+            name: 'Loyal Fan',
+            icon: '💚',
+            threshold: 50
+        },
+        fanatic: {
+            id: 'fanatic',
+            name: 'Fanatic',
+            icon: '🔥',
+            threshold: 100
+        },
+        club_legend: {
+            id: 'club_legend',
+            name: 'Club Legend',
+            icon: '👑',
+            threshold: 200
+        }
     }
 };

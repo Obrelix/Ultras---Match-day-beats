@@ -2,12 +2,19 @@
 // renderer.js — Beat track visualizer (top canvas)
 // ============================================
 
-import { SCROLL_VIS, BEAT_RESULT_COLORS } from './config.js';
+import { SCROLL_VIS, BEAT_RESULT_COLORS, MODIFIERS } from './config.js';
 import { state } from './state.js';
 import { elements } from './ui.js';
 import { getComboMultiplier, releaseParticle } from './input.js';
 
 let _resizeHandler = null;
+
+// Performance: Cache upcoming beats array to avoid recreation each frame
+const _upcomingBeatsCache = {
+    indices: new Array(5),
+    count: 0,
+    lastNextBeatIndex: -1
+};
 
 export function initVisualizer() {
     const canvas = elements.gameCanvas;
@@ -24,6 +31,9 @@ export function initVisualizer() {
         const rect = canvas.getBoundingClientRect();
         canvas.width = Math.floor(rect.width);
         canvas.height = Math.floor(rect.height);
+
+        // Cache HUD Y position to avoid getBoundingClientRect() in hot loop
+        state.hudPositionY = rect.bottom + 20;
 
         if (state.audioBuffer) {
             computeWaveformPeaks();
@@ -153,26 +163,36 @@ export function drawVisualizer() {
             ctx.drawImage(state.waveformCache, srcX, 0, srcW, state.waveformCache.height, 0, 0, w, h);
         }
     } else if (state.waveformPeaks) {
+        // Fallback: draw waveform directly (reduced quality for performance)
+        // Sample every 2 pixels to reduce lineTo calls by 50%
         const peaksPerSec = SCROLL_VIS.PEAKS_PER_SEC;
         const amp = midY * 0.7;
+        const step = 2;  // Sample every 2 pixels
 
         ctx.fillStyle = primary;
         ctx.globalAlpha = 0.25;
         ctx.beginPath();
         ctx.moveTo(0, midY);
 
-        for (let col = 0; col < w; col++) {
+        // Cache peak indices to avoid redundant calculations
+        const peakIndices = new Int32Array(Math.ceil(w / step) + 1);
+        for (let i = 0, col = 0; col < w; col += step, i++) {
             const t = timeStart + (col / w) * totalWindow;
-            const peakIdx = Math.floor(t * peaksPerSec);
+            peakIndices[i] = Math.floor(t * peaksPerSec);
+        }
+
+        // Draw upper edge
+        for (let i = 0, col = 0; col < w; col += step, i++) {
+            const peakIdx = peakIndices[i];
             if (peakIdx >= 0 && peakIdx < state.waveformPeaks.length) {
                 ctx.lineTo(col, midY - state.waveformPeaks[peakIdx].max * amp);
             } else {
                 ctx.lineTo(col, midY);
             }
         }
-        for (let col = w - 1; col >= 0; col--) {
-            const t = timeStart + (col / w) * totalWindow;
-            const peakIdx = Math.floor(t * peaksPerSec);
+        // Draw lower edge (reverse, reusing cached indices)
+        for (let i = peakIndices.length - 1, col = w - 1; col >= 0; col -= step, i--) {
+            const peakIdx = peakIndices[Math.max(0, i)];
             if (peakIdx >= 0 && peakIdx < state.waveformPeaks.length) {
                 ctx.lineTo(col, midY - state.waveformPeaks[peakIdx].min * amp);
             } else {
@@ -236,12 +256,30 @@ export function drawVisualizer() {
     const leadPx = leadTime * pxPerSec;
     const beatRMargin = beatR * 3;
 
-    // Find the next 5 upcoming beat indices (cache for countdown display)
-    const upcomingBeats = [];
-    for (let i = state.nextBeatIndex; i < state.detectedBeats.length && upcomingBeats.length < 5; i++) {
-        const x = timeToX(state.detectedBeats[i]);
-        if (x >= hitLineX - okHalfW) upcomingBeats.push(i);
+    // Modifier flags
+    const isMirror = state.activeModifiers?.mirror || false;
+    const isHidden = state.activeModifiers?.hidden || false;
+    const hiddenFadeStart = MODIFIERS.hidden.fadeStartPercent;
+    const hiddenFadeEnd = MODIFIERS.hidden.fadeEndPercent;
+
+    // Helper function for mirror mode - transforms X coordinate
+    function applyMirror(x) {
+        return isMirror ? w - x : x;
     }
+
+    // Find the next 5 upcoming beat indices (cached to avoid array recreation)
+    if (_upcomingBeatsCache.lastNextBeatIndex !== state.nextBeatIndex) {
+        _upcomingBeatsCache.count = 0;
+        for (let i = state.nextBeatIndex; i < state.detectedBeats.length && _upcomingBeatsCache.count < 5; i++) {
+            const x = timeToX(state.detectedBeats[i]);
+            if (x >= hitLineX - okHalfW) {
+                _upcomingBeatsCache.indices[_upcomingBeatsCache.count++] = i;
+            }
+        }
+        _upcomingBeatsCache.lastNextBeatIndex = state.nextBeatIndex;
+    }
+    const upcomingBeats = _upcomingBeatsCache.indices;
+    const upcomingBeatsCount = _upcomingBeatsCache.count;
 
     // Calculate visible beat range to avoid iterating all beats
     const minVisibleTime = audioElapsed - trailTime - 0.5;
@@ -277,10 +315,19 @@ export function drawVisualizer() {
             radius = beatR * 0.8;
         } else {
             color = '#ffcc00';
-            const distFromRight = w - x;
+            const distFromRight = isMirror ? x : w - x;
             const approach = Math.min(1, distFromRight / leadPx);
             radius = beatR * (0.5 + 0.7 * approach);
             alpha = 0.4 + 0.6 * approach;
+
+            // Hidden modifier: fade out beats as they approach hit line
+            if (isHidden) {
+                const approachProgress = 1 - approach;  // 0 = just spawned, 1 = at hit line
+                if (approachProgress >= hiddenFadeStart) {
+                    const fadeProgress = (approachProgress - hiddenFadeStart) / (hiddenFadeEnd - hiddenFadeStart);
+                    alpha *= Math.max(0, 1 - fadeProgress);
+                }
+            }
 
             // Enhanced motion trails (#3) - more trails at higher combos
             if (approach > 0.2 && approach < 0.95) {
@@ -347,7 +394,10 @@ export function drawVisualizer() {
         ctx.globalAlpha = alpha;
 
         // Approach indicator on next 5 upcoming beats
-        const upcomingIdx = upcomingBeats.indexOf(i);
+        let upcomingIdx = -1;
+        for (let u = 0; u < upcomingBeatsCount; u++) {
+            if (upcomingBeats[u] === i) { upcomingIdx = u; break; }
+        }
         if (upcomingIdx !== -1 && !isPast) {
             const timeUntil = beatTime - audioElapsed;
             const countdown = 1.5;

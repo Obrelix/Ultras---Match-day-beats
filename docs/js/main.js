@@ -2,29 +2,47 @@
 // main.js — Entry point, game loop, event wiring
 // ============================================
 
-import { GameState, MATCHDAY, DIFFICULTY_PRESETS, BEAT_DETECTION, clubs } from './config.js';
+import { GameState, MATCHDAY, DIFFICULTY_PRESETS, BEAT_DETECTION, clubs, MODIFIERS, MODIFIER_BONUSES, POWERUPS, POWERUP_KEY, AI_PERSONALITIES, CLUB_AI_PERSONALITIES } from './config.js';
 import { state, resetGameState, resetMatchState } from './state.js';
-import { initAudio, loadAudio, playAudio, stopAudio, setVolume, setSFXVolume } from './audio.js';
-import { handleInput, registerMiss, simulateAI } from './input.js';
+import { initAudio, loadAudio, playAudio, stopAudio, setVolume, setSFXVolume, playMetronomeClick } from './audio.js';
+import {
+    initCrowdAudio, updateCrowdAudio, stopCrowdAudio, setCrowdVolume,
+    playCrowdCheer, playCrowdGroan, playCrowdCelebration, playCrowdDejection
+} from './crowdAudio.js';
+import {
+    initCustomChantDB, getAllCustomChants, saveCustomChant, deleteCustomChant,
+    processUploadedFile, decodeCustomChantAudio
+} from './customChants.js';
+import { handleInput, registerMiss, simulateAI, setMainCallbacks } from './input.js';
 import { initVisualizer, computeWaveformPeaks, buildWaveformCache, drawVisualizer } from './renderer.js';
 import { initCrowdBg, setCrowdMode, updateCrowdClub } from './crowdBg.js';
 import {
     showScreen, applyClubTheme, renderClubSelection, renderChantSelection,
     renderMatchdayIntro, updateMatchScoreboard, updateScoreboardTeams,
-    setMatchdayChantStarter, setScoreSubmitHandler, endGame, elements, screens
+    setMatchdayChantStarter, setScoreSubmitHandler, endGame, elements, screens,
+    updateTitleLevelBadge, renderProfileScreen
 } from './ui.js';
+import { loadProgression } from './progression.js';
 import { loadSettings, saveSettings, hasTutorialSeen, markTutorialSeen } from './storage.js';
 import { initLeaderboard } from './leaderboard.js';
 import { setupLeaderboardUI, handleScoreSubmission } from './leaderboardUI.js';
+import {
+    startRecording, stopRecording, recordInput, getReplayData,
+    encodeReplay, decodeReplay, validateReplayCode,
+    preparePlayback, getNextReplayInput, isReplayFinished, stopPlayback,
+    formatReplayDuration
+} from './replay.js';
 
 // ============================================
 // Beat Detection Worker (runs off main thread)
 // ============================================
 
 let beatWorker = null;
+let beatWorkerRequestId = 0;  // Track request IDs to prevent race conditions
 
 function analyzeBeatsAsync(audioBuffer) {
     const WORKER_TIMEOUT_MS = 30000; // 30 second timeout
+    const currentRequestId = ++beatWorkerRequestId;  // Unique ID for this request
 
     const workerPromise = new Promise((resolve, reject) => {
         // Create worker if not exists
@@ -33,15 +51,24 @@ function analyzeBeatsAsync(audioBuffer) {
         }
 
         // Extract channel data from AudioBuffer
+        // Use slice() to create transferable Float32Array copies (more efficient than Array.from)
         const numChannels = audioBuffer.numberOfChannels;
         const channelData = [];
+        const transferList = [];
         for (let i = 0; i < numChannels; i++) {
-            // Copy to regular array for transfer
-            channelData.push(Array.from(audioBuffer.getChannelData(i)));
+            const original = audioBuffer.getChannelData(i);
+            const copy = original.slice();  // Creates a new Float32Array
+            channelData.push(copy);
+            transferList.push(copy.buffer);  // Transfer the underlying ArrayBuffer
         }
 
         // Set up one-time message handler for this analysis
+        // Uses requestId to prevent race conditions with concurrent requests
         beatWorker.onmessage = (e) => {
+            // Ignore responses from stale requests
+            if (e.data.requestId !== currentRequestId) {
+                return;
+            }
             if (e.data.error) {
                 reject(new Error(e.data.error));
             } else {
@@ -54,14 +81,15 @@ function analyzeBeatsAsync(audioBuffer) {
             reject(e);
         };
 
-        // Send data to worker
+        // Send data to worker with requestId (use transferList for zero-copy transfer)
         beatWorker.postMessage({
+            requestId: currentRequestId,
             channelData,
             numChannels,
             sampleRate: audioBuffer.sampleRate,
             duration: audioBuffer.duration,
             config: BEAT_DETECTION
-        });
+        }, transferList);
     });
 
     // Race against timeout to prevent indefinite hanging
@@ -100,6 +128,7 @@ function selectClub(club) {
     applyClubTheme(club);
     updateCrowdClub();
     renderChantSelection(selectChant);
+    renderCustomChants();
     showScreen('chantSelect');
 }
 
@@ -127,6 +156,16 @@ function selectClubMatchday(club) {
     });
 
     state.rivalClub = eligible[Math.floor(Math.random() * eligible.length)];
+
+    // Initialize AI personality based on rival club
+    const personalityId = CLUB_AI_PERSONALITIES[state.rivalClub.id] || 'consistent';
+    state.aiPersonality = AI_PERSONALITIES[personalityId];
+    state.aiMood = 'neutral';
+    state.aiStreakCounter = 0;
+    state.aiInStreak = false;
+
+    // Show AI mood indicator
+    updateAIMoodUI();
 
     // Deduplicate player's chants by audio path, then shuffle and pick 6
     const seen = new Set();
@@ -163,6 +202,12 @@ async function startMatchdayChant() {
     // Show & update match info
     elements.matchInfo.classList.remove('hidden');
     updateMatchScoreboard();
+
+    // Show AI mood indicator in matchday mode
+    updateAIMoodUI();
+
+    // Show active modifiers if any
+    showActiveModifiers();
 
     resetGameState();
 
@@ -205,6 +250,14 @@ async function startMatchdayChant() {
         // Start countdown then game
         await countdown();
 
+        // Start recording replay (only if not replaying)
+        if (!state.isReplaying) {
+            startRecording();
+        }
+
+        // Initialize crowd audio
+        initCrowdAudio();
+
         playAudio(endGame);
         state.audioStartTime = state.audioContext.currentTime;
         state.gameStartTime = performance.now();
@@ -233,6 +286,12 @@ async function startGame() {
 
     // Hide match info in practice mode
     elements.matchInfo.classList.add('hidden');
+
+    // Hide AI mood indicator in practice mode
+    elements.aiMoodIndicator?.classList.add('hidden');
+
+    // Show active modifiers if any
+    showActiveModifiers();
 
     resetGameState();
 
@@ -274,6 +333,14 @@ async function startGame() {
 
         // Start countdown then game
         await countdown();
+
+        // Start recording replay (only in practice mode, not replay playback)
+        if (!state.isReplaying) {
+            startRecording();
+        }
+
+        // Initialize crowd audio
+        initCrowdAudio();
 
         playAudio(endGame);
         state.audioStartTime = state.audioContext.currentTime;
@@ -341,6 +408,9 @@ function gameLoop() {
     const now = performance.now();
     const audioElapsed = state.audioContext.currentTime - state.audioStartTime;
 
+    // Check power-up expiration
+    checkPowerupExpiration();
+
     // Trigger pre-computed beats as playback reaches them
     while (state.nextBeatIndex < state.detectedBeats.length &&
            audioElapsed >= state.detectedBeats[state.nextBeatIndex]) {
@@ -353,6 +423,9 @@ function gameLoop() {
         registerMiss();
         state.activeBeat = null;
     }
+
+    // Update crowd audio based on combo/performance
+    updateCrowdAudio();
 
     // Update frenzy CSS class for visual filters (#2)
     // Performance: Use state tracking instead of DOM queries
@@ -403,6 +476,9 @@ function triggerBeat() {
     // Trigger crowd jump
     state.crowdBeatTime = performance.now();
 
+    // Play metronome click if enabled
+    playMetronomeClick();
+
     // AI plays
     simulateAI();
 }
@@ -422,15 +498,20 @@ function pauseGame() {
 
 async function resumeGame() {
     if (!state.isPaused) return;
+
+    // Timing system: All wall-clock times use performance.now() in milliseconds.
+    // audioContext.currentTime is in seconds and pauses during suspend.
+    // Shift wall-clock references by pause duration to stay in sync.
     const pauseDuration = performance.now() - state._pauseTime;
     state.gameStartTime += pauseDuration;
     if (state.activeBeat) {
-        state.activeBeat.time += pauseDuration;
+        state.activeBeat.time += pauseDuration;  // activeBeat.time is wall-clock ms
     }
     // Also shift crowdBeatTime to keep visual sync
     if (state.crowdBeatTime > 0) {
         state.crowdBeatTime += pauseDuration;
     }
+
     state.isPaused = false;
     if (state.audioContext) await state.audioContext.resume();
     elements.pauseOverlay.classList.add('hidden');
@@ -444,6 +525,7 @@ function quitToMenu() {
     state.isPaused = false;
     cancelAnimationFrame(state.gameLoopId);
     stopAudio();
+    stopCrowdAudio();
     setCrowdMode('idle');
     // Clean up countdown overlay if still present
     const countdownEl = document.getElementById('countdown-overlay');
@@ -454,8 +536,13 @@ function quitToMenu() {
     if (state.crowdBgCanvas) {
         state.crowdBgCanvas.classList.remove('frenzy', 'frenzy-intense');
     }
+    // Hide gameplay UI elements
+    elements.activeModifiers?.classList.add('hidden');
+    elements.aiMoodIndicator?.classList.add('hidden');
     // Terminate beat worker to free memory
     terminateBeatWorker();
+    // Reset match state to prevent stale data on next game
+    resetMatchState();
     showScreen('title');
 }
 
@@ -513,6 +600,7 @@ elements.fulltimePlayAgainBtn.addEventListener('click', () => {
 });
 
 elements.fulltimeMainMenuBtn.addEventListener('click', () => {
+    resetMatchState();  // Clear match state when returning to main menu
     showScreen('title');
 });
 
@@ -597,6 +685,29 @@ elements.reducedEffectsToggle.addEventListener('change', (e) => {
     saveSettings(state.settings);
 });
 
+// Metronome toggle
+elements.metronomeToggle?.addEventListener('change', (e) => {
+    state.settings.metronomeEnabled = e.target.checked;
+    saveSettings(state.settings);
+});
+
+// Crowd audio toggle
+elements.crowdAudioToggle?.addEventListener('change', (e) => {
+    state.settings.crowdAudioEnabled = e.target.checked;
+    saveSettings(state.settings);
+    if (!e.target.checked) {
+        stopCrowdAudio();
+    }
+});
+
+// Crowd volume slider
+elements.crowdVolumeSlider?.addEventListener('input', (e) => {
+    const val = parseInt(e.target.value) / 100;
+    setCrowdVolume(val);
+    state.settings.crowdAudioVolume = val;
+    saveSettings(state.settings);
+});
+
 // Difficulty buttons
 document.querySelectorAll('.difficulty-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -608,6 +719,236 @@ document.querySelectorAll('.difficulty-btn').forEach(btn => {
         saveSettings(state.settings);
     });
 });
+
+// ============================================
+// Modifier Buttons
+// ============================================
+
+function updateModifierBonus() {
+    const activeCount = Object.values(state.activeModifiers).filter(v => v).length;
+    let bonus;
+    switch (activeCount) {
+        case 0: bonus = MODIFIER_BONUSES.none; break;
+        case 1: bonus = MODIFIER_BONUSES.one; break;
+        case 2: bonus = MODIFIER_BONUSES.two; break;
+        default: bonus = MODIFIER_BONUSES.three;
+    }
+    state.modifierScoreMultiplier = bonus;
+
+    // Update UI
+    const bonusEl = elements.modifierBonus;
+    if (bonusEl) {
+        if (activeCount > 0) {
+            bonusEl.textContent = `Score Bonus: ${Math.round((bonus - 1) * 100)}%`;
+            bonusEl.classList.add('active');
+        } else {
+            bonusEl.textContent = '';
+            bonusEl.classList.remove('active');
+        }
+    }
+}
+
+document.querySelectorAll('.modifier-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const mod = btn.dataset.modifier;
+        if (mod && state.activeModifiers.hasOwnProperty(mod)) {
+            state.activeModifiers[mod] = !state.activeModifiers[mod];
+            btn.classList.toggle('active', state.activeModifiers[mod]);
+            updateModifierBonus();
+        }
+    });
+});
+
+// ============================================
+// Power-up Activation (SHIFT key)
+// ============================================
+
+document.addEventListener('keydown', (e) => {
+    if (e.code === POWERUP_KEY && state.currentState === GameState.PLAYING && !state.isPaused) {
+        activateNextPowerup();
+    }
+});
+
+function activateNextPowerup() {
+    const { powerups } = state;
+
+    // Priority: Shield > Slow Motion > Score Burst
+    if (powerups.shield.charged && !powerups.shield.active) {
+        powerups.shield.charged = false;
+        powerups.shield.active = true;
+        updatePowerupUI('shield', 'active');
+        showPowerupActivation('shield');
+        return;
+    }
+
+    if (powerups.slowMotion.charged && !powerups.slowMotion.active) {
+        powerups.slowMotion.charged = false;
+        powerups.slowMotion.active = true;
+        powerups.slowMotion.endTime = performance.now() + POWERUPS.slowMotion.duration;
+        updatePowerupUI('slowMotion', 'active');
+        showPowerupActivation('slowMotion');
+        return;
+    }
+
+    if (powerups.scoreBurst.charged && !powerups.scoreBurst.active) {
+        powerups.scoreBurst.charged = false;
+        powerups.scoreBurst.active = true;
+        powerups.scoreBurst.endTime = performance.now() + POWERUPS.scoreBurst.duration;
+        state.activePowerupMultiplier = POWERUPS.scoreBurst.multiplier;
+        updatePowerupUI('scoreBurst', 'active');
+        showPowerupActivation('scoreBurst');
+        return;
+    }
+}
+
+function updatePowerupUI(powerupId, status) {
+    const slot = document.getElementById(`powerup-${powerupId}`);
+    if (!slot) return;
+
+    slot.classList.remove('charged', 'active', 'empty');
+    if (status === 'charged') {
+        slot.classList.add('charged');
+    } else if (status === 'active') {
+        slot.classList.add('active');
+    } else {
+        slot.classList.add('empty');
+    }
+
+    // Update charge bar
+    const chargeBar = slot.querySelector('.powerup-charge');
+    if (chargeBar) {
+        const config = POWERUPS[powerupId];
+        if (config && status === 'empty') {
+            const progress = Math.min(1, state.powerupChargeProgress / config.chargeCombo);
+            chargeBar.style.width = `${progress * 100}%`;
+        } else if (status === 'charged') {
+            chargeBar.style.width = '100%';
+        } else {
+            chargeBar.style.width = '0%';
+        }
+    }
+}
+
+function showPowerupActivation(powerupId) {
+    const config = POWERUPS[powerupId];
+    if (!config) return;
+
+    // Flash effect on crowd canvas
+    if (state.crowdBgCanvas) {
+        state.crowdBgCanvas.classList.add('powerup-flash');
+        setTimeout(() => state.crowdBgCanvas.classList.remove('powerup-flash'), 300);
+    }
+
+    // Show activation text in feedback
+    state.feedbackText = config.name.toUpperCase() + '!';
+    state.feedbackAlpha = 1;
+    state.feedbackSpawnTime = performance.now();
+    state.feedbackColor = config.color;
+}
+
+// ============================================
+// Active Modifiers Display (during gameplay)
+// ============================================
+
+function showActiveModifiers() {
+    const container = elements.activeModifiers;
+    if (!container) return;
+
+    // Clear existing badges
+    container.innerHTML = '';
+
+    const activeCount = Object.entries(state.activeModifiers)
+        .filter(([, active]) => active).length;
+
+    if (activeCount === 0) {
+        container.classList.add('hidden');
+        return;
+    }
+
+    container.classList.remove('hidden');
+
+    for (const [modId, active] of Object.entries(state.activeModifiers)) {
+        if (!active) continue;
+        const config = MODIFIERS[modId];
+        if (!config) continue;
+
+        const badge = document.createElement('span');
+        badge.className = 'modifier-badge';
+        badge.innerHTML = `<span class="modifier-badge-icon">${config.icon}</span>${config.name}`;
+        container.appendChild(badge);
+    }
+}
+
+function resetModifiers() {
+    state.activeModifiers = {
+        doubleTime: false,
+        hidden: false,
+        mirror: false
+    };
+    state.modifierScoreMultiplier = 1.0;
+
+    // Reset UI buttons
+    document.querySelectorAll('.modifier-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+
+    // Clear bonus display
+    if (elements.modifierBonus) {
+        elements.modifierBonus.textContent = '';
+        elements.modifierBonus.classList.remove('active');
+    }
+}
+
+// ============================================
+// AI Mood UI
+// ============================================
+
+function updateAIMoodUI() {
+    if (!state.aiPersonality) {
+        elements.aiMoodIndicator?.classList.add('hidden');
+        return;
+    }
+
+    elements.aiMoodIndicator?.classList.remove('hidden');
+
+    if (elements.aiMoodIcon) {
+        elements.aiMoodIcon.textContent = state.aiPersonality.icon;
+    }
+    if (elements.aiMoodText) {
+        let moodText = state.aiPersonality.name;
+        if (state.aiMood === 'confident') {
+            moodText += ' 🔥';
+        } else if (state.aiMood === 'struggling') {
+            moodText += ' 😰';
+        }
+        elements.aiMoodText.textContent = moodText;
+    }
+}
+
+// ============================================
+// Power-up Expiration Check (called in game loop)
+// ============================================
+
+function checkPowerupExpiration() {
+    const now = performance.now();
+    const { powerups } = state;
+
+    // Check Score Burst expiration
+    if (powerups.scoreBurst.active && now >= powerups.scoreBurst.endTime) {
+        powerups.scoreBurst.active = false;
+        state.activePowerupMultiplier = 1.0;
+        updatePowerupUI('scoreBurst', 'empty');
+    }
+
+    // Check Slow Motion expiration
+    if (powerups.slowMotion.active && now >= powerups.slowMotion.endTime) {
+        powerups.slowMotion.active = false;
+        updatePowerupUI('slowMotion', 'empty');
+    }
+}
+
+// Export for input.js to use
+export { updatePowerupUI, updateAIMoodUI };
 
 // ============================================
 // Apply persisted settings to UI on load
@@ -630,6 +971,698 @@ setScoreSubmitHandler(handleScoreSubmission);
 initLeaderboard().then(() => {
     setupLeaderboardUI();
 });
+
+// Wire up input.js callbacks to avoid circular imports
+setMainCallbacks(updatePowerupUI, updateAIMoodUI, recordInput);
+
+// ============================================
+// Replay System Event Handlers
+// ============================================
+
+let replaySpeed = 1;
+let replayPaused = false;
+let replayLoopId = null;
+
+// Share Replay button (on results screen)
+elements.shareReplayBtn?.addEventListener('click', () => {
+    const replayData = getReplayData();
+    if (!replayData) {
+        alert('No replay data available');
+        return;
+    }
+
+    const code = encodeReplay(replayData);
+    if (!code) {
+        alert('Failed to encode replay');
+        return;
+    }
+
+    // Show share modal
+    elements.replayModalTitle.textContent = 'Share Replay';
+    elements.replayModalDesc.textContent = 'Copy this code to share your replay:';
+    elements.replayCodeInput.value = code;
+    elements.replayCodeInput.readOnly = true;
+    elements.replayCopyBtn.classList.remove('hidden');
+    elements.replayImportBtn.classList.add('hidden');
+    elements.replayCodeError.classList.add('hidden');
+    elements.replayModal.classList.remove('hidden');
+});
+
+// Watch Replay button (on results screen)
+elements.watchReplayBtn?.addEventListener('click', () => {
+    const replayData = getReplayData();
+    if (!replayData) {
+        alert('No replay data available');
+        return;
+    }
+
+    startReplayPlayback(replayData);
+});
+
+// Import Replay button (on title screen)
+elements.importReplayBtn?.addEventListener('click', () => {
+    // Show import modal
+    elements.replayModalTitle.textContent = 'Import Replay';
+    elements.replayModalDesc.textContent = 'Paste a replay code to watch:';
+    elements.replayCodeInput.value = '';
+    elements.replayCodeInput.readOnly = false;
+    elements.replayCopyBtn.classList.add('hidden');
+    elements.replayImportBtn.classList.remove('hidden');
+    elements.replayCodeError.classList.add('hidden');
+    elements.replayModal.classList.remove('hidden');
+});
+
+// Copy button in modal
+elements.replayCopyBtn?.addEventListener('click', () => {
+    elements.replayCodeInput.select();
+    navigator.clipboard.writeText(elements.replayCodeInput.value).then(() => {
+        elements.replayCopyBtn.textContent = 'Copied!';
+        setTimeout(() => {
+            elements.replayCopyBtn.textContent = 'Copy Code';
+        }, 2000);
+    }).catch(() => {
+        // Fallback for older browsers
+        document.execCommand('copy');
+        elements.replayCopyBtn.textContent = 'Copied!';
+        setTimeout(() => {
+            elements.replayCopyBtn.textContent = 'Copy Code';
+        }, 2000);
+    });
+});
+
+// Import button in modal
+elements.replayImportBtn?.addEventListener('click', () => {
+    const code = elements.replayCodeInput.value.trim();
+
+    if (!code) {
+        elements.replayCodeError.textContent = 'Please enter a replay code';
+        elements.replayCodeError.classList.remove('hidden');
+        return;
+    }
+
+    if (!validateReplayCode(code)) {
+        elements.replayCodeError.textContent = 'Invalid replay code';
+        elements.replayCodeError.classList.remove('hidden');
+        return;
+    }
+
+    const replayData = decodeReplay(code);
+    if (!replayData) {
+        elements.replayCodeError.textContent = 'Failed to decode replay';
+        elements.replayCodeError.classList.remove('hidden');
+        return;
+    }
+
+    // Find club and chant
+    const club = Object.values(clubs).find(c => c.id === replayData.clubId);
+    if (!club) {
+        elements.replayCodeError.textContent = 'Unknown club in replay';
+        elements.replayCodeError.classList.remove('hidden');
+        return;
+    }
+
+    const chant = club.chants.find(c => c.id === replayData.chantId);
+    if (!chant) {
+        elements.replayCodeError.textContent = 'Unknown chant in replay';
+        elements.replayCodeError.classList.remove('hidden');
+        return;
+    }
+
+    replayData.chantName = chant.name;
+
+    // Close modal and start playback
+    elements.replayModal.classList.add('hidden');
+
+    // Set up state for replay
+    state.selectedClub = club;
+    state.selectedChant = chant;
+    state.settings.difficulty = replayData.difficulty;
+    state.activeModifiers = { ...replayData.modifiers };
+
+    applyClubTheme(club);
+    updateCrowdClub();
+
+    startReplayPlayback(replayData);
+});
+
+// Close modal button
+elements.replayCloseBtn?.addEventListener('click', () => {
+    elements.replayModal.classList.add('hidden');
+});
+
+// Replay screen controls
+elements.replayPlayPauseBtn?.addEventListener('click', () => {
+    replayPaused = !replayPaused;
+    elements.replayPlayPauseBtn.textContent = replayPaused ? 'Play' : 'Pause';
+
+    if (replayPaused && state.audioContext) {
+        state.audioContext.suspend();
+    } else if (!replayPaused && state.audioContext) {
+        state.audioContext.resume();
+    }
+});
+
+elements.replaySpeedBtn?.addEventListener('click', () => {
+    // Cycle through speeds: 1x -> 1.5x -> 2x -> 0.5x -> 1x
+    const speeds = [1, 1.5, 2, 0.5];
+    const currentIndex = speeds.indexOf(replaySpeed);
+    replaySpeed = speeds[(currentIndex + 1) % speeds.length];
+    elements.replaySpeedBtn.textContent = `${replaySpeed}x`;
+
+    // Adjust audio playback rate
+    if (state.audioSource) {
+        state.audioSource.playbackRate.value = replaySpeed;
+    }
+});
+
+elements.replayRestartBtn?.addEventListener('click', () => {
+    const replayData = getReplayData();
+    if (replayData) {
+        stopReplayPlayback();
+        startReplayPlayback(replayData);
+    }
+});
+
+elements.replayBackBtn?.addEventListener('click', () => {
+    stopReplayPlayback();
+    showScreen('results');
+});
+
+// ============================================
+// Replay Playback Functions
+// ============================================
+
+async function startReplayPlayback(replayData) {
+    // Reset game state for fresh replay
+    resetGameState();
+    preparePlayback(replayData);
+
+    // Reset playback state
+    replaySpeed = 1;
+    replayPaused = false;
+    elements.replaySpeedBtn.textContent = '1x';
+    elements.replayPlayPauseBtn.textContent = 'Pause';
+
+    // Update UI
+    elements.replayChantName.textContent = replayData.chantName || 'Unknown Chant';
+
+    // Show modifiers
+    elements.replayModifiers.innerHTML = '';
+    for (const [modId, active] of Object.entries(replayData.modifiers)) {
+        if (!active) continue;
+        const config = MODIFIERS[modId];
+        if (!config) continue;
+        const badge = document.createElement('span');
+        badge.className = 'modifier-badge';
+        badge.textContent = `${config.icon} ${config.name}`;
+        elements.replayModifiers.appendChild(badge);
+    }
+
+    // Initialize canvas
+    const canvas = elements.replayCanvas;
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        canvas.width = canvas.offsetWidth;
+        canvas.height = canvas.offsetHeight;
+        ctx.fillStyle = '#1a1a2e';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    showScreen('replay');
+    setCrowdMode('gameplay');
+
+    // Load audio
+    elements.loadingOverlay.classList.remove('hidden');
+
+    try {
+        await initAudio();
+        await loadAudio(state.selectedChant.audio);
+
+        // Analyze beats
+        state.detectedBeats = await analyzeBeatsAsync(state.audioBuffer);
+        replayData.beats = state.detectedBeats;
+
+        elements.loadingOverlay.classList.add('hidden');
+
+        // Update duration display
+        const duration = state.audioBuffer.duration * 1000;
+        replayData.duration = duration;
+        elements.replayDuration.textContent = formatReplayDuration(duration);
+        elements.replayTime.textContent = '0:00';
+        elements.replayProgressFill.style.width = '0%';
+
+        // Reset stats display
+        elements.replayScore.textContent = '0';
+        elements.replayCombo.textContent = '0';
+
+        // Start playback
+        playAudio(() => {
+            // Replay finished
+            stopReplayPlayback();
+            showScreen('results');
+        });
+
+        state.audioStartTime = state.audioContext.currentTime;
+        state.gameStartTime = performance.now();
+
+        replayLoop();
+    } catch (error) {
+        console.error('Failed to start replay:', error);
+        elements.loadingOverlay.classList.add('hidden');
+        alert('Failed to load replay audio');
+        showScreen('title');
+    }
+}
+
+function replayLoop() {
+    if (!state.isReplaying) return;
+
+    if (!replayPaused) {
+        const now = performance.now();
+        const audioElapsed = state.audioContext ? (state.audioContext.currentTime - state.audioStartTime) * 1000 : 0;
+        const replayData = getReplayData();
+
+        // Update progress
+        if (replayData && replayData.duration > 0) {
+            const progress = Math.min(1, audioElapsed / replayData.duration);
+            elements.replayProgressFill.style.width = `${progress * 100}%`;
+            elements.replayTime.textContent = formatReplayDuration(audioElapsed);
+        }
+
+        // Process inputs from replay
+        let input;
+        while ((input = getNextReplayInput(audioElapsed)) !== null) {
+            // Simulate the hit
+            processReplayInput(input);
+        }
+
+        // Draw visualization
+        drawReplayVisualization(audioElapsed);
+    }
+
+    replayLoopId = requestAnimationFrame(replayLoop);
+}
+
+function processReplayInput(input) {
+    // Update stats based on replay input
+    const result = input.result;
+
+    if (result === 'perfect') {
+        state.playerStats.perfect++;
+        state.playerCombo++;
+    } else if (result === 'good') {
+        state.playerStats.good++;
+        state.playerCombo++;
+    } else if (result === 'ok') {
+        state.playerStats.ok++;
+        state.playerCombo++;
+    } else {
+        state.playerStats.miss++;
+        state.playerCombo = 0;
+    }
+
+    state.playerScore += input.score;
+    if (state.playerCombo > state.playerMaxCombo) {
+        state.playerMaxCombo = state.playerCombo;
+    }
+
+    // Update UI
+    elements.replayScore.textContent = state.playerScore;
+    elements.replayCombo.textContent = state.playerCombo;
+
+    // Mark beat result for visualization
+    if (input.beatIndex >= 0) {
+        state.beatResults[input.beatIndex] = result;
+    }
+}
+
+function drawReplayVisualization(currentTime) {
+    const canvas = elements.replayCanvas;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    const midY = h / 2;
+
+    // Clear
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, w, h);
+
+    const beats = state.detectedBeats;
+    if (!beats || beats.length === 0) return;
+
+    const duration = getReplayData()?.duration || (state.audioBuffer?.duration * 1000) || 1;
+    const currentTimeSec = currentTime / 1000;
+
+    // Draw beat markers
+    const primary = state.selectedClub?.colors?.primary || '#006633';
+
+    for (let i = 0; i < beats.length; i++) {
+        const beatTime = beats[i];
+        const x = (beatTime / (duration / 1000)) * w;
+
+        // Determine color based on result
+        let color = '#444444';  // Default: unplayed
+        const result = state.beatResults[i];
+        if (result === 'perfect') color = '#00ff88';
+        else if (result === 'good') color = '#88ff00';
+        else if (result === 'ok') color = '#ffaa00';
+        else if (result === 'miss') color = '#ff4444';
+        else if (beatTime < currentTimeSec) color = '#666666';  // Passed but not recorded
+
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(x, midY, 5, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Draw playhead
+    const playheadX = (currentTimeSec / (duration / 1000)) * w;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(playheadX, 0);
+    ctx.lineTo(playheadX, h);
+    ctx.stroke();
+}
+
+function stopReplayPlayback() {
+    stopPlayback();
+    stopAudio();
+    if (replayLoopId) {
+        cancelAnimationFrame(replayLoopId);
+        replayLoopId = null;
+    }
+    setCrowdMode('idle');
+}
+
+// ============================================
+// Profile Screen Event Handlers
+// ============================================
+
+elements.profileBtn?.addEventListener('click', () => {
+    renderProfileScreen();
+    showScreen('profile');
+});
+
+elements.profileBackBtn?.addEventListener('click', () => {
+    showScreen('title');
+});
+
+// ============================================
+// Custom Chant Upload System
+// ============================================
+
+let pendingUploadData = null;
+
+// Render custom chants in the chant list
+async function renderCustomChants() {
+    if (!elements.customChantList) return;
+
+    const chants = await getAllCustomChants();
+    elements.customChantList.innerHTML = '';
+
+    if (chants.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'empty-custom-chants';
+        empty.textContent = 'No custom chants yet. Upload your own MP3!';
+        elements.customChantList.appendChild(empty);
+        return;
+    }
+
+    chants.forEach(chant => {
+        const item = document.createElement('div');
+        item.className = 'custom-chant-item';
+
+        const info = document.createElement('div');
+        info.className = 'custom-chant-info';
+
+        const name = document.createElement('span');
+        name.className = 'custom-chant-name';
+        name.textContent = chant.name;
+
+        const meta = document.createElement('span');
+        meta.className = 'custom-chant-meta';
+        const mins = Math.floor(chant.duration / 60);
+        const secs = Math.floor(chant.duration % 60);
+        meta.textContent = `${mins}:${secs.toString().padStart(2, '0')} • ${(chant.fileSize / 1024 / 1024).toFixed(1)}MB`;
+
+        info.appendChild(name);
+        info.appendChild(meta);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'custom-chant-delete';
+        deleteBtn.textContent = '×';
+        deleteBtn.title = 'Delete chant';
+        deleteBtn.onclick = async (e) => {
+            e.stopPropagation();
+            if (confirm(`Delete "${chant.name}"?`)) {
+                await deleteCustomChant(chant.id);
+                renderCustomChants();
+            }
+        };
+
+        item.appendChild(info);
+        item.appendChild(deleteBtn);
+
+        item.onclick = () => playCustomChant(chant);
+
+        elements.customChantList.appendChild(item);
+    });
+}
+
+// Play a custom chant
+async function playCustomChant(chant) {
+    state.selectedChant = {
+        id: chant.id,
+        name: chant.name,
+        audio: null, // Will be loaded from IndexedDB
+        isCustom: true
+    };
+    await startCustomChantGame(chant.id);
+}
+
+// Start game with custom chant
+async function startCustomChantGame(chantId) {
+    showScreen('gameplay');
+    setCrowdMode('gameplay');
+    updateScoreboardTeams();
+
+    // Hide match info in practice mode
+    elements.matchInfo.classList.add('hidden');
+    elements.aiMoodIndicator?.classList.add('hidden');
+    showActiveModifiers();
+
+    resetGameState();
+
+    const diffPreset = DIFFICULTY_PRESETS[state.settings.difficulty] || DIFFICULTY_PRESETS.normal;
+    state.activeTiming = { PERFECT: diffPreset.PERFECT, GOOD: diffPreset.GOOD, OK: diffPreset.OK };
+
+    elements.playerScore.textContent = '0';
+    elements.aiScore.textContent = '0';
+    elements.currentChantName.textContent = state.selectedChant.name;
+
+    elements.gameCanvas.classList.remove('beat-pulse', 'hit-perfect', 'hit-good', 'hit-ok', 'hit-miss');
+    elements.loadingOverlay.classList.remove('hidden');
+
+    try {
+        await initAudio();
+        initVisualizer();
+
+        // Load audio from IndexedDB
+        state.audioBuffer = await decodeCustomChantAudio(chantId, state.audioContext);
+
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        state.detectedBeats = await analyzeBeatsAsync(state.audioBuffer);
+        computeWaveformPeaks();
+        buildWaveformCache();
+
+        elements.loadingOverlay.classList.add('hidden');
+
+        if (!hasTutorialSeen()) {
+            await showTutorial();
+        }
+
+        await countdown();
+
+        if (!state.isReplaying) {
+            startRecording();
+        }
+
+        initCrowdAudio();
+
+        playAudio(endGame);
+        state.audioStartTime = state.audioContext.currentTime;
+        state.gameStartTime = performance.now();
+
+        gameLoop();
+    } catch (error) {
+        console.error('Failed to start custom chant:', error);
+        elements.loadingOverlay.classList.add('hidden');
+        alert('Failed to load custom chant. ' + error.message);
+        quitToMenu();
+    }
+}
+
+// Upload chant button click
+elements.uploadChantBtn?.addEventListener('click', () => {
+    // Show copyright modal first
+    elements.copyrightModal?.classList.remove('hidden');
+    if (elements.copyrightAcknowledge) {
+        elements.copyrightAcknowledge.checked = false;
+    }
+    if (elements.copyrightAcceptBtn) {
+        elements.copyrightAcceptBtn.disabled = true;
+    }
+});
+
+// Copyright acknowledgment checkbox
+elements.copyrightAcknowledge?.addEventListener('change', (e) => {
+    if (elements.copyrightAcceptBtn) {
+        elements.copyrightAcceptBtn.disabled = !e.target.checked;
+    }
+});
+
+// Copyright cancel button
+elements.copyrightCancelBtn?.addEventListener('click', () => {
+    elements.copyrightModal?.classList.add('hidden');
+});
+
+// Copyright accept button
+elements.copyrightAcceptBtn?.addEventListener('click', () => {
+    elements.copyrightModal?.classList.add('hidden');
+    // Trigger file input
+    elements.chantFileInput?.click();
+});
+
+// File input change
+elements.chantFileInput?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Reset file input for future uploads
+    e.target.value = '';
+
+    // Show upload modal
+    elements.uploadModal?.classList.remove('hidden');
+    elements.uploadStatus?.classList.remove('hidden');
+    elements.uploadForm?.classList.add('hidden');
+    elements.uploadError?.classList.add('hidden');
+    elements.uploadSaveBtn?.classList.add('hidden');
+    elements.uploadStatusText.textContent = 'Reading file...';
+    elements.uploadProgressFill.style.width = '30%';
+
+    try {
+        // Ensure audio context exists
+        if (!state.audioContext) {
+            state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        elements.uploadStatusText.textContent = 'Decoding audio...';
+        elements.uploadProgressFill.style.width = '60%';
+
+        // Process the uploaded file
+        const processedData = await processUploadedFile(file, state.audioContext);
+
+        elements.uploadStatusText.textContent = 'Analyzing beats...';
+        elements.uploadProgressFill.style.width = '90%';
+
+        // Store pending upload data
+        pendingUploadData = {
+            ...processedData,
+            clubId: state.selectedClub?.id || 'custom',
+            copyrightAcknowledged: true
+        };
+
+        // Show form for naming
+        elements.uploadProgressFill.style.width = '100%';
+        setTimeout(() => {
+            elements.uploadStatus?.classList.add('hidden');
+            elements.uploadForm?.classList.remove('hidden');
+            elements.uploadSaveBtn?.classList.remove('hidden');
+
+            // Pre-fill name
+            if (elements.uploadChantName) {
+                elements.uploadChantName.value = processedData.name;
+            }
+
+            // Show duration and size
+            const mins = Math.floor(processedData.duration / 60);
+            const secs = Math.floor(processedData.duration % 60);
+            if (elements.uploadDuration) {
+                elements.uploadDuration.textContent = `Duration: ${mins}:${secs.toString().padStart(2, '0')}`;
+            }
+            if (elements.uploadSize) {
+                elements.uploadSize.textContent = `Size: ${(processedData.fileSize / 1024 / 1024).toFixed(1)}MB`;
+            }
+        }, 300);
+
+    } catch (error) {
+        console.error('Upload error:', error);
+        elements.uploadError.textContent = error.message || 'Failed to process file';
+        elements.uploadError?.classList.remove('hidden');
+        elements.uploadStatus?.classList.add('hidden');
+    }
+});
+
+// Upload cancel button
+elements.uploadCancelBtn?.addEventListener('click', () => {
+    elements.uploadModal?.classList.add('hidden');
+    pendingUploadData = null;
+});
+
+// Upload save button
+elements.uploadSaveBtn?.addEventListener('click', async () => {
+    if (!pendingUploadData) return;
+
+    const name = elements.uploadChantName?.value?.trim();
+    if (!name) {
+        elements.uploadError.textContent = 'Please enter a name for the chant';
+        elements.uploadError?.classList.remove('hidden');
+        return;
+    }
+
+    pendingUploadData.name = name;
+
+    try {
+        await saveCustomChant(pendingUploadData);
+        elements.uploadModal?.classList.add('hidden');
+        pendingUploadData = null;
+        renderCustomChants();
+    } catch (error) {
+        console.error('Save error:', error);
+        elements.uploadError.textContent = 'Failed to save chant: ' + error.message;
+        elements.uploadError?.classList.remove('hidden');
+    }
+});
+
+// ============================================
+// Initialize Progression System
+// ============================================
+
+// Load progression data on startup
+loadProgression();
+
+// Update title screen level badge
+updateTitleLevelBadge();
+
+// Initialize custom chant database
+initCustomChantDB().catch(err => {
+    console.warn('Failed to initialize custom chants DB:', err);
+});
+
+// Apply audio settings from storage
+if (elements.metronomeToggle) {
+    elements.metronomeToggle.checked = state.settings.metronomeEnabled;
+}
+if (elements.crowdAudioToggle) {
+    elements.crowdAudioToggle.checked = state.settings.crowdAudioEnabled;
+}
+if (elements.crowdVolumeSlider) {
+    elements.crowdVolumeSlider.value = Math.round((state.settings.crowdAudioVolume || 0.3) * 100);
+}
 
 // Initialize on load
 showScreen('title');

@@ -17,12 +17,15 @@ export async function initAudio() {
     // Disconnect and clean up old nodes to prevent memory leaks
     if (state.analyser) {
         try { state.analyser.disconnect(); } catch (e) {}
+        state.analyser = null;
     }
     if (state.masterGain) {
         try { state.masterGain.disconnect(); } catch (e) {}
+        state.masterGain = null;
     }
     if (state.sfxGain) {
         try { state.sfxGain.disconnect(); } catch (e) {}
+        state.sfxGain = null;
     }
 
     state.analyser = state.audioContext.createAnalyser();
@@ -152,4 +155,44 @@ export function playSFX(type) {
             osc.stop(now + 0.08);
             break;
     }
+}
+
+// ============================================
+// Metronome Practice Mode
+// ============================================
+
+/**
+ * Play metronome click sound on beat
+ * Uses a short click sound that helps players learn timing
+ */
+export function playMetronomeClick() {
+    if (!state.audioContext || !state.sfxGain) return;
+    if (!state.settings.metronomeEnabled) return;
+
+    const ctx = state.audioContext;
+    const now = ctx.currentTime;
+
+    // Create a short, sharp click sound
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.connect(gain);
+    gain.connect(state.sfxGain);
+
+    // High-pitched click that cuts through the music
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(1000, now);
+    osc.frequency.exponentialRampToValueAtTime(800, now + 0.02);
+
+    // Quick attack and decay
+    gain.gain.setValueAtTime(0.4, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+
+    osc.onended = () => {
+        osc.disconnect();
+        gain.disconnect();
+    };
+
+    osc.start(now);
+    osc.stop(now + 0.05);
 }

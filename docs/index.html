@@ -13,7 +13,14 @@
         <div id="title-screen" class="screen active">
             <h1>⚽ Ultras - Match day beats ⚽</h1>
             <p class="subtitle">Match the rhythm. Outsing the opposition.</p>
+            <div id="title-level-badge">
+                <span id="title-level-icon">Lv.</span>
+                <span id="title-level-num">1</span>
+                <span id="title-level-title">Newcomer</span>
+            </div>
             <button id="start-btn" class="btn-primary">START GAME</button>
+            <button id="profile-btn" class="btn-secondary">Profile</button>
+            <button id="import-replay-btn" class="btn-secondary">Import Replay</button>
         </div>
 
         <!-- Mode Select Screen -->
@@ -39,6 +46,24 @@
                     <button class="difficulty-btn" data-difficulty="hard">Hard</button>
                 </div>
             </div>
+            <div id="modifier-selector">
+                <span>Modifiers:</span>
+                <div id="modifier-options">
+                    <button class="modifier-btn" data-modifier="doubleTime" title="1.5x speed, 2x score">
+                        <span class="modifier-icon">⏩</span>
+                        <span class="modifier-name">Double Time</span>
+                    </button>
+                    <button class="modifier-btn" data-modifier="hidden" title="Beats fade before hit line">
+                        <span class="modifier-icon">👁</span>
+                        <span class="modifier-name">Hidden</span>
+                    </button>
+                    <button class="modifier-btn" data-modifier="mirror" title="Reverse scroll direction">
+                        <span class="modifier-icon">🪞</span>
+                        <span class="modifier-name">Mirror</span>
+                    </button>
+                </div>
+                <div id="modifier-bonus"></div>
+            </div>
             <button id="back-to-title-from-mode" class="btn-secondary">Back</button>
         </div>
 
@@ -54,7 +79,72 @@
             <h2>Select a Chant</h2>
             <div id="selected-club-banner"></div>
             <div id="chant-list"></div>
+
+            <!-- Custom Chants Section -->
+            <div id="custom-chants-section">
+                <h3>Custom Chants</h3>
+                <div id="custom-chant-list"></div>
+                <button id="upload-chant-btn" class="btn-secondary">
+                    <span class="upload-icon">+</span> Upload Chant
+                </button>
+                <input type="file" id="chant-file-input" accept=".mp3,.wav,.ogg,audio/*" class="hidden">
+            </div>
+
             <button id="back-to-clubs" class="btn-secondary">Back</button>
+        </div>
+
+        <!-- Copyright Disclaimer Modal -->
+        <div id="copyright-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>Copyright Disclaimer</h3>
+                <div class="modal-body">
+                    <p>By uploading audio files, you acknowledge:</p>
+                    <ul>
+                        <li>You own the rights to this audio, or it is in the public domain</li>
+                        <li>You will not upload copyrighted material without permission</li>
+                        <li>This audio is for personal use only within this game</li>
+                        <li>The developers are not responsible for any copyright violations</li>
+                    </ul>
+                    <label class="toggle-label">
+                        <input type="checkbox" id="copyright-acknowledge">
+                        I understand and agree to these terms
+                    </label>
+                </div>
+                <div class="modal-actions">
+                    <button id="copyright-cancel-btn" class="btn-secondary">Cancel</button>
+                    <button id="copyright-accept-btn" class="btn-primary" disabled>Continue</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload Progress Modal -->
+        <div id="upload-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>Processing Chant</h3>
+                <div class="modal-body">
+                    <div id="upload-status">
+                        <span id="upload-status-text">Reading file...</span>
+                        <div id="upload-progress-bar">
+                            <div id="upload-progress-fill"></div>
+                        </div>
+                    </div>
+                    <div id="upload-form" class="hidden">
+                        <label>
+                            Chant Name:
+                            <input type="text" id="upload-chant-name" maxlength="50">
+                        </label>
+                        <div id="upload-info">
+                            <span id="upload-duration"></span>
+                            <span id="upload-size"></span>
+                        </div>
+                    </div>
+                    <div id="upload-error" class="hidden error-text"></div>
+                </div>
+                <div class="modal-actions">
+                    <button id="upload-cancel-btn" class="btn-secondary">Cancel</button>
+                    <button id="upload-save-btn" class="btn-primary hidden">Save Chant</button>
+                </div>
+            </div>
         </div>
 
         <!-- Match Day Intro Screen -->
@@ -112,11 +202,46 @@
 
             <div id="input-hint">Press SPACEBAR or TAP on the beat!</div>
 
+            <!-- Power-ups HUD -->
+            <div id="powerup-hud">
+                <div class="powerup-slot" id="powerup-shield" data-powerup="shield">
+                    <span class="powerup-icon">🛡</span>
+                    <div class="powerup-charge"></div>
+                    <span class="powerup-key">SHIFT</span>
+                </div>
+                <div class="powerup-slot" id="powerup-scoreBurst" data-powerup="scoreBurst">
+                    <span class="powerup-icon">💥</span>
+                    <div class="powerup-charge"></div>
+                </div>
+                <div class="powerup-slot" id="powerup-slowMotion" data-powerup="slowMotion">
+                    <span class="powerup-icon">🐌</span>
+                    <div class="powerup-charge"></div>
+                </div>
+            </div>
+
+            <!-- Active Modifiers Display -->
+            <div id="active-modifiers" class="hidden"></div>
+
+            <!-- AI Mood Indicator -->
+            <div id="ai-mood-indicator" class="hidden">
+                <span id="ai-mood-icon"></span>
+                <span id="ai-mood-text"></span>
+            </div>
+
             <div id="volume-controls">
                 <button id="volume-toggle" class="icon-btn" title="Settings">&#9881;</button>
                 <div id="volume-panel" class="hidden">
                     <label>Music <input type="range" id="volume-slider" min="0" max="100" value="100"></label>
                     <label>SFX <input type="range" id="sfx-volume-slider" min="0" max="100" value="50"></label>
+                    <label>Crowd <input type="range" id="crowd-volume-slider" min="0" max="100" value="30"></label>
+                    <label class="toggle-label" title="Enable dynamic crowd audio that reacts to your performance">
+                        <input type="checkbox" id="crowd-audio-toggle" checked>
+                        Crowd Audio
+                    </label>
+                    <label class="toggle-label" title="Play a click sound on each beat to help learn timing">
+                        <input type="checkbox" id="metronome-toggle">
+                        Metronome
+                    </label>
                     <label class="toggle-label" title="Hides stadium atmosphere (floodlights, smoke, banners) for better performance">
                         <input type="checkbox" id="reduced-effects-toggle">
                         Performance Mode
@@ -182,10 +307,19 @@
             <div id="high-score-display" class="hidden">
                 <span class="stat">Best: <span id="high-score-value">0</span></span>
             </div>
+            <div id="xp-reward-display">
+                <span id="xp-reward-amount">+0 XP</span>
+                <div id="xp-mini-bar">
+                    <div id="xp-mini-fill"></div>
+                </div>
+                <span id="xp-mini-level">Lv. 1</span>
+            </div>
             <div id="player-rank" class="hidden"></div>
             <div id="results-buttons">
                 <button id="play-again-btn" class="btn-primary">Play Again</button>
                 <button id="view-leaderboard-btn" class="btn-secondary">View Leaderboard</button>
+                <button id="watch-replay-btn" class="btn-secondary">Watch Replay</button>
+                <button id="share-replay-btn" class="btn-secondary">Share Replay</button>
                 <button id="change-chant-btn" class="btn-secondary">Change Chant</button>
             </div>
         </div>
@@ -259,6 +393,54 @@
             <button id="leaderboard-back-btn" class="btn-secondary">Back to Results</button>
         </div>
 
+        <!-- Replay Screen -->
+        <div id="replay-screen" class="screen">
+            <h2>REPLAY</h2>
+            <div id="replay-info">
+                <div id="replay-chant-name"></div>
+                <div id="replay-modifiers"></div>
+            </div>
+            <div id="replay-progress">
+                <span id="replay-time">0:00</span>
+                <div id="replay-progress-bar">
+                    <div id="replay-progress-fill"></div>
+                </div>
+                <span id="replay-duration">0:00</span>
+            </div>
+            <div id="replay-stats-live">
+                <div class="replay-stat">
+                    <span class="replay-stat-label">Score</span>
+                    <span id="replay-score" class="replay-stat-value">0</span>
+                </div>
+                <div class="replay-stat">
+                    <span class="replay-stat-label">Combo</span>
+                    <span id="replay-combo" class="replay-stat-value">0</span>
+                </div>
+            </div>
+            <canvas id="replay-canvas"></canvas>
+            <div id="replay-controls">
+                <button id="replay-play-pause-btn" class="btn-primary">Pause</button>
+                <button id="replay-speed-btn" class="btn-secondary">1x</button>
+                <button id="replay-restart-btn" class="btn-secondary">Restart</button>
+            </div>
+            <button id="replay-back-btn" class="btn-secondary">Back to Results</button>
+        </div>
+
+        <!-- Replay Share Modal -->
+        <div id="replay-modal" class="hidden">
+            <div id="replay-modal-content">
+                <h3 id="replay-modal-title">Share Replay</h3>
+                <p id="replay-modal-desc">Copy this code to share your replay:</p>
+                <textarea id="replay-code-input" readonly placeholder="Replay code will appear here..."></textarea>
+                <p id="replay-code-error" class="hidden"></p>
+                <div id="replay-modal-buttons">
+                    <button id="replay-copy-btn" class="btn-primary">Copy Code</button>
+                    <button id="replay-import-btn" class="btn-secondary hidden">Import</button>
+                    <button id="replay-close-btn" class="btn-secondary">Close</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Name Modal -->
         <div id="name-modal" class="hidden">
             <div id="name-modal-content">
@@ -269,6 +451,91 @@
                 <div id="name-modal-buttons">
                     <button id="name-submit-btn" class="btn-primary">Submit</button>
                     <button id="name-skip-btn" class="btn-secondary">Skip</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Profile Screen -->
+        <div id="profile-screen" class="screen">
+            <h2>PROFILE</h2>
+            <div id="profile-header">
+                <div id="profile-level-badge">
+                    <span id="profile-level">Lv. 1</span>
+                    <span id="profile-title">Newcomer</span>
+                </div>
+                <div id="profile-xp-bar">
+                    <div id="profile-xp-fill"></div>
+                    <span id="profile-xp-text">0 / 500 XP</span>
+                </div>
+            </div>
+
+            <div id="profile-stats">
+                <h3>Stats</h3>
+                <div class="profile-stat-grid">
+                    <div class="profile-stat"><span class="stat-label">Total Wins</span><span id="profile-total-wins" class="stat-value">0</span></div>
+                    <div class="profile-stat"><span class="stat-label">Match Days Won</span><span id="profile-matchday-wins" class="stat-value">0</span></div>
+                    <div class="profile-stat"><span class="stat-label">Chants Played</span><span id="profile-chants-played" class="stat-value">0</span></div>
+                    <div class="profile-stat"><span class="stat-label">Highest Combo</span><span id="profile-highest-combo" class="stat-value">0</span></div>
+                    <div class="profile-stat"><span class="stat-label">Perfect Hits</span><span id="profile-perfect-hits" class="stat-value">0</span></div>
+                    <div class="profile-stat"><span class="stat-label">Highest Score</span><span id="profile-highest-score" class="stat-value">0</span></div>
+                </div>
+            </div>
+
+            <div id="profile-loyalty">
+                <h3>Club Loyalty</h3>
+                <div id="loyalty-display">
+                    <span id="loyalty-club-name">No club yet</span>
+                    <div id="loyalty-badges"></div>
+                    <div id="loyalty-progress-bar">
+                        <div id="loyalty-progress-fill"></div>
+                    </div>
+                    <span id="loyalty-progress-text"></span>
+                </div>
+            </div>
+
+            <div id="profile-achievements">
+                <h3>Achievements <span id="achievement-count">0/10</span></h3>
+                <div id="achievements-grid"></div>
+            </div>
+
+            <div id="profile-challenges">
+                <h3>Challenges</h3>
+                <div id="weekly-challenge">
+                    <span class="challenge-label">Weekly Challenge</span>
+                    <div id="weekly-challenge-content"></div>
+                </div>
+                <div id="season-challenges">
+                    <span class="challenge-label">Season Challenges</span>
+                    <div id="season-challenges-list"></div>
+                </div>
+            </div>
+
+            <button id="profile-back-btn" class="btn-secondary">Back</button>
+        </div>
+
+        <!-- XP Gain Popup (shown after games) -->
+        <div id="xp-popup" class="hidden">
+            <div id="xp-popup-content">
+                <div id="xp-gained">+0 XP</div>
+                <div id="xp-level-up" class="hidden">
+                    <span class="level-up-text">LEVEL UP!</span>
+                    <span id="xp-new-level"></span>
+                    <span id="xp-new-title"></span>
+                </div>
+                <div id="xp-unlock" class="hidden">
+                    <span class="unlock-text">Unlocked:</span>
+                    <span id="xp-unlock-name"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Achievement Notification -->
+        <div id="achievement-popup" class="hidden">
+            <div id="achievement-popup-content">
+                <span id="achievement-popup-icon"></span>
+                <div id="achievement-popup-text">
+                    <span id="achievement-popup-title">Achievement Unlocked!</span>
+                    <span id="achievement-popup-name"></span>
                 </div>
             </div>
         </div>

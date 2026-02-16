@@ -51,6 +51,7 @@ export const state = {
     crowdBgCtx: null,
     stadiumLayout: null,  // Set by crowdBg.js on init/resize
     crowdMode: 'idle',
+    hudPositionY: 22,     // Cached HUD Y position (updated on resize, avoids getBoundingClientRect)
     beatFlashIntensity: 0,
     waveformPeaks: null,
     beatResults: [],
@@ -77,6 +78,11 @@ export const state = {
     smokeParticles: [],
     cachedColors: null,  // Set by updateCrowdClub for performance
 
+    // Weather effects
+    rainParticles: [],
+    confettiParticles: [],
+    weatherIntensity: 0,  // 0-1 for gradual transitions
+
     // Tifo display (coreoType 3)
     tifoMap: null,        // 2D array of colors sampled from club logo
     tifoReady: false,     // True when tifo map is loaded and ready
@@ -99,6 +105,29 @@ export const state = {
     aiScore: 0,
     aiScorePopups: [],
 
+    // Game Modifiers (Double Time, Hidden, Mirror)
+    activeModifiers: {
+        doubleTime: false,
+        hidden: false,
+        mirror: false
+    },
+    modifierScoreMultiplier: 1.0,  // Combined score multiplier from modifiers
+
+    // Power-ups
+    powerups: {
+        shield: { charged: false, active: false },
+        scoreBurst: { charged: false, active: false, endTime: 0 },
+        slowMotion: { charged: false, active: false, endTime: 0 }
+    },
+    powerupChargeProgress: 0,      // Current combo progress toward next powerup
+    activePowerupMultiplier: 1.0,  // Current score multiplier from active powerups
+
+    // AI Personality
+    aiPersonality: null,           // Current rival's personality config
+    aiMood: 'neutral',             // Current AI mood: 'confident', 'struggling', 'neutral'
+    aiStreakCounter: 0,            // For wildcard personality streaks
+    aiInStreak: false,             // Whether AI is in a hot streak
+
     // Match Day
     gameMode: null,
     rivalClub: null,
@@ -109,6 +138,12 @@ export const state = {
     aiGoals: 0,
     chantResults: [],
     crowdEmotion: 'neutral',
+
+    // Replay System
+    isRecording: false,          // Whether we're recording a replay
+    isReplaying: false,          // Whether we're playing back a replay
+    replayData: null,            // Current replay data being recorded/played
+    replayInputIndex: 0,         // Current input index during playback
 
     // Performance: CSS class state tracking (avoids DOM queries)
     _lastFrenzyState: false,
@@ -138,6 +173,9 @@ export function resetGameState() {
 
     state.crowdBeatTime = 0;
     state.smokeParticles = [];
+    state.rainParticles = [];
+    state.confettiParticles = [];
+    state.weatherIntensity = 0;
     state.lastCoreoId = 0;
     state.coreoStartTime = 0;
 
@@ -154,6 +192,25 @@ export function resetGameState() {
     // Reset CSS class tracking
     state._lastFrenzyState = false;
     state._lastIntenseState = false;
+
+    // Reset power-ups (keep modifiers as they're set before game starts)
+    state.powerups = {
+        shield: { charged: false, active: false },
+        scoreBurst: { charged: false, active: false, endTime: 0 },
+        slowMotion: { charged: false, active: false, endTime: 0 }
+    };
+    state.powerupChargeProgress = 0;
+    state.activePowerupMultiplier = 1.0;
+
+    // Reset AI state
+    state.aiMood = 'neutral';
+    state.aiStreakCounter = 0;
+    state.aiInStreak = false;
+
+    // Reset replay state (but keep replayData for watching after game)
+    state.isRecording = false;
+    state.isReplaying = false;
+    state.replayInputIndex = 0;
 }
 
 export function resetMatchState() {

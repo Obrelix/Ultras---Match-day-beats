@@ -51,6 +51,7 @@ function getLeaderboardElements() {
 
 let currentDifficulty = 'normal';
 let pendingScoreSubmission = null;
+let isUIInitialized = false;  // Prevent duplicate event listener setup
 
 // ============================================
 // Initialization
@@ -58,6 +59,8 @@ let pendingScoreSubmission = null;
 
 export async function setupLeaderboardUI() {
     if (!LEADERBOARD.ENABLED) return;
+    if (isUIInitialized) return;  // Prevent duplicate event listener setup
+    isUIInitialized = true;
 
     const els = getLeaderboardElements();
 
@@ -122,34 +125,49 @@ export async function handleScoreSubmission(scoreData) {
         return;
     }
 
-    await doSubmitScore(scoreData);
+    try {
+        await doSubmitScore(scoreData);
+    } catch (error) {
+        console.warn('Score submission failed:', error);
+        // Silently fail - the offline queue in leaderboard.js will retry later
+    }
 }
 
 async function doSubmitScore(scoreData) {
-    const result = await submitScore(scoreData);
+    try {
+        const result = await submitScore(scoreData);
 
-    if (result.success) {
-        // Update rank display on results screen
-        updatePlayerRankDisplay(scoreData);
+        if (result.success) {
+            // Update rank display on results screen
+            await updatePlayerRankDisplay(scoreData);
+        }
+    } catch (error) {
+        console.warn('Score submission error:', error);
+        // Don't rethrow - the offline queue will handle retries
+    } finally {
+        pendingScoreSubmission = null;
     }
-
-    pendingScoreSubmission = null;
 }
 
 async function updatePlayerRankDisplay(scoreData) {
     const els = getLeaderboardElements();
     if (!els.playerRank) return;
 
-    const rank = await getPlayerRank(
-        scoreData.clubId,
-        scoreData.chantId,
-        scoreData.difficulty,
-        scoreData.score
-    );
+    try {
+        const rank = await getPlayerRank(
+            scoreData.clubId,
+            scoreData.chantId,
+            scoreData.difficulty,
+            scoreData.score
+        );
 
-    if (rank) {
-        els.playerRank.textContent = `Rank: #${rank}`;
-        els.playerRank.classList.remove('hidden');
+        if (rank && rank > 0 && rank <= 10000) {  // Sanity check rank bounds
+            els.playerRank.textContent = `Rank: #${rank}`;
+            els.playerRank.classList.remove('hidden');
+        }
+    } catch (error) {
+        console.warn('Failed to get player rank:', error);
+        // Silently fail - rank display is non-critical
     }
 }
 
@@ -197,7 +215,12 @@ async function handleNameSubmit() {
 
     // Submit pending score
     if (pendingScoreSubmission) {
-        await doSubmitScore(pendingScoreSubmission);
+        try {
+            await doSubmitScore(pendingScoreSubmission);
+        } catch (error) {
+            console.warn('Score submission after name entry failed:', error);
+            // Silently fail - offline queue will retry
+        }
     }
 }
 
