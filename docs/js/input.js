@@ -2,7 +2,7 @@
 // input.js — Input handling, scoring, AI
 // ============================================
 
-import { GameState, SCORE, BEAT_RESULT_COLORS, AI_ACCURACY, AI_RUBBER_BAND, POWERUPS, AI_PERSONALITIES, CLUB_AI_PERSONALITIES } from './config.js';
+import { GameState, SCORE, BEAT_RESULT_COLORS, AI_ACCURACY, AI_RUBBER_BAND, POWERUPS, AI_PERSONALITIES, CLUB_AI_PERSONALITIES, HOLD_BEAT, HOLD_SCORING } from './config.js';
 import { state } from './state.js';
 import { elements } from './ui.js';
 import { playSFX } from './audio.js';
@@ -90,6 +90,9 @@ export function handleInput() {
     if (now - lastInputTime < INPUT_COOLDOWN_MS) return;
     lastInputTime = now;
 
+    // If already holding, ignore new press (release handles scoring)
+    if (state.holdState.isHolding) return;
+
     let bestBeat = null;
     let bestDiff = Infinity;
 
@@ -104,11 +107,14 @@ export function handleInput() {
 
     // Check next upcoming beat (early hit)
     if (state.nextBeatIndex < state.detectedBeats.length) {
-        const upcomingWallTime = state.gameStartTime + state.detectedBeats[state.nextBeatIndex] * 1000;
+        const beat = state.detectedBeats[state.nextBeatIndex];
+        // Handle both normalized beat objects and raw numbers (backwards compatibility)
+        const beatTime = typeof beat === 'object' ? beat.time : beat;
+        const upcomingWallTime = state.gameStartTime + beatTime * 1000;
         const diff = Math.abs(now - upcomingWallTime);
         if (diff < bestDiff) {
             bestDiff = diff;
-            bestBeat = { time: upcomingWallTime, index: state.nextBeatIndex, isEarly: true };
+            bestBeat = { time: upcomingWallTime, index: state.nextBeatIndex, isEarly: true, beatData: beat };
         }
     }
 
@@ -138,6 +144,27 @@ export function handleInput() {
     if (bestDiff <= state.activeTiming.PERFECT) {
         rating = 'PERFECT';
         score = SCORE.PERFECT;
+    } else if (bestDiff <= state.activeTiming.GOOD) {
+        rating = 'GOOD';
+        score = SCORE.GOOD;
+    } else {
+        // bestDiff <= activeTiming.OK guaranteed (early return above for > OK)
+        rating = 'OK';
+        score = SCORE.OK;
+    }
+
+    // Check if this is a hold beat
+    const beatData = bestBeat.beatData || state.activeBeat?.beatData || null;
+    const isHoldBeat = beatData && typeof beatData === 'object' && beatData.type === 'hold';
+
+    if (isHoldBeat) {
+        // Initiate hold beat - scoring happens on release
+        initiateHoldBeat(bestBeat, beatData, rating, now);
+        return;
+    }
+
+    // Standard tap beat scoring
+    if (rating === 'PERFECT') {
         state.playerStats.perfect++;
         state.playerCombo++;
 
@@ -151,15 +178,10 @@ export function handleInput() {
                 state.crowdBgCanvas.classList.add(shakeClass);
             }
         }
-    } else if (bestDiff <= state.activeTiming.GOOD) {
-        rating = 'GOOD';
-        score = SCORE.GOOD;
+    } else if (rating === 'GOOD') {
         state.playerStats.good++;
         state.playerCombo++;
     } else {
-        // bestDiff <= activeTiming.OK guaranteed (early return above for > OK)
-        rating = 'OK';
-        score = SCORE.OK;
         state.playerStats.ok++;
         state.playerCombo++;
     }
@@ -217,7 +239,8 @@ export function handleInput() {
 
     // Spawn beat hit visual effects (not for misses)
     if (rating !== 'MISS' && bestBeat.index !== undefined) {
-        const beatTime = state.detectedBeats[bestBeat.index];
+        const beatData = state.detectedBeats[bestBeat.index];
+        const beatTime = typeof beatData === 'object' ? beatData.time : beatData;
         const hitColor = BEAT_RESULT_COLORS[rating.toLowerCase()] || '#ffffff';
         state.beatHitEffects.push({
             beatTime: beatTime,
@@ -527,6 +550,454 @@ export function simulateAI() {
         const popup = document.createElement('div');
         popup.className = 'ai-score-popup';
         popup.textContent = `+${scoreGained}`;
+        elements.aiScorePopupContainer.appendChild(popup);
+        setTimeout(() => popup.remove(), 800);
+    }
+}
+
+// ============================================
+// Hold Beat (Long Press) Functions
+// ============================================
+
+/**
+ * Initiates a hold beat - called when player presses on a hold beat
+ * @param {Object} beat - The beat being hit
+ * @param {Object} beatData - The normalized beat data with duration info
+ * @param {string} pressRating - Rating of the initial press (PERFECT/GOOD/OK)
+ * @param {number} now - Current timestamp
+ */
+function initiateHoldBeat(beat, beatData, pressRating, now) {
+    const holdDurationMs = beatData.duration * 1000;
+    const beatWallTime = state.gameStartTime + beatData.time * 1000;
+
+    // Award initial combo for successful press
+    state.playerCombo++;
+    if (state.playerCombo > state.playerMaxCombo) {
+        state.playerMaxCombo = state.playerCombo;
+    }
+
+    state.holdState = {
+        isHolding: true,
+        currentBeatIndex: beat.index,
+        pressTime: now,
+        pressRating: pressRating.toLowerCase(),
+        expectedEndTime: beatWallTime + holdDurationMs,
+        holdProgress: 0,
+        wasBroken: false,
+        lastComboTick: 0,
+        comboTickCount: 0,
+    };
+
+    // Visual feedback for hold start
+    showFeedback('HOLD!');
+    state.feedbackColor = '#00aaff';  // Blue for hold
+    playSFX(pressRating);
+    updateComboDisplay();
+
+    // Haptic feedback for hold start
+    if (navigator.vibrate) {
+        navigator.vibrate([10, 50, 10]);  // Distinct pattern for hold
+    }
+
+    // Crowd audio feedback
+    playCrowdCheer('soft');
+
+    // If this was an early hit, advance past the beat
+    if (beat.isEarly) {
+        if (state.activeBeat) {
+            if (state.activeBeat.index !== undefined) {
+                state.beatResults[state.activeBeat.index] = 'miss';
+            }
+        }
+        state.nextBeatIndex = beat.index + 1;
+        state.activeBeat = null;
+
+        state.totalBeats++;
+        state.crowdBeatTime = now;
+        state.beatFlashIntensity = 1;
+        elements.gameCanvas.classList.remove('beat-pulse');
+        void elements.gameCanvas.offsetWidth;
+        elements.gameCanvas.classList.add('beat-pulse');
+        simulateAI();
+    } else {
+        state.activeBeat = null;
+    }
+
+    // Record hold start for replay
+    if (_recordInput && state.isRecording) {
+        const relativeTime = now - state.gameStartTime;
+        _recordInput(relativeTime, beat.index, 'hold_start', 0);
+    }
+}
+
+/**
+ * Handles input release - calculates hold beat score
+ * Called on keyup/touchend
+ */
+export function handleInputRelease() {
+    if (state.currentState !== GameState.PLAYING) return;
+    if (state.isPaused) return;
+    if (!state.holdState.isHolding) return;
+
+    const now = performance.now();
+    const { holdState } = state;
+
+    // Calculate hold score
+    const result = calculateHoldScore(now);
+
+    // Update stats based on overall result
+    // Note: Combo was already incremented during the hold, so we only add a bonus on release
+    const overallRating = result.overallRating;
+    if (overallRating === 'perfect') {
+        state.playerStats.perfect++;
+        // Bonus combo for perfect release
+        state.playerCombo++;
+        if (state.playerCombo > state.playerMaxCombo) {
+            state.playerMaxCombo = state.playerCombo;
+        }
+
+        // Screen shake on perfect holds
+        if (!state.settings.reducedEffects && state.crowdBgCanvas) {
+            if (state.playerCombo >= 10) {
+                const shakeClass = state.playerCombo >= 30 ? 'shake-intense' : 'shake';
+                state.crowdBgCanvas.classList.remove('shake', 'shake-intense');
+                void state.crowdBgCanvas.offsetWidth;
+                state.crowdBgCanvas.classList.add(shakeClass);
+            }
+        }
+    } else if (overallRating === 'good') {
+        state.playerStats.good++;
+        // Combo maintained, no bonus
+    } else if (overallRating === 'ok') {
+        state.playerStats.ok++;
+        // Combo maintained, no bonus
+    } else {
+        state.playerStats.miss++;
+        state.playerCombo = 0;
+        state.powerupChargeProgress = 0;
+    }
+
+    // Apply combo multiplier + modifier multiplier + powerup multiplier
+    const comboMultiplier = getComboMultiplier();
+    const modifierMultiplier = state.modifierScoreMultiplier || 1.0;
+    const powerupMultiplier = state.activePowerupMultiplier || 1.0;
+    const totalMultiplier = comboMultiplier * modifierMultiplier * powerupMultiplier;
+    const scoreGained = Math.floor(result.totalScore * totalMultiplier);
+    state.playerScore += scoreGained;
+
+    if (state.playerCombo > state.playerMaxCombo) {
+        state.playerMaxCombo = state.playerCombo;
+    }
+
+    // Mark beat result
+    if (holdState.currentBeatIndex !== null) {
+        state.beatResults[holdState.currentBeatIndex] = overallRating;
+    }
+
+    // Visual/audio feedback
+    showFeedback(overallRating.toUpperCase());
+    playSFX(overallRating.toUpperCase());
+
+    // Haptic feedback
+    if (navigator.vibrate) {
+        switch (overallRating) {
+            case 'perfect': navigator.vibrate([15, 5, 15]); break;
+            case 'good': navigator.vibrate([10]); break;
+            case 'ok': navigator.vibrate([5]); break;
+            case 'miss': navigator.vibrate([40]); break;
+        }
+    }
+
+    // Crowd audio
+    if (overallRating === 'perfect') {
+        playCrowdCheer(state.playerCombo >= 10 ? 'loud' : 'normal');
+    } else if (overallRating === 'good') {
+        playCrowdCheer('soft');
+    } else if (overallRating === 'miss') {
+        playCrowdGroan();
+    }
+
+    // Record hold end for replay
+    if (_recordInput && state.isRecording) {
+        const relativeTime = now - state.gameStartTime;
+        const holdDuration = now - holdState.pressTime;
+        _recordInput(relativeTime, holdState.currentBeatIndex, overallRating, scoreGained, 'hold', holdDuration);
+    }
+
+    // Update power-up charge progress
+    updatePowerupCharge();
+
+    elements.playerScore.textContent = state.playerScore;
+    updateComboDisplay();
+    showHitEffect(overallRating.toUpperCase());
+
+    // Spawn visual effects
+    if (overallRating !== 'miss' && holdState.currentBeatIndex !== null) {
+        const beatData = state.detectedBeats[holdState.currentBeatIndex];
+        const beatTime = typeof beatData === 'object' ? beatData.time : beatData;
+        const hitColor = BEAT_RESULT_COLORS[overallRating] || '#ffffff';
+        state.beatHitEffects.push({
+            beatTime: beatTime,
+            color: hitColor,
+            spawnTime: now
+        });
+    }
+
+    // Reset hold state
+    state.holdState = {
+        isHolding: false,
+        currentBeatIndex: null,
+        pressTime: 0,
+        pressRating: null,
+        expectedEndTime: 0,
+        holdProgress: 0,
+        wasBroken: false,
+        lastComboTick: 0,
+        comboTickCount: 0,
+    };
+}
+
+/**
+ * Calculates the score for a hold beat based on press, hold, and release
+ * @param {number} releaseTime - When the player released
+ * @returns {Object} Score breakdown and overall rating
+ */
+function calculateHoldScore(releaseTime) {
+    const { holdState } = state;
+
+    // Press score (based on initial press rating)
+    let pressScore = 0;
+    switch (holdState.pressRating) {
+        case 'perfect': pressScore = SCORE.PERFECT; break;
+        case 'good': pressScore = SCORE.GOOD; break;
+        case 'ok': pressScore = SCORE.OK; break;
+        default: pressScore = 0;
+    }
+
+    // Hold duration score
+    const beatData = state.detectedBeats[holdState.currentBeatIndex];
+    const beatTime = typeof beatData === 'object' ? beatData.time : beatData;
+    const expectedDuration = holdState.expectedEndTime - (state.gameStartTime + beatTime * 1000);
+    const actualDuration = releaseTime - holdState.pressTime;
+    const holdRatio = Math.min(1, actualDuration / expectedDuration);
+
+    let holdScore = SCORE.PERFECT;
+    if (holdState.wasBroken) {
+        holdScore = SCORE.PERFECT * HOLD_SCORING.HOLD_BREAK_PENALTY * holdRatio;
+    } else if (holdRatio >= 0.9) {
+        holdScore = SCORE.PERFECT;
+    } else if (holdRatio >= 0.7) {
+        holdScore = SCORE.GOOD;
+    } else if (holdRatio >= 0.5) {
+        holdScore = SCORE.OK;
+    } else {
+        holdScore = 0;
+    }
+
+    // Release timing score
+    const releaseError = Math.abs(releaseTime - holdState.expectedEndTime);
+    let releaseScore = 0;
+    let releaseRating = 'miss';
+
+    if (releaseError <= state.activeTiming.PERFECT) {
+        releaseScore = SCORE.PERFECT;
+        releaseRating = 'perfect';
+    } else if (releaseError <= state.activeTiming.GOOD) {
+        releaseScore = SCORE.GOOD;
+        releaseRating = 'good';
+    } else if (releaseError <= HOLD_BEAT.RELEASE_WINDOW) {
+        releaseScore = SCORE.OK;
+        releaseRating = 'ok';
+    } else {
+        // Released too early or too late
+        releaseScore = 0;
+        releaseRating = 'miss';
+    }
+
+    // Calculate weighted total
+    const totalScore = Math.floor(
+        pressScore * HOLD_SCORING.PRESS_WEIGHT +
+        holdScore * HOLD_SCORING.HOLD_WEIGHT +
+        releaseScore * HOLD_SCORING.RELEASE_WEIGHT
+    );
+
+    // Determine overall rating based on weighted average
+    const maxPossible = SCORE.PERFECT;
+    const scoreRatio = totalScore / maxPossible;
+
+    let overallRating;
+    if (scoreRatio >= 0.8 && !holdState.wasBroken) {
+        overallRating = 'perfect';
+    } else if (scoreRatio >= 0.5) {
+        overallRating = 'good';
+    } else if (scoreRatio >= 0.25) {
+        overallRating = 'ok';
+    } else {
+        overallRating = 'miss';
+    }
+
+    return {
+        pressScore,
+        holdScore,
+        releaseScore,
+        totalScore,
+        overallRating,
+        holdRatio,
+        releaseRating,
+    };
+}
+
+/**
+ * Updates hold progress - called from game loop
+ * Checks if hold was broken (player released too early)
+ */
+export function updateHoldProgress() {
+    if (!state.holdState.isHolding) return;
+
+    const now = performance.now();
+    const { holdState } = state;
+
+    // Calculate progress
+    const beatData = state.detectedBeats[holdState.currentBeatIndex];
+    if (!beatData || typeof beatData !== 'object') return;
+
+    const holdStartWall = state.gameStartTime + beatData.time * 1000;
+    const holdDurationMs = beatData.duration * 1000;
+    const elapsed = now - holdStartWall;
+    holdState.holdProgress = Math.max(0, Math.min(1, elapsed / holdDurationMs));
+
+    // Increment combo at regular intervals during hold (if not broken)
+    if (!holdState.wasBroken) {
+        const tickInterval = HOLD_SCORING.COMBO_TICK_INTERVAL;
+        const currentTick = Math.floor(holdState.holdProgress / tickInterval);
+        const previousTicks = holdState.comboTickCount;
+
+        if (currentTick > previousTicks) {
+            // Award combo and score for each new tick
+            const newTicks = currentTick - previousTicks;
+            for (let i = 0; i < newTicks; i++) {
+                state.playerCombo++;
+                if (state.playerCombo > state.playerMaxCombo) {
+                    state.playerMaxCombo = state.playerCombo;
+                }
+
+                // Award incremental score
+                const comboMultiplier = getComboMultiplier();
+                const modifierMultiplier = state.modifierScoreMultiplier || 1.0;
+                const powerupMultiplier = state.activePowerupMultiplier || 1.0;
+                const tickScore = Math.floor(HOLD_SCORING.SCORE_PER_TICK * comboMultiplier * modifierMultiplier * powerupMultiplier);
+                state.playerScore += tickScore;
+
+                // Update power-up charge
+                updatePowerupCharge();
+            }
+
+            holdState.comboTickCount = currentTick;
+            holdState.lastComboTick = holdState.holdProgress;
+
+            // Visual/audio feedback for combo tick
+            showFeedback(`+${state.playerCombo}`);
+            state.feedbackColor = '#00ffaa';
+            updateComboDisplay();
+            elements.playerScore.textContent = state.playerScore;
+
+            // Subtle haptic for combo tick
+            if (navigator.vibrate) {
+                navigator.vibrate([5]);
+            }
+        }
+    }
+
+    // Check if hold should be auto-released (past the window)
+    const releaseWindowEnd = holdState.expectedEndTime + HOLD_BEAT.RELEASE_WINDOW;
+    if (now > releaseWindowEnd && !holdState.wasBroken) {
+        // Player held too long - auto-trigger release with penalty
+        handleInputRelease();
+    }
+}
+
+/**
+ * Marks the hold as broken (player released during grace period)
+ * Called when player releases key while holding
+ */
+export function breakHold() {
+    if (!state.holdState.isHolding) return;
+
+    const now = performance.now();
+    const holdDuration = now - state.holdState.pressTime;
+
+    // Grace period - if released very quickly, don't break yet
+    if (holdDuration < HOLD_BEAT.HOLD_GRACE_PERIOD) {
+        return;
+    }
+
+    state.holdState.wasBroken = true;
+}
+
+/**
+ * Simulates AI hold beat behavior
+ * @param {Object} beatData - The hold beat data
+ */
+export function simulateAIHoldBeat(beatData) {
+    let accuracy = AI_ACCURACY;
+    const personality = state.aiPersonality;
+
+    // Use personality-based accuracy in matchday mode
+    if (state.gameMode === 'matchday' && personality) {
+        accuracy = personality.baseAccuracy;
+
+        // Apply rubber banding
+        const diff = state.playerScore - state.aiScore;
+        const rubberBand = personality.rubberBandStrength || 1.0;
+        if (diff < -AI_RUBBER_BAND.SCORE_DIFF_THRESHOLD) {
+            accuracy -= AI_RUBBER_BAND.LOSING_REDUCTION * rubberBand;
+        } else if (diff > AI_RUBBER_BAND.SCORE_DIFF_THRESHOLD) {
+            accuracy += AI_RUBBER_BAND.WINNING_INCREASE * rubberBand;
+        }
+    }
+
+    accuracy = Math.max(0.3, Math.min(0.95, accuracy));
+
+    // Three rolls for hold beats: press, hold, release
+    const pressRoll = Math.random();
+    const holdRoll = Math.random();
+    const releaseRoll = Math.random();
+
+    let pressScore = 0;
+    if (pressRoll < accuracy) {
+        if (Math.random() < 0.4) pressScore = SCORE.PERFECT;
+        else if (Math.random() < 0.7) pressScore = SCORE.GOOD;
+        else pressScore = SCORE.OK;
+    }
+
+    let holdScore = 0;
+    if (holdRoll < accuracy * 0.9) {  // Hold is slightly easier
+        holdScore = SCORE.PERFECT;
+    } else if (holdRoll < accuracy) {
+        holdScore = SCORE.GOOD;
+    }
+
+    let releaseScore = 0;
+    if (releaseRoll < accuracy * 0.8) {  // Release is harder
+        if (Math.random() < 0.35) releaseScore = SCORE.PERFECT;
+        else if (Math.random() < 0.65) releaseScore = SCORE.GOOD;
+        else releaseScore = SCORE.OK;
+    }
+
+    const totalScore = Math.floor(
+        pressScore * HOLD_SCORING.PRESS_WEIGHT +
+        holdScore * HOLD_SCORING.HOLD_WEIGHT +
+        releaseScore * HOLD_SCORING.RELEASE_WEIGHT
+    );
+
+    state.aiScore += totalScore;
+    elements.aiScore.textContent = state.aiScore;
+
+    // AI score popup
+    if (totalScore > 0 && elements.aiScorePopupContainer) {
+        const popup = document.createElement('div');
+        popup.className = 'ai-score-popup';
+        popup.textContent = `+${totalScore}`;
         elements.aiScorePopupContainer.appendChild(popup);
         setTimeout(() => popup.remove(), 800);
     }

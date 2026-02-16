@@ -576,3 +576,155 @@ export const LOYALTY_CONFIG = {
         }
     }
 };
+
+// ============================================
+// Hold Beat (Long Press) System
+// ============================================
+
+export const HOLD_BEAT = {
+    MIN_DURATION: 0.3,           // Minimum hold duration (seconds)
+    MAX_DURATION: 15.0,           // Maximum hold duration (seconds)
+    RELEASE_WINDOW: 300,         // Release timing tolerance (ms)
+    HOLD_GRACE_PERIOD: 100,      // Grace before hold counts as broken (ms)
+    // Auto-generation settings
+    AUTO_GENERATE: true,         // Enable auto-generation of hold beats
+    COMBINE_THRESHOLD: 0.30,     // Combine beats closer than this (seconds)
+    MIN_CLUSTER_SIZE: 2,         // Minimum consecutive beats to form a hold
+};
+
+export const HOLD_SCORING = {
+    PRESS_WEIGHT: 0.4,           // 40% of score from press timing
+    HOLD_WEIGHT: 0.3,            // 30% of score from hold duration
+    RELEASE_WEIGHT: 0.3,         // 30% of score from release timing
+    HOLD_BREAK_PENALTY: 0.5,     // 50% penalty if hold was broken
+    COMBO_TICK_INTERVAL: 0.2,    // Increment combo every 20% of hold progress
+    SCORE_PER_TICK: 15,          // Score awarded per combo tick during hold
+};
+
+/**
+ * Normalizes a beats array to uniform format.
+ * Converts mixed arrays (numbers and hold objects) to consistent beat objects.
+ * @param {Array} beats - Mixed array of beat times or hold beat objects
+ * @returns {Array} Normalized array of beat objects
+ *
+ * Input formats:
+ *   - number: tap beat at that time (e.g., 0.5)
+ *   - {time: number, duration: number}: hold beat
+ *
+ * Output format:
+ *   - {time: number, type: 'tap'}
+ *   - {time: number, type: 'hold', duration: number, endTime: number}
+ */
+export function normalizeBeats(beats) {
+    if (!beats || !Array.isArray(beats)) return [];
+
+    return beats.map(beat => {
+        if (typeof beat === 'number') {
+            // Simple tap beat
+            return { time: beat, type: 'tap' };
+        } else if (typeof beat === 'object' && beat !== null && typeof beat.time === 'number') {
+            // Hold beat or already normalized beat
+            if (typeof beat.duration === 'number' && beat.duration >= HOLD_BEAT.MIN_DURATION) {
+                return {
+                    time: beat.time,
+                    type: 'hold',
+                    duration: Math.min(beat.duration, HOLD_BEAT.MAX_DURATION),
+                    endTime: beat.time + Math.min(beat.duration, HOLD_BEAT.MAX_DURATION)
+                };
+            } else if (beat.type === 'hold' && beat.endTime) {
+                // Already normalized hold beat
+                return beat;
+            } else if (beat.type === 'tap') {
+                // Already normalized tap beat
+                return beat;
+            } else {
+                // Object with time but no valid duration - treat as tap
+                return { time: beat.time, type: 'tap' };
+            }
+        }
+        // Invalid format - skip (will be filtered out)
+        console.warn('Invalid beat format:', beat);
+        return null;
+    }).filter(beat => beat !== null);
+}
+
+/**
+ * Auto-generates hold beats by combining closely-spaced beats into holds.
+ * Scans through beats and finds clusters where consecutive beats are closer
+ * than HOLD_BEAT.COMBINE_THRESHOLD. Clusters with MIN_CLUSTER_SIZE or more
+ * beats become hold beats spanning from first to last beat in the cluster.
+ *
+ * @param {Array} beats - Array of raw beat times (numbers) from beat detection
+ * @returns {Array} Normalized array with auto-generated hold beats
+ *
+ * Example:
+ *   Input:  [1.0, 1.15, 1.30, 1.45, 2.5, 3.0, 3.12, 3.24, 3.36, 4.5]
+ *   Output: [
+ *     {time: 1.0, type: 'hold', duration: 0.45, endTime: 1.45},  // cluster of 4
+ *     {time: 2.5, type: 'tap'},                                   // isolated
+ *     {time: 3.0, type: 'hold', duration: 0.36, endTime: 3.36},  // cluster of 4
+ *     {time: 4.5, type: 'tap'}                                    // isolated
+ *   ]
+ */
+export function autoGenerateHoldBeats(beats) {
+    if (!beats || !Array.isArray(beats) || beats.length === 0) return [];
+    if (!HOLD_BEAT.AUTO_GENERATE) {
+        // Auto-generation disabled, just normalize as tap beats
+        return beats.map(time => ({ time, type: 'tap' }));
+    }
+
+    const threshold = HOLD_BEAT.COMBINE_THRESHOLD;
+    const minClusterSize = HOLD_BEAT.MIN_CLUSTER_SIZE;
+    const result = [];
+
+    // Sort beats by time (should already be sorted, but ensure)
+    const sortedBeats = [...beats].sort((a, b) => a - b);
+
+    let i = 0;
+    while (i < sortedBeats.length) {
+        // Start a potential cluster
+        const clusterStart = i;
+        let clusterEnd = i;
+
+        // Extend cluster while beats are close together
+        while (clusterEnd < sortedBeats.length - 1) {
+            const gap = sortedBeats[clusterEnd + 1] - sortedBeats[clusterEnd];
+            if (gap <= threshold) {
+                clusterEnd++;
+            } else {
+                break;
+            }
+        }
+
+        const clusterSize = clusterEnd - clusterStart + 1;
+
+        if (clusterSize >= minClusterSize) {
+            // Create a hold beat spanning the cluster
+            const startTime = sortedBeats[clusterStart];
+            const endTime = sortedBeats[clusterEnd];
+            const duration = endTime - startTime;
+
+            // Only create hold if duration meets minimum
+            if (duration >= HOLD_BEAT.MIN_DURATION) {
+                result.push({
+                    time: startTime,
+                    type: 'hold',
+                    duration: Math.min(duration, HOLD_BEAT.MAX_DURATION),
+                    endTime: startTime + Math.min(duration, HOLD_BEAT.MAX_DURATION)
+                });
+            } else {
+                // Duration too short, keep first beat as tap
+                result.push({ time: startTime, type: 'tap' });
+            }
+        } else {
+            // Not enough beats for a hold, add as individual taps
+            for (let j = clusterStart; j <= clusterEnd; j++) {
+                result.push({ time: sortedBeats[j], type: 'tap' });
+            }
+        }
+
+        i = clusterEnd + 1;
+    }
+
+    return result;
+}

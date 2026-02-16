@@ -9,6 +9,339 @@ import { getComboMultiplier, releaseParticle } from './input.js';
 
 let _resizeHandler = null;
 
+/**
+ * Draws a hold beat with enhanced visuals
+ * @param {CanvasRenderingContext2D} ctx - Canvas context
+ * @param {number} startX - X position of hold start
+ * @param {number} endX - X position of hold end
+ * @param {number} y - Y position (center)
+ * @param {number} height - Height of the hold bar
+ * @param {number} progress - 0-1 fill progress
+ * @param {string} color - Base color
+ * @param {number} alpha - Opacity
+ * @param {boolean} wasBroken - Whether the hold was broken
+ */
+function drawHoldBeat(ctx, startX, endX, y, height, progress, color, alpha, wasBroken) {
+    const halfHeight = height * 1.2;  // Slightly taller for visibility
+    const minWidth = height * 3;
+    const now = performance.now();
+
+    // Handle cases where start is off-screen to the left
+    const visibleStartX = Math.max(-halfHeight, startX);
+    const width = Math.max(minWidth, Math.abs(endX - visibleStartX));
+    const left = Math.min(visibleStartX, endX);
+
+    ctx.globalAlpha = alpha;
+
+    // === Outer glow (when active) ===
+    if (progress > 0 && !wasBroken) {
+        const glowPulse = 0.3 + Math.sin(now / 150) * 0.15;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 15 + glowPulse * 10;
+        ctx.fillStyle = 'rgba(0,0,0,0)';
+        ctx.beginPath();
+        roundedRect(ctx, left - 2, y - halfHeight - 2, width + 4, halfHeight * 2 + 4, halfHeight);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+    }
+
+    // === Background track with gradient ===
+    const trackGrad = ctx.createLinearGradient(left, y - halfHeight, left, y + halfHeight);
+    if (wasBroken) {
+        trackGrad.addColorStop(0, '#661111');
+        trackGrad.addColorStop(0.5, '#aa2222');
+        trackGrad.addColorStop(1, '#661111');
+    } else {
+        trackGrad.addColorStop(0, '#1a1a2e');
+        trackGrad.addColorStop(0.3, '#2a2a4e');
+        trackGrad.addColorStop(0.7, '#2a2a4e');
+        trackGrad.addColorStop(1, '#1a1a2e');
+    }
+    ctx.fillStyle = trackGrad;
+    ctx.beginPath();
+    roundedRect(ctx, left, y - halfHeight, width, halfHeight * 2, halfHeight);
+    ctx.fill();
+
+    // === Inner track lines (rail effect) ===
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(left + halfHeight, y - halfHeight * 0.4);
+    ctx.lineTo(left + width - halfHeight, y - halfHeight * 0.4);
+    ctx.moveTo(left + halfHeight, y + halfHeight * 0.4);
+    ctx.lineTo(left + width - halfHeight, y + halfHeight * 0.4);
+    ctx.stroke();
+
+    // === Progress fill with animated gradient ===
+    if (progress > 0) {
+        const fillWidth = width * progress;
+
+        // Animated color shift based on progress
+        const hue = progress < 0.5 ? 200 : (200 - (progress - 0.5) * 100);  // Blue to cyan/green
+        const progressColor = wasBroken ? '#ff4444' : `hsl(${hue}, 80%, 55%)`;
+        const progressColorLight = wasBroken ? '#ff6666' : `hsl(${hue}, 90%, 70%)`;
+
+        const fillGrad = ctx.createLinearGradient(left, y - halfHeight, left, y + halfHeight);
+        fillGrad.addColorStop(0, progressColorLight);
+        fillGrad.addColorStop(0.5, progressColor);
+        fillGrad.addColorStop(1, progressColorLight);
+
+        ctx.save();
+        ctx.beginPath();
+        roundedRect(ctx, left, y - halfHeight, width, halfHeight * 2, halfHeight);
+        ctx.clip();
+
+        ctx.fillStyle = fillGrad;
+        ctx.fillRect(left, y - halfHeight, fillWidth, halfHeight * 2);
+
+        // Animated shimmer effect
+        if (!wasBroken && !state.settings.reducedEffects) {
+            const shimmerX = left + (now / 10) % (width * 1.5) - width * 0.25;
+            const shimmerGrad = ctx.createLinearGradient(shimmerX, 0, shimmerX + 40, 0);
+            shimmerGrad.addColorStop(0, 'rgba(255,255,255,0)');
+            shimmerGrad.addColorStop(0.5, 'rgba(255,255,255,0.3)');
+            shimmerGrad.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = shimmerGrad;
+            ctx.fillRect(left, y - halfHeight, fillWidth, halfHeight * 2);
+        }
+
+        // Leading edge glow
+        const edgeX = left + fillWidth;
+        const edgeGrad = ctx.createRadialGradient(edgeX, y, 0, edgeX, y, halfHeight * 1.5);
+        edgeGrad.addColorStop(0, 'rgba(255,255,255,0.8)');
+        edgeGrad.addColorStop(0.3, progressColorLight);
+        edgeGrad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = edgeGrad;
+        ctx.fillRect(edgeX - halfHeight * 1.5, y - halfHeight, halfHeight * 3, halfHeight * 2);
+
+        ctx.restore();
+    }
+
+    // === Track outline ===
+    const outlineGrad = ctx.createLinearGradient(left, y - halfHeight, left, y + halfHeight);
+    if (wasBroken) {
+        outlineGrad.addColorStop(0, '#ff6666');
+        outlineGrad.addColorStop(1, '#cc3333');
+    } else if (progress > 0) {
+        outlineGrad.addColorStop(0, '#ffffff');
+        outlineGrad.addColorStop(0.5, color);
+        outlineGrad.addColorStop(1, '#ffffff');
+    } else {
+        outlineGrad.addColorStop(0, 'rgba(255,255,255,0.6)');
+        outlineGrad.addColorStop(1, 'rgba(255,255,255,0.3)');
+    }
+    ctx.strokeStyle = outlineGrad;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    roundedRect(ctx, left, y - halfHeight, width, halfHeight * 2, halfHeight);
+    ctx.stroke();
+
+    // === Start marker (diamond shape) ===
+    if (startX > -halfHeight) {
+        const startSize = halfHeight * 0.9;
+        const startPulse = progress > 0 ? 1 + Math.sin(now / 100) * 0.1 : 1;
+
+        // Glow behind start marker
+        if (progress === 0) {
+            ctx.shadowColor = '#ffffff';
+            ctx.shadowBlur = 8;
+        }
+
+        // Diamond shape
+        ctx.fillStyle = progress > 0 ? color : '#ffffff';
+        ctx.beginPath();
+        ctx.moveTo(startX, y - startSize * startPulse);
+        ctx.lineTo(startX + startSize * 0.7 * startPulse, y);
+        ctx.lineTo(startX, y + startSize * startPulse);
+        ctx.lineTo(startX - startSize * 0.7 * startPulse, y);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.shadowBlur = 0;
+
+        // Inner highlight
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.beginPath();
+        ctx.moveTo(startX, y - startSize * 0.5 * startPulse);
+        ctx.lineTo(startX + startSize * 0.35 * startPulse, y);
+        ctx.lineTo(startX, y + startSize * 0.5 * startPulse);
+        ctx.lineTo(startX - startSize * 0.35 * startPulse, y);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    // === End marker (target circle) ===
+    const endSize = halfHeight * 0.8;
+    const nearEnd = progress >= 0.85;
+    const endPulse = nearEnd ? 1 + Math.sin(now / 80) * 0.15 : 1;
+
+    // Outer ring
+    ctx.strokeStyle = nearEnd ? '#00ff88' : 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = nearEnd ? 3 : 2;
+    ctx.beginPath();
+    ctx.arc(endX, y, endSize * endPulse, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Inner fill
+    const endGrad = ctx.createRadialGradient(endX, y, 0, endX, y, endSize);
+    if (progress >= 0.95) {
+        endGrad.addColorStop(0, '#00ff88');
+        endGrad.addColorStop(0.7, '#00cc66');
+        endGrad.addColorStop(1, '#009944');
+    } else if (nearEnd) {
+        endGrad.addColorStop(0, '#88ffaa');
+        endGrad.addColorStop(1, '#446655');
+    } else {
+        endGrad.addColorStop(0, '#555566');
+        endGrad.addColorStop(1, '#333344');
+    }
+    ctx.fillStyle = endGrad;
+    ctx.beginPath();
+    ctx.arc(endX, y, endSize * 0.7 * endPulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Crosshair on end marker
+    if (!nearEnd) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(endX - endSize * 0.5, y);
+        ctx.lineTo(endX + endSize * 0.5, y);
+        ctx.moveTo(endX, y - endSize * 0.5);
+        ctx.lineTo(endX, y + endSize * 0.5);
+        ctx.stroke();
+    }
+
+    // === Connector dots along the track ===
+    if (progress === 0 && alpha > 0.3 && !state.settings.reducedEffects) {
+        const dotSpacing = 20;
+        const dotCount = Math.floor((width - halfHeight * 2) / dotSpacing);
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        for (let i = 1; i < dotCount; i++) {
+            const dotX = left + halfHeight + i * dotSpacing;
+            const dotPulse = Math.sin(now / 300 + i * 0.5) * 0.5 + 0.5;
+            ctx.beginPath();
+            ctx.arc(dotX, y, 2 + dotPulse, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    // === "HOLD" label with better styling ===
+    if (progress === 0 && alpha > 0.5 && startX > 0 && width > 80) {
+        const labelX = (startX + endX) / 2;
+
+        // Text shadow/glow
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 4;
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('HOLD', labelX, y);
+        ctx.shadowBlur = 0;
+
+        // Arrow indicators
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        const arrowY = y;
+        const arrowOffset = 28;
+        // Left arrow
+        ctx.beginPath();
+        ctx.moveTo(labelX - arrowOffset, arrowY);
+        ctx.lineTo(labelX - arrowOffset - 5, arrowY - 4);
+        ctx.lineTo(labelX - arrowOffset - 5, arrowY + 4);
+        ctx.closePath();
+        ctx.fill();
+        // Right arrow
+        ctx.beginPath();
+        ctx.moveTo(labelX + arrowOffset, arrowY);
+        ctx.lineTo(labelX + arrowOffset + 5, arrowY - 4);
+        ctx.lineTo(labelX + arrowOffset + 5, arrowY + 4);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    // === Combo counter during active hold ===
+    if (progress > 0 && !wasBroken) {
+        const combo = state.playerCombo;
+        const comboX = visibleStartX + (endX - visibleStartX) * progress;
+        const comboY = y - halfHeight - 12;
+
+        // Combo bubble background
+        const bubbleWidth = combo >= 100 ? 36 : combo >= 10 ? 28 : 22;
+        const bubbleHeight = 16;
+
+        // Pulsing effect on combo
+        const pulse = 1 + Math.sin(now / 100) * 0.08;
+
+        ctx.save();
+        ctx.translate(comboX, comboY);
+        ctx.scale(pulse, pulse);
+
+        // Bubble gradient
+        const bubbleGrad = ctx.createLinearGradient(0, -bubbleHeight/2, 0, bubbleHeight/2);
+        bubbleGrad.addColorStop(0, '#00ffaa');
+        bubbleGrad.addColorStop(1, '#00aa66');
+        ctx.fillStyle = bubbleGrad;
+
+        // Draw rounded bubble
+        ctx.beginPath();
+        roundedRect(ctx, -bubbleWidth/2, -bubbleHeight/2, bubbleWidth, bubbleHeight, 8);
+        ctx.fill();
+
+        // Bubble border
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Combo text
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#000000';
+        ctx.fillText(`${combo}x`, 0, 0);
+
+        ctx.restore();
+
+        // === Score ticks indicator ===
+        const tickCount = state.holdState.comboTickCount || 0;
+        if (tickCount > 0) {
+            const tickY = y + halfHeight + 8;
+            const tickSpacing = 8;
+            const totalTickWidth = (tickCount - 1) * tickSpacing;
+            const tickStartX = comboX - totalTickWidth / 2;
+
+            for (let i = 0; i < tickCount; i++) {
+                const tickX = tickStartX + i * tickSpacing;
+                const tickPulse = i === tickCount - 1 ? (1 + Math.sin(now / 80) * 0.3) : 1;
+
+                ctx.fillStyle = i === tickCount - 1 ? '#00ffaa' : '#00aa77';
+                ctx.beginPath();
+                ctx.arc(tickX, tickY, 3 * tickPulse, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+
+    ctx.globalAlpha = 1;
+}
+
+/**
+ * Helper to draw a rounded rectangle path
+ */
+function roundedRect(ctx, x, y, width, height, radius) {
+    radius = Math.min(radius, width / 2, height / 2);
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+}
+
 // Performance: Cache upcoming beats array to avoid recreation each frame
 const _upcomingBeatsCache = {
     indices: new Array(5),
@@ -271,7 +604,9 @@ export function drawVisualizer() {
     if (_upcomingBeatsCache.lastNextBeatIndex !== state.nextBeatIndex) {
         _upcomingBeatsCache.count = 0;
         for (let i = state.nextBeatIndex; i < state.detectedBeats.length && _upcomingBeatsCache.count < 5; i++) {
-            const x = timeToX(state.detectedBeats[i]);
+            const beat = state.detectedBeats[i];
+            const beatTime = typeof beat === 'object' ? beat.time : beat;
+            const x = timeToX(beatTime);
             if (x >= hitLineX - okHalfW) {
                 _upcomingBeatsCache.indices[_upcomingBeatsCache.count++] = i;
             }
@@ -291,19 +626,82 @@ export function drawVisualizer() {
     const beatsLen = beats.length;
 
     for (let i = startIdx; i < beatsLen; i++) {
-        const beatTime = beats[i];
+        const beatData = beats[i];
+        // Handle both normalized beat objects and raw numbers (backwards compatibility)
+        const beatTime = typeof beatData === 'object' ? beatData.time : beatData;
+        const isHoldBeat = typeof beatData === 'object' && beatData.type === 'hold';
+        const beatEndTime = isHoldBeat ? beatData.endTime : beatTime;
 
-        // Skip beats too far in the past
-        if (beatTime < minVisibleTime) continue;
-        // Stop if beats are too far in the future
+        // For hold beats, check if ANY part is visible (start OR end)
+        // Skip only if the entire beat (including hold duration) is too far in the past
+        if (beatEndTime < minVisibleTime) continue;
+        // Stop if beat start is too far in the future
         if (beatTime > maxVisibleTime) break;
 
         const x = timeToX(beatTime);
-        if (x < -beatRMargin || x > w + beatRMargin) continue;
+
+        // Check if this is the currently held beat (always show)
+        const isBeingHeld = state.holdState.isHolding && state.holdState.currentBeatIndex === i;
+
+        // For hold beats, check if any part is visible; for tap beats, check if in margin
+        if (isHoldBeat) {
+            const endX = timeToX(beatEndTime);
+            // Skip only if entire hold is off-screen (both start and end)
+            if (endX < -beatRMargin && x < -beatRMargin) continue;
+            if (x > w + beatRMargin) continue;
+        } else {
+            if (x < -beatRMargin || x > w + beatRMargin) continue;
+        }
 
         const isPast = i < state.nextBeatIndex;
         let color, alpha, radius;
 
+        // Draw hold beats differently
+        if (isHoldBeat) {
+            const endTime = beatData.endTime;
+            const endX = timeToX(endTime);
+
+            if (isBeingHeld) {
+                // Currently being held - always show with full visibility
+                // Clamp startX to screen edge if it scrolled past
+                const clampedX = Math.max(-beatR * 2, x);
+                drawHoldBeat(ctx, clampedX, endX, midY, beatR, state.holdState.holdProgress, '#00aaff', 1, state.holdState.wasBroken);
+                continue;
+            } else if (isPast) {
+                const result = state.beatResults[i];
+                if (result && result !== 'miss') continue;
+                color = BEAT_RESULT_COLORS.miss;
+                const trailPx = trailTime * pxPerSec;
+                // Use end position for fade calculation on long holds
+                const fadeRef = Math.max(x, endX);
+                alpha = Math.max(0, fadeRef / trailPx);
+                alpha = alpha * alpha;
+                drawHoldBeat(ctx, x, endX, midY, beatR * 0.8, 0, color, alpha, false);
+                continue;
+            } else {
+                // Upcoming hold beat
+                const distFromRight = isMirror ? x : w - x;
+                const approach = Math.min(1, distFromRight / leadPx);
+                alpha = 0.4 + 0.6 * approach;
+                color = '#00aaff';  // Blue for hold beats
+
+                // Check if in hit zone
+                const distToHitLine = Math.abs(x - hitLineX);
+                if (distToHitLine < okHalfW) {
+                    if (distToHitLine < perfectHalfW) {
+                        color = '#00ffcc';
+                    } else if (distToHitLine < goodHalfW) {
+                        color = '#00ddaa';
+                    }
+                    alpha = 1;
+                }
+
+                drawHoldBeat(ctx, x, endX, midY, beatR, 0, color, alpha, false);
+                continue;
+            }
+        }
+
+        // Standard tap beat drawing
         if (isPast) {
             const result = state.beatResults[i];
             if (result && result !== 'miss') continue;

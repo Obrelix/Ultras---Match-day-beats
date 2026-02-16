@@ -55,18 +55,27 @@ export function startRecording() {
  * Records an input event during gameplay
  * @param {number} time - Timestamp relative to game start (ms)
  * @param {number} beatIndex - Index of the beat that was hit (-1 for miss with no beat)
- * @param {string} result - Hit result: 'perfect', 'good', 'ok', 'miss'
+ * @param {string} result - Hit result: 'perfect', 'good', 'ok', 'miss', 'hold_start'
  * @param {number} score - Score gained from this input
+ * @param {string} [type='tap'] - Input type: 'tap' or 'hold'
+ * @param {number} [holdDuration=0] - Duration of hold in ms (for hold beats)
  */
-export function recordInput(time, beatIndex, result, score) {
+export function recordInput(time, beatIndex, result, score, type = 'tap', holdDuration = 0) {
     if (!state.isRecording || !state.replayData) return;
 
-    state.replayData.inputs.push({
+    const input = {
         t: Math.round(time),      // Time in ms (rounded to save space)
         b: beatIndex,             // Beat index
-        r: result.charAt(0),      // First char of result (p/g/o/m)
+        r: result.charAt(0),      // First char of result (p/g/o/m/h for hold_start)
         s: score                  // Score
-    });
+    };
+
+    // Add hold-specific data
+    if (type === 'hold') {
+        input.h = Math.round(holdDuration);  // Hold duration in ms
+    }
+
+    state.replayData.inputs.push(input);
 }
 
 /**
@@ -262,12 +271,22 @@ export function getNextReplayInput(currentTime) {
     const nextInput = inputs[state.replayInputIndex];
     if (nextInput.t <= currentTime) {
         state.replayInputIndex++;
-        return {
+        const result = {
             time: nextInput.t,
             beatIndex: nextInput.b,
             result: expandResult(nextInput.r),
             score: nextInput.s
         };
+
+        // Include hold-specific data if present
+        if (nextInput.h !== undefined) {
+            result.type = 'hold';
+            result.holdDuration = nextInput.h;
+        } else {
+            result.type = 'tap';
+        }
+
+        return result;
     }
 
     return null;
@@ -284,6 +303,7 @@ function expandResult(char) {
         case 'g': return 'good';
         case 'o': return 'ok';
         case 'm': return 'miss';
+        case 'h': return 'hold_start';  // Hold beat initiation
         default: return 'miss';
     }
 }

@@ -2,7 +2,7 @@
 // main.js — Entry point, game loop, event wiring
 // ============================================
 
-import { GameState, MATCHDAY, DIFFICULTY_PRESETS, BEAT_DETECTION, clubs, MODIFIERS, MODIFIER_BONUSES, POWERUPS, POWERUP_KEY, AI_PERSONALITIES, CLUB_AI_PERSONALITIES } from './config.js';
+import { GameState, MATCHDAY, DIFFICULTY_PRESETS, BEAT_DETECTION, clubs, MODIFIERS, MODIFIER_BONUSES, POWERUPS, POWERUP_KEY, AI_PERSONALITIES, CLUB_AI_PERSONALITIES, normalizeBeats, autoGenerateHoldBeats } from './config.js';
 import { state, resetGameState, resetMatchState } from './state.js';
 import { initAudio, loadAudio, playAudio, stopAudio, setVolume, setSFXVolume, playMetronomeClick } from './audio.js';
 import {
@@ -13,7 +13,7 @@ import {
     initCustomChantDB, getAllCustomChants, saveCustomChant, deleteCustomChant,
     processUploadedFile, decodeCustomChantAudio
 } from './customChants.js';
-import { handleInput, registerMiss, simulateAI, setMainCallbacks } from './input.js';
+import { handleInput, handleInputRelease, registerMiss, simulateAI, simulateAIHoldBeat, updateHoldProgress, setMainCallbacks } from './input.js';
 import { initVisualizer, computeWaveformPeaks, buildWaveformCache, drawVisualizer } from './renderer.js';
 import { initCrowdBg, setCrowdMode, updateCrowdClub } from './crowdBg.js';
 import {
@@ -237,11 +237,16 @@ async function startMatchdayChant() {
 
         // Use manual beats if defined in chant config, otherwise detect automatically
         if (state.selectedChant.beats && state.selectedChant.beats.length > 0) {
-            state.detectedBeats = [...state.selectedChant.beats];
+            // Normalize manual beats (supports mixed tap/hold format)
+            state.detectedBeats = normalizeBeats(state.selectedChant.beats);
             console.log('Using manual beats:', state.detectedBeats.length);
         } else {
             // Pre-analyze beats in Web Worker (non-blocking)
-            state.detectedBeats = await analyzeBeatsAsync(state.audioBuffer);
+            // Auto-generate hold beats from closely-spaced detected beats
+            const rawBeats = await analyzeBeatsAsync(state.audioBuffer);
+            state.detectedBeats = autoGenerateHoldBeats(rawBeats);
+            const holdCount = state.detectedBeats.filter(b => b.type === 'hold').length;
+            console.log(`Auto-detected ${rawBeats.length} beats, generated ${holdCount} hold beats`);
         }
         computeWaveformPeaks();
         buildWaveformCache();
@@ -327,11 +332,16 @@ async function startGame() {
 
         // Use manual beats if defined in chant config, otherwise detect automatically
         if (state.selectedChant.beats && state.selectedChant.beats.length > 0) {
-            state.detectedBeats = [...state.selectedChant.beats];
+            // Normalize manual beats (supports mixed tap/hold format)
+            state.detectedBeats = normalizeBeats(state.selectedChant.beats);
             console.log('Using manual beats:', state.detectedBeats.length);
         } else {
             // Pre-analyze beats in Web Worker (non-blocking)
-            state.detectedBeats = await analyzeBeatsAsync(state.audioBuffer);
+            // Auto-generate hold beats from closely-spaced detected beats
+            const rawBeats = await analyzeBeatsAsync(state.audioBuffer);
+            state.detectedBeats = autoGenerateHoldBeats(rawBeats);
+            const holdCount = state.detectedBeats.filter(b => b.type === 'hold').length;
+            console.log(`Auto-detected ${rawBeats.length} beats, generated ${holdCount} hold beats`);
         }
         computeWaveformPeaks();
         buildWaveformCache();
@@ -423,9 +433,14 @@ function gameLoop() {
     // Check power-up expiration
     checkPowerupExpiration();
 
+    // Update hold beat progress
+    updateHoldProgress();
+
     // Trigger pre-computed beats as playback reaches them
-    while (state.nextBeatIndex < state.detectedBeats.length &&
-           audioElapsed >= state.detectedBeats[state.nextBeatIndex]) {
+    while (state.nextBeatIndex < state.detectedBeats.length) {
+        const beat = state.detectedBeats[state.nextBeatIndex];
+        const beatTime = typeof beat === 'object' ? beat.time : beat;
+        if (audioElapsed < beatTime) break;
         triggerBeat();
         state.nextBeatIndex++;
     }
@@ -471,12 +486,14 @@ function triggerBeat() {
         registerMiss();
     }
 
-    const beatAudioTime = state.detectedBeats[state.nextBeatIndex];
-    const beatWallTime = state.gameStartTime + beatAudioTime * 1000;
+    const beatData = state.detectedBeats[state.nextBeatIndex];
+    const beatTime = typeof beatData === 'object' ? beatData.time : beatData;
+    const beatWallTime = state.gameStartTime + beatTime * 1000;
 
     state.activeBeat = {
         time: beatWallTime,
-        index: state.nextBeatIndex
+        index: state.nextBeatIndex,
+        beatData: beatData  // Include full beat data for hold beat detection
     };
 
     // Visual feedback
@@ -491,8 +508,13 @@ function triggerBeat() {
     // Play metronome click if enabled
     playMetronomeClick();
 
-    // AI plays
-    simulateAI();
+    // AI plays - use different simulation for hold beats
+    const isHoldBeat = typeof beatData === 'object' && beatData.type === 'hold';
+    if (isHoldBeat) {
+        simulateAIHoldBeat(beatData);
+    } else {
+        simulateAI();
+    }
 }
 
 // ============================================
@@ -625,7 +647,7 @@ elements.changeChantBtn.addEventListener('click', () => {
     showScreen('chantSelect');
 });
 
-// Input - Spacebar
+// Input - Spacebar (keydown for press, keyup for release)
 document.addEventListener('keydown', (e) => {
     if (e.code === 'Escape') {
         if (state.isPaused) resumeGame();
@@ -639,6 +661,15 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+// Input release - for hold beats
+document.addEventListener('keyup', (e) => {
+    if (e.code === 'Space' || e.key === ' ') {
+        e.preventDefault();
+        if (state.isPaused) return;
+        handleInputRelease();
+    }
+});
+
 // Touch support for mobile
 let lastTouchTime = 0;
 document.addEventListener('touchstart', (e) => {
@@ -646,6 +677,14 @@ document.addEventListener('touchstart', (e) => {
         e.preventDefault();
         lastTouchTime = performance.now();
         handleInput();
+    }
+}, { passive: false });
+
+// Touch release for hold beats
+document.addEventListener('touchend', (e) => {
+    if (state.currentState === GameState.PLAYING && !state.isPaused) {
+        e.preventDefault();
+        handleInputRelease();
     }
 }, { passive: false });
 
@@ -1210,8 +1249,9 @@ async function startReplayPlayback(replayData) {
         await initAudio();
         await loadAudio(state.selectedChant.audio);
 
-        // Analyze beats
-        state.detectedBeats = await analyzeBeatsAsync(state.audioBuffer);
+        // Analyze beats with auto-generated holds
+        const rawBeats = await analyzeBeatsAsync(state.audioBuffer);
+        state.detectedBeats = autoGenerateHoldBeats(rawBeats);
         replayData.beats = state.detectedBeats;
 
         elements.loadingOverlay.classList.add('hidden');
@@ -1331,7 +1371,8 @@ function drawReplayVisualization(currentTime) {
     const primary = state.selectedClub?.colors?.primary || '#006633';
 
     for (let i = 0; i < beats.length; i++) {
-        const beatTime = beats[i];
+        const beat = beats[i];
+        const beatTime = typeof beat === 'object' ? beat.time : beat;
         const x = (beatTime / (duration / 1000)) * w;
 
         // Determine color based on result
@@ -1487,7 +1528,11 @@ async function startCustomChantGame(chantId) {
 
         await new Promise(resolve => setTimeout(resolve, 50));
 
-        state.detectedBeats = await analyzeBeatsAsync(state.audioBuffer);
+        // Auto-generate hold beats from closely-spaced detected beats
+        const rawBeats = await analyzeBeatsAsync(state.audioBuffer);
+        state.detectedBeats = autoGenerateHoldBeats(rawBeats);
+        const holdCount = state.detectedBeats.filter(b => b.type === 'hold').length;
+        console.log(`Custom chant: ${rawBeats.length} beats, ${holdCount} hold beats`);
         computeWaveformPeaks();
         buildWaveformCache();
 

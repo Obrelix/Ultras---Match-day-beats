@@ -36,8 +36,21 @@ export const state = {
     sfxGain: null,
 
     // Beat detection
-    detectedBeats: [],
+    detectedBeats: [],      // Array of normalized beat objects (tap or hold)
     nextBeatIndex: 0,
+
+    // Hold beat state
+    holdState: {
+        isHolding: false,           // Whether player is currently holding
+        currentBeatIndex: null,     // Index of the hold beat being held
+        pressTime: 0,               // Wall-clock time when press started
+        pressRating: null,          // Rating of the initial press ('perfect', 'good', 'ok')
+        expectedEndTime: 0,         // When the hold should end (wall-clock ms)
+        holdProgress: 0,            // 0-1 progress through the hold
+        wasBroken: false,           // Whether the hold was broken early
+        lastComboTick: 0,           // Last progress value when combo was incremented
+        comboTickCount: 0,          // Number of combo ticks given during this hold
+    },
 
     // Game timing
     gameStartTime: 0,
@@ -165,6 +178,19 @@ export function resetGameState() {
     state.detectedBeats = [];
     state.nextBeatIndex = 0;
     state.beatFlashIntensity = 0;
+
+    // Reset hold state
+    state.holdState = {
+        isHolding: false,
+        currentBeatIndex: null,
+        pressTime: 0,
+        pressRating: null,
+        expectedEndTime: 0,
+        holdProgress: 0,
+        wasBroken: false,
+        lastComboTick: 0,
+        comboTickCount: 0,
+    };
     state.waveformPeaks = null;
     state.beatResults = [];
     state.waveformCacheReady = false;
