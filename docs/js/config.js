@@ -191,7 +191,7 @@ export const LEADERBOARD = {
     // Security is enforced via Firebase Security Rules in the Firebase Console.
     // Ensure database rules restrict writes to authenticated users and validate data.
     FIREBASE: {
-        apiKey: "AIzaSyCVc2VeW2zDk5-TPDAJt8AO1k5O82hHBdM",
+        apiKey: "AIzaSyCVc2VeW2zDk5-TPDAJt8AO1k5O82hHBdM",  // Get from Firebase Console, restrict to your domain in GCP
         authDomain: "ultras---match-day-beats.firebaseapp.com",
         projectId: "ultras---match-day-beats",
         databaseURL: "https://ultras---match-day-beats-default-rtdb.europe-west1.firebasedatabase.app"
