@@ -149,6 +149,15 @@ export const state = {
     aiStreakCounter: 0,            // For wildcard personality streaks
     aiInStreak: false,             // Whether AI is in a hot streak
 
+    // AI Trash Talk
+    trashTalk: {
+        lastMessageTime: 0,        // Timestamp of last trash talk message
+        consecutiveMisses: 0,      // Track player miss streaks
+        messageVisible: false,     // Whether a message is currently shown
+        hideTimeoutId: null        // Timeout ID for hiding message
+    },
+    _nearEndTrashTalkTriggered: false,  // Prevent repeated near-end triggers
+
     // Match Day
     gameMode: null,
     rivalClub: null,
@@ -165,6 +174,10 @@ export const state = {
     isReplaying: false,          // Whether we're playing back a replay
     replayData: null,            // Current replay data being recorded/played
     replayInputIndex: 0,         // Current input index during playback
+
+    // Analytics Session Tracking
+    sessionId: null,             // Current session identifier
+    sessionStartTime: 0,         // When current session started
 
     // Performance: CSS class state tracking (avoids DOM queries)
     _lastFrenzyState: false,
@@ -247,6 +260,15 @@ export function resetGameState() {
     state.aiMood = 'neutral';
     state.aiStreakCounter = 0;
     state.aiInStreak = false;
+
+    // Reset trash talk state
+    state.trashTalk = {
+        lastMessageTime: 0,
+        consecutiveMisses: 0,
+        messageVisible: false,
+        hideTimeoutId: null
+    };
+    state._nearEndTrashTalkTriggered = false;
 
     // Reset replay state (but keep replayData for watching after game)
     state.isRecording = false;

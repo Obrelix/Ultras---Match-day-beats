@@ -2,7 +2,7 @@
 // input.js — Input handling, scoring, AI
 // ============================================
 
-import { GameState, SCORE, BEAT_RESULT_COLORS, AI_ACCURACY, AI_RUBBER_BAND, POWERUPS, AI_PERSONALITIES, CLUB_AI_PERSONALITIES, HOLD_BEAT, HOLD_SCORING } from './config.js';
+import { GameState, SCORE, BEAT_RESULT_COLORS, AI_ACCURACY, AI_RUBBER_BAND, POWERUPS, AI_PERSONALITIES, CLUB_AI_PERSONALITIES, HOLD_BEAT, HOLD_SCORING, TRASH_TALK, TRASH_TALK_PERSONALITIES } from './config.js';
 import { state } from './state.js';
 import { elements } from './ui.js';
 import { playSFX } from './audio.js';
@@ -92,12 +92,16 @@ export function handleInput() {
     // If already holding, ignore new press (release handles scoring)
     if (state.holdState.isHolding) return;
 
+    // Apply input calibration offset (positive offset = player taps late, so subtract to compensate)
+    const inputOffset = state.settings?.inputOffset || 0;
+    const adjustedNow = now - inputOffset;
+
     let bestBeat = null;
     let bestDiff = Infinity;
 
     // Check active beat
     if (state.activeBeat) {
-        const diff = Math.abs(now - state.activeBeat.time);
+        const diff = Math.abs(adjustedNow - state.activeBeat.time);
         if (diff < bestDiff) {
             bestDiff = diff;
             bestBeat = state.activeBeat;
@@ -110,7 +114,7 @@ export function handleInput() {
         // Handle both normalized beat objects and raw numbers (backwards compatibility)
         const beatTime = typeof beat === 'object' ? beat.time : beat;
         const upcomingWallTime = state.gameStartTime + beatTime * 1000;
-        const diff = Math.abs(now - upcomingWallTime);
+        const diff = Math.abs(adjustedNow - upcomingWallTime);
         if (diff < bestDiff) {
             bestDiff = diff;
             bestBeat = { time: upcomingWallTime, index: state.nextBeatIndex, isEarly: true, beatData: beat };
@@ -177,6 +181,9 @@ export function handleInput() {
         state.playerStats.ok++;
         state.playerCombo++;
     }
+
+    // Reset consecutive misses on successful hit
+    triggerTrashTalk('playerHit');
 
     // Check for combo milestone effects
     checkComboMilestone(state.playerCombo);
@@ -381,6 +388,9 @@ export function registerMiss() {
 
     // Trigger combo break effect if breaking a significant combo
     const brokenCombo = state.playerCombo;
+
+    // Trigger AI trash talk for player miss
+    triggerTrashTalk('playerMiss');
     if (brokenCombo >= 10) {
         triggerScreenShake('comboBreak');
         triggerScreenFlash('comboBreak');
@@ -391,6 +401,9 @@ export function registerMiss() {
             void state.crowdBgCanvas.offsetWidth;
             state.crowdBgCanvas.classList.add('combo-break');
         }
+
+        // Trigger combo break trash talk
+        triggerTrashTalk('comboBreak', { brokenCombo });
     }
 
     if (state.activeBeat && state.activeBeat.index !== undefined) {
@@ -630,6 +643,10 @@ export function simulateAI() {
     const scoringRoll = Math.random();
     if (scoringRoll < 0.40) {
         scoreGained = SCORE.PERFECT;
+        // Occasionally trigger AI perfect trash talk
+        if (Math.random() < 0.15) {
+            triggerTrashTalk('aiPerfect');
+        }
     } else if (scoringRoll < 0.70) {
         scoreGained = SCORE.GOOD;
     } else {
@@ -638,6 +655,11 @@ export function simulateAI() {
 
     state.aiScore += scoreGained;
     elements.aiScore.textContent = state.aiScore;
+
+    // Periodic score check for winning/losing trash talk
+    if (Math.random() < 0.05) {
+        triggerTrashTalk('scoreCheck');
+    }
 
     // AI score popup
     if (scoreGained > 0 && elements.aiScorePopupContainer) {
@@ -845,6 +867,10 @@ export function handleInputRelease() {
 function calculateHoldScore(releaseTime) {
     const { holdState } = state;
 
+    // Apply input calibration offset to release timing
+    const inputOffset = state.settings?.inputOffset || 0;
+    const adjustedReleaseTime = releaseTime - inputOffset;
+
     // Press score (based on initial press rating)
     let pressScore = 0;
     switch (holdState.pressRating) {
@@ -858,7 +884,7 @@ function calculateHoldScore(releaseTime) {
     const beatData = state.detectedBeats[holdState.currentBeatIndex];
     const beatTime = typeof beatData === 'object' ? beatData.time : beatData;
     const expectedDuration = holdState.expectedEndTime - (state.gameStartTime + beatTime * 1000);
-    const actualDuration = releaseTime - holdState.pressTime;
+    const actualDuration = adjustedReleaseTime - holdState.pressTime;
     const holdRatio = Math.min(1, actualDuration / expectedDuration);
 
     let holdScore = SCORE.PERFECT;
@@ -874,8 +900,8 @@ function calculateHoldScore(releaseTime) {
         holdScore = 0;
     }
 
-    // Release timing score
-    const releaseError = Math.abs(releaseTime - holdState.expectedEndTime);
+    // Release timing score (use adjusted time)
+    const releaseError = Math.abs(adjustedReleaseTime - holdState.expectedEndTime);
     let releaseScore = 0;
     let releaseRating = 'miss';
 
@@ -1080,5 +1106,214 @@ export function simulateAIHoldBeat(beatData) {
         popup.textContent = `+${totalScore}`;
         elements.aiScorePopupContainer.appendChild(popup);
         setTimeout(() => popup.remove(), 800);
+    }
+}
+
+// ============================================
+// AI Trash Talk System
+// ============================================
+
+/**
+ * Show a trash talk message from the specified category
+ * @param {string} category - Message category from TRASH_TALK.MESSAGES
+ * @param {boolean} force - If true, bypass interval check
+ */
+export function showTrashTalk(category, force = false) {
+    // Check if trash talk is enabled
+    if (!state.settings?.trashTalkEnabled) return;
+
+    const now = performance.now();
+    const { trashTalk } = state;
+
+    // Check minimum interval (unless forced)
+    if (!force && trashTalk.lastMessageTime > 0) {
+        const elapsed = now - trashTalk.lastMessageTime;
+        if (elapsed < TRASH_TALK.MIN_INTERVAL) return;
+    }
+
+    // Get personality-specific frequency multiplier
+    let frequencyMult = 1.0;
+    if (state.aiPersonality) {
+        const personalityId = state.aiPersonality.id;
+        const personalityConfig = TRASH_TALK_PERSONALITIES[personalityId];
+        if (personalityConfig) {
+            frequencyMult = personalityConfig.frequency;
+
+            // Check if this category is preferred for this personality
+            if (!personalityConfig.categories.includes(category)) {
+                frequencyMult *= 0.5; // Less likely for non-preferred categories
+            }
+        }
+    }
+
+    // Random chance based on frequency (50% base chance, modified by personality)
+    if (!force && Math.random() > 0.5 * frequencyMult) return;
+
+    // Get messages for category
+    const messages = TRASH_TALK.MESSAGES[category];
+    if (!messages || messages.length === 0) return;
+
+    // Pick random message
+    const message = messages[Math.floor(Math.random() * messages.length)];
+
+    // Display the message
+    displayTrashTalkMessage(message);
+    trashTalk.lastMessageTime = now;
+}
+
+/**
+ * Display a trash talk message in the UI
+ * @param {string} message - The message text to display
+ */
+function displayTrashTalkMessage(message) {
+    const container = document.getElementById('ai-trash-talk');
+    const textEl = document.getElementById('trash-talk-text');
+    const bubble = document.getElementById('trash-talk-bubble');
+
+    if (!container || !textEl || !bubble) return;
+
+    // Clear any existing hide timeout
+    if (state.trashTalk.hideTimeoutId) {
+        clearTimeout(state.trashTalk.hideTimeoutId);
+    }
+
+    // Apply rival club colors
+    let primaryColor = '#cc0000';  // Default red
+    let secondaryColor = '#990000';
+
+    // Get rival club colors (state.rivalClub is the club object itself)
+    if (state.rivalClub && state.rivalClub.colors) {
+        primaryColor = state.rivalClub.colors.primary;
+        secondaryColor = state.rivalClub.colors.secondary;
+    }
+
+    // Apply colors via CSS custom properties
+    container.style.setProperty('--rival-color', primaryColor);
+    container.style.setProperty('--rival-secondary', secondaryColor);
+
+    // Determine text color based on background brightness
+    const textColor = isColorLight(primaryColor) ? '#1a1a1a' : '#ffffff';
+    bubble.style.color = textColor;
+
+    // Reset classes and show
+    container.className = '';
+    textEl.textContent = message;
+    container.classList.remove('hidden', 'hiding');
+    state.trashTalk.messageVisible = true;
+
+    // Auto-hide after duration
+    state.trashTalk.hideTimeoutId = setTimeout(() => {
+        hideTrashTalk();
+    }, TRASH_TALK.DISPLAY_DURATION);
+}
+
+/**
+ * Check if a hex color is light (for text contrast)
+ * @param {string} hex - Hex color string
+ * @returns {boolean} True if color is light
+ */
+function isColorLight(hex) {
+    const c = hex.replace('#', '');
+    const r = parseInt(c.substr(0, 2), 16);
+    const g = parseInt(c.substr(2, 2), 16);
+    const b = parseInt(c.substr(4, 2), 16);
+    // Using relative luminance formula
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.5;
+}
+
+/**
+ * Hide the trash talk message with animation
+ */
+export function hideTrashTalk() {
+    const container = document.getElementById('ai-trash-talk');
+    if (!container) return;
+
+    container.classList.add('hiding');
+
+    // Actually hide after animation
+    setTimeout(() => {
+        container.classList.add('hidden');
+        container.classList.remove('hiding');
+        state.trashTalk.messageVisible = false;
+    }, 300);
+}
+
+/**
+ * Trigger trash talk based on game events
+ * Called from various places in the game logic
+ * @param {string} event - Event type: 'playerMiss', 'comboBreak', 'aiPerfect', 'aiCombo', 'gameStart', etc.
+ * @param {Object} context - Additional context (e.g., combo count, score diff)
+ */
+export function triggerTrashTalk(event, context = {}) {
+    if (!state.settings?.trashTalkEnabled) return;
+
+    const { trashTalk } = state;
+    const scoreDiff = state.aiScore - state.playerScore;
+    const totalBeats = state.detectedBeats.length;
+    const progress = totalBeats > 0 ? state.nextBeatIndex / totalBeats : 0;
+
+    switch (event) {
+        case 'playerMiss':
+            trashTalk.consecutiveMisses++;
+            if (trashTalk.consecutiveMisses >= TRASH_TALK.MISS_STREAK_THRESHOLD) {
+                showTrashTalk('missStreak');
+            } else {
+                showTrashTalk('playerMiss');
+            }
+            break;
+
+        case 'comboBreak':
+            if (context.brokenCombo >= 10) {
+                showTrashTalk('comboBreak', true); // Force show for big combo breaks
+            }
+            break;
+
+        case 'aiPerfect':
+            showTrashTalk('aiPerfect');
+            break;
+
+        case 'aiCombo':
+            if (context.aiCombo >= 10) {
+                showTrashTalk('aiCombo');
+            }
+            break;
+
+        case 'gameStart':
+            showTrashTalk('gameStart', true);
+            break;
+
+        case 'scoreCheck':
+            // Periodic check during gameplay
+            if (scoreDiff > 500) {
+                showTrashTalk('winning');
+            } else if (scoreDiff < -500) {
+                showTrashTalk('losing');
+            }
+            break;
+
+        case 'nearEnd':
+            // Near end of song (last 20%)
+            if (progress >= 0.8) {
+                if (scoreDiff > 300) {
+                    showTrashTalk('nearEndWinning');
+                } else if (scoreDiff < -300) {
+                    showTrashTalk('nearEndLosing');
+                }
+            }
+            break;
+
+        case 'aiGoal':
+            showTrashTalk('aiGoal', true);
+            break;
+
+        case 'playerGoal':
+            showTrashTalk('playerGoal');
+            break;
+
+        case 'playerHit':
+            // Reset consecutive misses on successful hit
+            trashTalk.consecutiveMisses = 0;
+            break;
     }
 }

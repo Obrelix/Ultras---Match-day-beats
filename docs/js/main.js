@@ -9,15 +9,16 @@ import {
     initCustomChantDB, getAllCustomChants, saveCustomChant, deleteCustomChant,
     processUploadedFile, decodeCustomChantAudio
 } from './customChants.js';
-import { handleInput, handleInputRelease, registerMiss, simulateAI, simulateAIHoldBeat, updateHoldProgress, setMainCallbacks } from './input.js';
+import { handleInput, handleInputRelease, registerMiss, simulateAI, simulateAIHoldBeat, updateHoldProgress, setMainCallbacks, triggerTrashTalk, hideTrashTalk } from './input.js';
 import { initVisualizer, computeWaveformPeaks, buildWaveformCache, drawVisualizer } from './renderer.js';
 import { initCrowdBg, setCrowdMode, updateCrowdClub } from './crowdBg.js';
 import {
     showScreen, applyClubTheme, renderClubSelection, renderChantSelection,
     renderMatchdayIntro, updateMatchScoreboard, updateScoreboardTeams,
     setMatchdayChantStarter, setScoreSubmitHandler, endGame, elements, screens,
-    updateTitleLevelBadge, renderProfileScreen,
-    navigateBack, navigateHome, hideAbandonMatchConfirm, confirmAbandonMatch
+    updateTitleLevelBadge, renderProfileScreen, switchProfileTab, initAnalyticsSession,
+    navigateBack, navigateHome, hideAbandonMatchConfirm, confirmAbandonMatch,
+    startCalibration, cancelCalibration
 } from './ui.js';
 import { loadProgression, toggleChoreoDebug } from './progression.js';
 import { loadSettings, saveSettings, hasTutorialSeen, markTutorialSeen } from './storage.js';
@@ -282,6 +283,9 @@ async function startMatchdayChant() {
         state.audioStartTime = state.audioContext.currentTime;
         state.gameStartTime = performance.now();
 
+        // Trigger game start trash talk
+        setTimeout(() => triggerTrashTalk('gameStart'), 500);
+
         gameLoop();
     } catch (error) {
         console.error('Failed to start chant:', error);
@@ -389,6 +393,9 @@ async function startGame() {
         state.audioStartTime = state.audioContext.currentTime;
         state.gameStartTime = performance.now();
 
+        // Trigger game start trash talk
+        setTimeout(() => triggerTrashTalk('gameStart'), 500);
+
         gameLoop();
     } catch (error) {
         console.error('Failed to start game:', error);
@@ -470,6 +477,14 @@ function gameLoop() {
     if (state.activeBeat && (now - state.activeBeat.time) > state.activeTiming.OK) {
         registerMiss();
         state.activeBeat = null;
+    }
+
+    // Check for near-end trash talk (once when crossing 80% threshold)
+    const totalBeats = state.detectedBeats.length;
+    const progress = totalBeats > 0 ? state.nextBeatIndex / totalBeats : 0;
+    if (progress >= 0.8 && !state._nearEndTrashTalkTriggered) {
+        state._nearEndTrashTalkTriggered = true;
+        triggerTrashTalk('nearEnd');
     }
 
     // Update frenzy CSS class for visual filters (#2)
@@ -557,6 +572,8 @@ function pauseGame() {
     cancelAnimationFrame(state.gameLoopId);
     if (state.audioContext) state.audioContext.suspend();
     elements.pauseOverlay.classList.remove('hidden');
+    // Hide trash talk on pause
+    hideTrashTalk();
 }
 
 async function resumeGame() {
@@ -980,6 +997,16 @@ elements.reducedEffectsToggle.addEventListener('change', (e) => {
 elements.metronomeToggle?.addEventListener('change', (e) => {
     state.settings.metronomeEnabled = e.target.checked;
     saveSettings(state.settings);
+});
+
+// Trash talk toggle
+document.getElementById('trash-talk-toggle')?.addEventListener('change', (e) => {
+    state.settings.trashTalkEnabled = e.target.checked;
+    saveSettings(state.settings);
+    // Hide any visible trash talk if disabled
+    if (!e.target.checked) {
+        hideTrashTalk();
+    }
 });
 
 // Difficulty buttons
@@ -1646,6 +1673,10 @@ elements.profileBackBtn?.addEventListener('click', () => {
     showScreen('title');
 });
 
+// Profile tab navigation
+elements.profileTabStats?.addEventListener('click', () => switchProfileTab('stats'));
+elements.profileTabAnalytics?.addEventListener('click', () => switchProfileTab('analytics'));
+
 // ============================================
 // Custom Chant Upload System
 // ============================================
@@ -1944,6 +1975,9 @@ window.toggleChoreoDebug = toggleChoreoDebug;
 // Update title screen level badge
 updateTitleLevelBadge();
 
+// Initialize analytics session tracking
+initAnalyticsSession();
+
 // Initialize custom chant database
 initCustomChantDB().catch(err => {
     console.warn('Failed to initialize custom chants DB:', err);
@@ -1952,6 +1986,35 @@ initCustomChantDB().catch(err => {
 // Apply audio settings from storage
 if (elements.metronomeToggle) {
     elements.metronomeToggle.checked = state.settings.metronomeEnabled;
+}
+
+// Apply trash talk setting
+const trashTalkToggle = document.getElementById('trash-talk-toggle');
+if (trashTalkToggle) {
+    trashTalkToggle.checked = state.settings.trashTalkEnabled !== false;
+}
+
+// ============================================
+// Input Calibration Event Handlers
+// ============================================
+
+// Calibrate button click
+document.getElementById('calibrate-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    startCalibration();
+});
+
+// Calibration cancel button
+document.getElementById('calibration-cancel')?.addEventListener('click', () => {
+    cancelCalibration();
+});
+
+// Display current offset on load
+const currentOffsetDisplay = document.getElementById('current-offset');
+if (currentOffsetDisplay && state.settings.inputOffset !== undefined) {
+    const offset = state.settings.inputOffset;
+    const sign = offset >= 0 ? '+' : '';
+    currentOffsetDisplay.textContent = `${sign}${offset}ms`;
 }
 
 // Initialize on load

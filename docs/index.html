@@ -35,6 +35,16 @@
                     <input type="checkbox" id="reduced-effects-toggle">
                     <span>Performance Mode</span>
                 </label>
+                <label class="toggle-label" title="AI opponent taunts during gameplay">
+                    <input type="checkbox" id="trash-talk-toggle" checked>
+                    <span>AI Trash Talk</span>
+                </label>
+                <div class="settings-divider"></div>
+                <div class="setting-row">
+                    <span>Input Timing</span>
+                    <button id="calibrate-btn" class="btn-calibrate">Calibrate</button>
+                    <span id="current-offset" class="offset-display">0ms</span>
+                </div>
             </div>
         </div>
 
@@ -66,6 +76,17 @@
                     <button id="abandon-confirm-btn">LEAVE</button>
                     <button id="abandon-cancel-btn">CONTINUE</button>
                 </div>
+            </div>
+        </div>
+
+        <!-- Input Calibration Modal -->
+        <div id="calibration-modal" class="modal hidden">
+            <div class="modal-content calibration-content">
+                <h2>Input Calibration</h2>
+                <p id="calibration-instruction">Tap along with the beat</p>
+                <div id="calibration-circle"></div>
+                <p id="calibration-progress">Warming up...</p>
+                <button id="calibration-cancel" class="btn-secondary">Cancel</button>
             </div>
         </div>
 
@@ -266,6 +287,12 @@
                     <span id="ai-score-label" class="score-label">RIVAL</span>
                     <span id="ai-score" class="score-value">0</span>
                     <div id="ai-score-popup-container"></div>
+                    <!-- AI Trash Talk Bubble (attached to rival badge) -->
+                    <div id="ai-trash-talk" class="hidden">
+                        <div id="trash-talk-bubble">
+                            <span id="trash-talk-text"></span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -554,49 +581,120 @@
                 </div>
             </div>
 
-            <div id="profile-stats">
-                <h3>Stats</h3>
-                <div class="profile-stat-grid">
-                    <div class="profile-stat"><span class="stat-label">Total Wins</span><span id="profile-total-wins" class="stat-value">0</span></div>
-                    <div class="profile-stat"><span class="stat-label">Match Days Won</span><span id="profile-matchday-wins" class="stat-value">0</span></div>
-                    <div class="profile-stat"><span class="stat-label">Chants Played</span><span id="profile-chants-played" class="stat-value">0</span></div>
-                    <div class="profile-stat"><span class="stat-label">Highest Combo</span><span id="profile-highest-combo" class="stat-value">0</span></div>
-                    <div class="profile-stat"><span class="stat-label">Perfect Hits</span><span id="profile-perfect-hits" class="stat-value">0</span></div>
-                    <div class="profile-stat"><span class="stat-label">Highest Score</span><span id="profile-highest-score" class="stat-value">0</span></div>
-                </div>
+            <!-- Profile Tabs -->
+            <div id="profile-tabs">
+                <button id="profile-tab-stats" class="profile-tab active">Stats</button>
+                <button id="profile-tab-analytics" class="profile-tab">Analytics</button>
             </div>
 
-            <div id="profile-loyalty">
-                <h3>Club Loyalty</h3>
-                <div id="loyalty-display">
-                    <span id="loyalty-club-name">No club yet</span>
-                    <div id="loyalty-badges"></div>
-                    <div id="loyalty-progress-bar">
-                        <div id="loyalty-progress-fill"></div>
+            <!-- Stats Tab Content (existing) -->
+            <div id="profile-stats-content">
+                <div id="profile-stats">
+                    <h3>Stats</h3>
+                    <div class="profile-stat-grid">
+                        <div class="profile-stat"><span class="stat-label">Total Wins</span><span id="profile-total-wins" class="stat-value">0</span></div>
+                        <div class="profile-stat"><span class="stat-label">Match Days Won</span><span id="profile-matchday-wins" class="stat-value">0</span></div>
+                        <div class="profile-stat"><span class="stat-label">Chants Played</span><span id="profile-chants-played" class="stat-value">0</span></div>
+                        <div class="profile-stat"><span class="stat-label">Highest Combo</span><span id="profile-highest-combo" class="stat-value">0</span></div>
+                        <div class="profile-stat"><span class="stat-label">Perfect Hits</span><span id="profile-perfect-hits" class="stat-value">0</span></div>
+                        <div class="profile-stat"><span class="stat-label">Highest Score</span><span id="profile-highest-score" class="stat-value">0</span></div>
                     </div>
-                    <span id="loyalty-progress-text"></span>
+                </div>
+
+                <div id="profile-loyalty">
+                    <h3>Club Loyalty</h3>
+                    <div id="loyalty-display">
+                        <span id="loyalty-club-name">No club yet</span>
+                        <div id="loyalty-badges"></div>
+                        <div id="loyalty-progress-bar">
+                            <div id="loyalty-progress-fill"></div>
+                        </div>
+                        <span id="loyalty-progress-text"></span>
+                    </div>
+                </div>
+
+                <div id="profile-achievements">
+                    <h3>Achievements <span id="achievement-count">0/10</span></h3>
+                    <div id="achievements-grid"></div>
+                </div>
+
+                <div id="profile-choreos">
+                    <h3>Choreos <span id="choreo-count">3/18</span></h3>
+                    <div id="choreos-grid"></div>
+                </div>
+
+                <div id="profile-challenges">
+                    <h3>Challenges</h3>
+                    <div id="weekly-challenge">
+                        <span class="challenge-label">Weekly Challenge</span>
+                        <div id="weekly-challenge-content"></div>
+                    </div>
+                    <div id="season-challenges">
+                        <span class="challenge-label">Season Challenges</span>
+                        <div id="season-challenges-list"></div>
+                    </div>
                 </div>
             </div>
 
-            <div id="profile-achievements">
-                <h3>Achievements <span id="achievement-count">0/10</span></h3>
-                <div id="achievements-grid"></div>
-            </div>
-
-            <div id="profile-choreos">
-                <h3>Choreos <span id="choreo-count">3/12</span></h3>
-                <div id="choreos-grid"></div>
-            </div>
-
-            <div id="profile-challenges">
-                <h3>Challenges</h3>
-                <div id="weekly-challenge">
-                    <span class="challenge-label">Weekly Challenge</span>
-                    <div id="weekly-challenge-content"></div>
+            <!-- Analytics Tab Content (new) -->
+            <div id="profile-analytics-content" class="hidden">
+                <!-- Session Summary -->
+                <div class="analytics-card">
+                    <h3>Current Session</h3>
+                    <div class="analytics-session-grid">
+                        <div class="analytics-session-stat">
+                            <span class="session-stat-value" id="analytics-session-games">0</span>
+                            <span class="session-stat-label">Games</span>
+                        </div>
+                        <div class="analytics-session-stat">
+                            <span class="session-stat-value" id="analytics-session-accuracy">0%</span>
+                            <span class="session-stat-label">Avg Accuracy</span>
+                        </div>
+                        <div class="analytics-session-stat">
+                            <span class="session-stat-value" id="analytics-session-best">0</span>
+                            <span class="session-stat-label">Best Score</span>
+                        </div>
+                        <div class="analytics-session-stat">
+                            <span class="session-stat-value" id="analytics-session-time">0m</span>
+                            <span class="session-stat-label">Time</span>
+                        </div>
+                    </div>
                 </div>
-                <div id="season-challenges">
-                    <span class="challenge-label">Season Challenges</span>
-                    <div id="season-challenges-list"></div>
+
+                <!-- Accuracy Trend Chart -->
+                <div class="analytics-card">
+                    <h3>Accuracy Trend <span id="analytics-accuracy-trend" class="trend-indicator"></span></h3>
+                    <canvas id="analytics-accuracy-canvas" width="320" height="140"></canvas>
+                </div>
+
+                <!-- Score Progression Chart -->
+                <div class="analytics-card">
+                    <h3>Score Progression <span id="analytics-score-trend" class="trend-indicator"></span></h3>
+                    <canvas id="analytics-score-canvas" width="320" height="140"></canvas>
+                </div>
+
+                <!-- Hit Distribution Pie Chart -->
+                <div class="analytics-card">
+                    <h3>Hit Distribution</h3>
+                    <canvas id="analytics-hits-canvas" width="320" height="180"></canvas>
+                </div>
+
+                <!-- Club Performance Bar Chart -->
+                <div class="analytics-card">
+                    <h3>Club Performance (Avg Accuracy)</h3>
+                    <canvas id="analytics-club-canvas" width="320" height="140"></canvas>
+                </div>
+
+                <!-- Chant Performance Lists -->
+                <div class="analytics-card analytics-chants">
+                    <div class="analytics-chants-col">
+                        <h4>Best Chants</h4>
+                        <div id="analytics-best-chants" class="chant-perf-list"></div>
+                    </div>
+                    <div class="analytics-chants-col">
+                        <h4>Needs Practice</h4>
+                        <div id="analytics-worst-chants" class="chant-perf-list"></div>
+                    </div>
                 </div>
             </div>
 

@@ -2,10 +2,15 @@
 // ui.js — Screen management, navigation, DOM elements
 // ============================================
 
-import { GameState, clubs, MATCHDAY, ACHIEVEMENTS, LOYALTY_CONFIG } from './config.js';
+import { GameState, clubs, MATCHDAY, ACHIEVEMENTS, LOYALTY_CONFIG, ANALYTICS, CALIBRATION } from './config.js';
 import { state, resetMatchState } from './state.js';
-import { stopAudio } from './audio.js';
-import { saveHighScore, loadHighScore, saveMatchdayStats, loadMatchdayStats } from './storage.js';
+import { stopAudio, initAudio } from './audio.js';
+import { saveHighScore, loadHighScore, saveMatchdayStats, loadMatchdayStats, saveGameRecord, loadGameHistory, getOrCreateSession, loadSettings, saveSettings } from './storage.js';
+import {
+    initSession, getSessionStats, calculateAccuracyTrend, calculateScoreTrend,
+    calculateHitDistribution, getClubStats, getChantPerformance, getAnalyticsSummary,
+    renderLineChart, renderPieChart, renderBarChart, formatDuration
+} from './analytics.js';
 import { setCrowdEmotion } from './crowd.js';
 import { setCrowdMode } from './crowdBg.js';
 import { stopRecording } from './replay.js';
@@ -228,6 +233,30 @@ export const elements = {
 
     // Audio Settings
     metronomeToggle: document.getElementById('metronome-toggle'),
+
+    // Input Calibration
+    calibrateBtn: document.getElementById('calibrate-btn'),
+    currentOffset: document.getElementById('current-offset'),
+    calibrationModal: document.getElementById('calibration-modal'),
+    calibrationCancel: document.getElementById('calibration-cancel'),
+
+    // Profile Tabs & Analytics Dashboard
+    profileTabStats: document.getElementById('profile-tab-stats'),
+    profileTabAnalytics: document.getElementById('profile-tab-analytics'),
+    profileStatsContent: document.getElementById('profile-stats-content'),
+    profileAnalyticsContent: document.getElementById('profile-analytics-content'),
+    analyticsSessionGames: document.getElementById('analytics-session-games'),
+    analyticsSessionAccuracy: document.getElementById('analytics-session-accuracy'),
+    analyticsSessionBest: document.getElementById('analytics-session-best'),
+    analyticsSessionTime: document.getElementById('analytics-session-time'),
+    analyticsAccuracyCanvas: document.getElementById('analytics-accuracy-canvas'),
+    analyticsAccuracyTrend: document.getElementById('analytics-accuracy-trend'),
+    analyticsScoreCanvas: document.getElementById('analytics-score-canvas'),
+    analyticsScoreTrend: document.getElementById('analytics-score-trend'),
+    analyticsHitsCanvas: document.getElementById('analytics-hits-canvas'),
+    analyticsClubCanvas: document.getElementById('analytics-club-canvas'),
+    analyticsBestChants: document.getElementById('analytics-best-chants'),
+    analyticsWorstChants: document.getElementById('analytics-worst-chants'),
 
     // Global Navigation
     globalNav: document.getElementById('global-nav'),
@@ -985,6 +1014,9 @@ export function renderProfileScreen() {
             icon.className = 'achievement-icon';
             icon.textContent = achievement.icon;
 
+            const info = document.createElement('div');
+            info.className = 'achievement-info';
+
             const name = document.createElement('span');
             name.className = 'achievement-name';
             name.textContent = achievement.name;
@@ -993,9 +1025,29 @@ export function renderProfileScreen() {
             desc.className = 'achievement-desc';
             desc.textContent = achievement.description;
 
+            info.appendChild(name);
+            info.appendChild(desc);
+
+            // Add progress bar for trackable achievements that aren't unlocked
+            if (!achievement.unlocked && achievement.isTrackable) {
+                const progressText = document.createElement('span');
+                progressText.className = 'achievement-progress-text';
+                progressText.textContent = `${achievement.progress}/${achievement.target}`;
+
+                const progressBar = document.createElement('div');
+                progressBar.className = 'achievement-progress-bar';
+
+                const progressFill = document.createElement('div');
+                progressFill.className = 'achievement-progress-fill';
+                progressFill.style.width = `${achievement.progressPercent}%`;
+
+                progressBar.appendChild(progressFill);
+                info.appendChild(progressText);
+                info.appendChild(progressBar);
+            }
+
             div.appendChild(icon);
-            div.appendChild(name);
-            div.appendChild(desc);
+            div.appendChild(info);
 
             elements.profileAchievementsGrid.appendChild(div);
         });
@@ -1114,6 +1166,9 @@ export function renderProfileScreen() {
             icon.className = 'choreo-icon';
             icon.textContent = choreo.unlocked ? choreo.icon : '🔒';
 
+            const info = document.createElement('div');
+            info.className = 'choreo-info';
+
             const name = document.createElement('span');
             name.className = 'choreo-name';
             name.textContent = choreo.name;
@@ -1130,9 +1185,29 @@ export function renderProfileScreen() {
                 }
             }
 
+            info.appendChild(name);
+            info.appendChild(status);
+
+            // Add progress bar for locked choreos with trackable progress
+            if (!choreo.unlocked && choreo.progress !== null && choreo.target !== null) {
+                const progressText = document.createElement('span');
+                progressText.className = 'choreo-progress-text';
+                progressText.textContent = `${choreo.progress}/${choreo.target}`;
+
+                const progressBar = document.createElement('div');
+                progressBar.className = 'choreo-progress-bar';
+
+                const progressFill = document.createElement('div');
+                progressFill.className = 'choreo-progress-fill';
+                progressFill.style.width = `${choreo.progressPercent}%`;
+
+                progressBar.appendChild(progressFill);
+                info.appendChild(progressText);
+                info.appendChild(progressBar);
+            }
+
             div.appendChild(icon);
-            div.appendChild(name);
-            div.appendChild(status);
+            div.appendChild(info);
 
             elements.profileChoreosGrid.appendChild(div);
         });
@@ -1329,6 +1404,25 @@ function processEndGameProgression(isWin, isMatchday = false, matchdayResult = n
         feverTime: state.feverTimeAccumulated || 0
     };
 
+    // Save to game history for analytics
+    saveGameRecord({
+        clubId: state.selectedClub?.id,
+        chantId: state.selectedChant?.id,
+        chantName: state.selectedChant?.name || state.selectedChant?.id,
+        difficulty: state.settings.difficulty,
+        gameMode: isMatchday ? 'matchday' : 'practice',
+        score: state.playerScore,
+        totalBeats: state.totalBeats,
+        perfectHits: state.playerStats.perfect,
+        goodHits: state.playerStats.good,
+        okHits: state.playerStats.ok,
+        misses: state.playerStats.miss,
+        accuracy,
+        maxCombo: state.playerMaxCombo,
+        won: isWin,
+        sessionId: state.sessionId
+    });
+
     const result = processGameEnd(gameResult);
 
     // Show XP gained
@@ -1345,4 +1439,417 @@ function processEndGameProgression(isWin, isMatchday = false, matchdayResult = n
     }, 1000);
 
     return result;
+}
+
+// ============================================
+// Analytics Dashboard
+// ============================================
+
+/**
+ * Initialize analytics session on app start
+ */
+export function initAnalyticsSession() {
+    initSession();
+}
+
+/**
+ * Switch between Stats and Analytics tabs on profile screen
+ */
+export function switchProfileTab(tab) {
+    if (tab === 'stats') {
+        elements.profileTabStats?.classList.add('active');
+        elements.profileTabAnalytics?.classList.remove('active');
+        elements.profileStatsContent?.classList.remove('hidden');
+        elements.profileAnalyticsContent?.classList.add('hidden');
+    } else if (tab === 'analytics') {
+        elements.profileTabStats?.classList.remove('active');
+        elements.profileTabAnalytics?.classList.add('active');
+        elements.profileStatsContent?.classList.add('hidden');
+        elements.profileAnalyticsContent?.classList.remove('hidden');
+        renderAnalyticsDashboard();
+    }
+}
+
+/**
+ * Render the analytics dashboard charts and stats
+ */
+export function renderAnalyticsDashboard() {
+    // Session summary
+    const sessionStats = getSessionStats();
+    if (elements.analyticsSessionGames) {
+        elements.analyticsSessionGames.textContent = sessionStats.gamesPlayed;
+    }
+    if (elements.analyticsSessionAccuracy) {
+        elements.analyticsSessionAccuracy.textContent = `${sessionStats.avgAccuracy}%`;
+    }
+    if (elements.analyticsSessionBest) {
+        elements.analyticsSessionBest.textContent = sessionStats.bestScore.toLocaleString();
+    }
+    if (elements.analyticsSessionTime) {
+        elements.analyticsSessionTime.textContent = formatDuration(sessionStats.totalTime);
+    }
+
+    // Accuracy trend chart
+    if (elements.analyticsAccuracyCanvas) {
+        const accuracyData = calculateAccuracyTrend(20);
+        renderLineChart(elements.analyticsAccuracyCanvas, {
+            values: accuracyData.values,
+            labels: accuracyData.labels
+        }, {
+            lineColor: ANALYTICS.COLORS.perfect,
+            fillColor: 'rgba(0, 255, 136, 0.15)'
+        });
+
+        // Update trend indicator
+        if (elements.analyticsAccuracyTrend) {
+            const trendIcon = accuracyData.trend === 'up' ? '↑' :
+                              accuracyData.trend === 'down' ? '↓' : '→';
+            const trendClass = accuracyData.trend === 'up' ? 'trend-up' :
+                               accuracyData.trend === 'down' ? 'trend-down' : 'trend-stable';
+            elements.analyticsAccuracyTrend.textContent = trendIcon;
+            elements.analyticsAccuracyTrend.className = `trend-indicator ${trendClass}`;
+        }
+    }
+
+    // Score trend chart
+    if (elements.analyticsScoreCanvas) {
+        const scoreData = calculateScoreTrend(20);
+        renderLineChart(elements.analyticsScoreCanvas, {
+            values: scoreData.values,
+            labels: scoreData.labels
+        }, {
+            lineColor: ANALYTICS.COLORS.trend,
+            fillColor: ANALYTICS.COLORS.trendFill
+        });
+
+        if (elements.analyticsScoreTrend) {
+            const trendIcon = scoreData.trend === 'up' ? '↑' :
+                              scoreData.trend === 'down' ? '↓' : '→';
+            const trendClass = scoreData.trend === 'up' ? 'trend-up' :
+                               scoreData.trend === 'down' ? 'trend-down' : 'trend-stable';
+            elements.analyticsScoreTrend.textContent = trendIcon;
+            elements.analyticsScoreTrend.className = `trend-indicator ${trendClass}`;
+        }
+    }
+
+    // Hit distribution pie chart
+    if (elements.analyticsHitsCanvas) {
+        const hitData = calculateHitDistribution();
+        renderPieChart(elements.analyticsHitsCanvas, [
+            { value: hitData.perfect, color: ANALYTICS.COLORS.perfect, label: 'Perfect' },
+            { value: hitData.good, color: ANALYTICS.COLORS.good, label: 'Good' },
+            { value: hitData.ok, color: ANALYTICS.COLORS.ok, label: 'OK' },
+            { value: hitData.miss, color: ANALYTICS.COLORS.miss, label: 'Miss' }
+        ]);
+    }
+
+    // Club performance bar chart
+    if (elements.analyticsClubCanvas) {
+        const clubStats = getClubStats();
+        const chartData = clubStats.slice(0, 5).map(club => ({
+            label: club.clubId?.toUpperCase() || 'Unknown',
+            value: club.avgAccuracy,
+            color: ANALYTICS.COLORS.trend
+        }));
+        renderBarChart(elements.analyticsClubCanvas, chartData, {
+            barHeight: 18,
+            showValues: true
+        });
+    }
+
+    // Best/worst chants
+    const chantPerf = getChantPerformance();
+
+    if (elements.analyticsBestChants) {
+        elements.analyticsBestChants.innerHTML = '';
+        if (chantPerf.best.length === 0) {
+            elements.analyticsBestChants.innerHTML = '<div class="chant-perf-empty">Play more chants to see stats</div>';
+        } else {
+            chantPerf.best.forEach(chant => {
+                const div = document.createElement('div');
+                div.className = 'chant-perf-item';
+                div.innerHTML = `
+                    <span class="chant-perf-name">${chant.chantName}</span>
+                    <span class="chant-perf-accuracy" style="color: ${ANALYTICS.COLORS.perfect}">${chant.avgAccuracy}%</span>
+                `;
+                elements.analyticsBestChants.appendChild(div);
+            });
+        }
+    }
+
+    if (elements.analyticsWorstChants) {
+        elements.analyticsWorstChants.innerHTML = '';
+        if (chantPerf.worst.length === 0) {
+            elements.analyticsWorstChants.innerHTML = '<div class="chant-perf-empty">Play more chants to see stats</div>';
+        } else {
+            chantPerf.worst.forEach(chant => {
+                const div = document.createElement('div');
+                div.className = 'chant-perf-item';
+                div.innerHTML = `
+                    <span class="chant-perf-name">${chant.chantName}</span>
+                    <span class="chant-perf-accuracy" style="color: ${ANALYTICS.COLORS.ok}">${chant.avgAccuracy}%</span>
+                `;
+                elements.analyticsWorstChants.appendChild(div);
+            });
+        }
+    }
+}
+
+// ============================================
+// Input Lag Calibration
+// ============================================
+
+let calibrationState = {
+    isActive: false,
+    audioContext: null,
+    nextBeatTime: 0,
+    beatCount: 0,
+    tapTimes: [],
+    beatTimes: [],
+    intervalId: null
+};
+
+/**
+ * Start the calibration process
+ */
+export async function startCalibration() {
+    // Initialize audio context if needed
+    try {
+        await initAudio();
+    } catch (e) {
+        console.warn('Failed to init audio for calibration:', e);
+    }
+
+    // Reset calibration state
+    calibrationState = {
+        isActive: true,
+        audioContext: state.audioContext || new (window.AudioContext || window.webkitAudioContext)(),
+        nextBeatTime: 0,
+        beatCount: 0,
+        tapTimes: [],
+        beatTimes: [],
+        intervalId: null
+    };
+
+    // Show calibration modal
+    const modal = document.getElementById('calibration-modal');
+    const circle = document.getElementById('calibration-circle');
+    const progress = document.getElementById('calibration-progress');
+    const instruction = document.getElementById('calibration-instruction');
+
+    if (modal) modal.classList.remove('hidden');
+    if (instruction) instruction.textContent = 'Listen to the beat...';
+    if (progress) progress.textContent = 'Warming up...';
+    if (circle) circle.classList.remove('pulse');
+
+    // Start metronome
+    const tempo = CALIBRATION.TEMPO_MS;
+    calibrationState.nextBeatTime = performance.now() + 500; // Small delay before first beat
+
+    calibrationState.intervalId = setInterval(() => {
+        if (!calibrationState.isActive) {
+            clearInterval(calibrationState.intervalId);
+            return;
+        }
+
+        const now = performance.now();
+        if (now >= calibrationState.nextBeatTime) {
+            playCalibrationClick();
+            calibrationState.beatTimes.push(now);
+            calibrationState.beatCount++;
+
+            // Pulse the circle
+            if (circle) {
+                circle.classList.remove('pulse');
+                void circle.offsetWidth;
+                circle.classList.add('pulse');
+            }
+
+            // Update UI based on phase
+            const totalBeats = CALIBRATION.WARMUP_BEATS + CALIBRATION.RECORD_BEATS;
+            if (calibrationState.beatCount <= CALIBRATION.WARMUP_BEATS) {
+                if (progress) progress.textContent = `Warming up... ${calibrationState.beatCount}/${CALIBRATION.WARMUP_BEATS}`;
+            } else {
+                const recordedCount = calibrationState.beatCount - CALIBRATION.WARMUP_BEATS;
+                if (instruction) instruction.textContent = 'Tap along with the beat!';
+                if (progress) progress.textContent = `Recording: ${Math.min(recordedCount, CALIBRATION.RECORD_BEATS)}/${CALIBRATION.RECORD_BEATS}`;
+            }
+
+            // Check if calibration is complete
+            if (calibrationState.beatCount >= totalBeats) {
+                finishCalibration();
+            }
+
+            calibrationState.nextBeatTime += tempo;
+        }
+    }, 10); // Check every 10ms for precise timing
+
+    // Add input listeners for calibration
+    document.addEventListener('keydown', handleCalibrationKeyDown);
+    document.addEventListener('touchstart', handleCalibrationTouch);
+    document.addEventListener('mousedown', handleCalibrationMouse);
+}
+
+/**
+ * Play metronome click sound
+ */
+function playCalibrationClick() {
+    const ctx = calibrationState.audioContext;
+    if (!ctx) return;
+
+    try {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.frequency.value = 880; // A5
+        osc.type = 'sine';
+
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.exponentialDecayTo?.(0.001, ctx.currentTime + 0.1) ||
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.1);
+    } catch (e) {
+        console.warn('Failed to play calibration click:', e);
+    }
+}
+
+/**
+ * Handle tap during calibration
+ */
+function handleCalibrationTap() {
+    if (!calibrationState.isActive) return;
+
+    // Only record after warmup
+    if (calibrationState.beatCount <= CALIBRATION.WARMUP_BEATS) return;
+
+    const now = performance.now();
+    calibrationState.tapTimes.push(now);
+
+    // Visual feedback
+    const circle = document.getElementById('calibration-circle');
+    if (circle) {
+        circle.classList.add('tapped');
+        setTimeout(() => circle.classList.remove('tapped'), 100);
+    }
+}
+
+function handleCalibrationKeyDown(e) {
+    if (e.code === 'Space' || e.key === ' ') {
+        e.preventDefault();
+        handleCalibrationTap();
+    } else if (e.code === 'Escape') {
+        cancelCalibration();
+    }
+}
+
+function handleCalibrationTouch(e) {
+    if (!calibrationState.isActive) return;
+    // Don't handle touches on cancel button
+    if (e.target.closest('#calibration-cancel')) return;
+    e.preventDefault();
+    handleCalibrationTap();
+}
+
+function handleCalibrationMouse(e) {
+    if (!calibrationState.isActive) return;
+    // Don't handle clicks on cancel button
+    if (e.target.closest('#calibration-cancel')) return;
+    handleCalibrationTap();
+}
+
+/**
+ * Finish calibration and calculate offset
+ */
+function finishCalibration() {
+    calibrationState.isActive = false;
+    clearInterval(calibrationState.intervalId);
+
+    // Remove input listeners
+    document.removeEventListener('keydown', handleCalibrationKeyDown);
+    document.removeEventListener('touchstart', handleCalibrationTouch);
+    document.removeEventListener('mousedown', handleCalibrationMouse);
+
+    // Get beats from recording phase only (skip warmup)
+    const recordingBeatTimes = calibrationState.beatTimes.slice(CALIBRATION.WARMUP_BEATS);
+    const tapTimes = calibrationState.tapTimes;
+
+    // Calculate offsets: for each tap, find the closest beat and compute difference
+    const offsets = [];
+    for (const tapTime of tapTimes) {
+        let closestBeat = null;
+        let closestDiff = Infinity;
+
+        for (const beatTime of recordingBeatTimes) {
+            const diff = tapTime - beatTime; // Positive = tap after beat (late)
+            if (Math.abs(diff) < Math.abs(closestDiff)) {
+                closestDiff = diff;
+                closestBeat = beatTime;
+            }
+        }
+
+        // Only include if within outlier threshold
+        if (Math.abs(closestDiff) <= CALIBRATION.OUTLIER_THRESHOLD) {
+            offsets.push(closestDiff);
+        }
+    }
+
+    let finalOffset = 0;
+    const progress = document.getElementById('calibration-progress');
+    const instruction = document.getElementById('calibration-instruction');
+
+    if (offsets.length >= 3) {
+        // Calculate average offset
+        const avgOffset = offsets.reduce((a, b) => a + b, 0) / offsets.length;
+
+        // Clamp to valid range
+        finalOffset = Math.round(Math.max(CALIBRATION.MIN_OFFSET, Math.min(CALIBRATION.MAX_OFFSET, avgOffset)));
+
+        // Save to settings
+        const settings = loadSettings();
+        settings.inputOffset = finalOffset;
+        saveSettings(settings);
+        state.settings.inputOffset = finalOffset;
+
+        // Update display
+        const sign = finalOffset >= 0 ? '+' : '';
+        if (instruction) instruction.textContent = 'Calibration Complete!';
+        if (progress) progress.textContent = `Offset: ${sign}${finalOffset}ms`;
+
+        // Update the current offset display
+        const offsetDisplay = document.getElementById('current-offset');
+        if (offsetDisplay) {
+            offsetDisplay.textContent = `${sign}${finalOffset}ms`;
+        }
+    } else {
+        if (instruction) instruction.textContent = 'Not enough taps recorded';
+        if (progress) progress.textContent = 'Please try again';
+    }
+
+    // Auto-close after delay
+    setTimeout(() => {
+        const modal = document.getElementById('calibration-modal');
+        if (modal) modal.classList.add('hidden');
+    }, 2000);
+}
+
+/**
+ * Cancel calibration without saving
+ */
+export function cancelCalibration() {
+    calibrationState.isActive = false;
+    clearInterval(calibrationState.intervalId);
+
+    // Remove input listeners
+    document.removeEventListener('keydown', handleCalibrationKeyDown);
+    document.removeEventListener('touchstart', handleCalibrationTouch);
+    document.removeEventListener('mousedown', handleCalibrationMouse);
+
+    // Hide modal
+    const modal = document.getElementById('calibration-modal');
+    if (modal) modal.classList.add('hidden');
 }

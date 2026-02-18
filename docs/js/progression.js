@@ -505,14 +505,54 @@ function updateStats(gameResult) {
 }
 
 /**
- * Get all achievements with their status
+ * Get all achievements with their status and progress
  */
 export function getAllAchievements() {
     const prog = getProgression();
-    return Object.entries(ACHIEVEMENTS).map(([id, achievement]) => ({
-        ...achievement,
-        ...prog.achievements[id]
-    }));
+    const stats = prog.stats;
+
+    // Get total clubs count for rivalry achievement
+    const allClubIds = Object.values(clubs).map(c => c.id);
+    const totalClubs = allClubIds.length;
+
+    // Get max games with any single club for loyal_fan
+    const maxClubGames = Math.max(0, ...Object.values(prog.clubGames || {}));
+
+    // Total matchdays played
+    const totalMatchdays = stats.totalMatchdayWins + stats.totalMatchdayDraws + stats.totalMatchdayLosses;
+
+    // Progress data for each trackable achievement
+    const progressData = {
+        first_blood: { current: stats.totalWins, target: 1 },
+        first_win: { current: stats.totalMatchdayWins, target: 1 },
+        loyal_fan: { current: maxClubGames, target: 50 },
+        perfect_chant: { current: null, target: null }, // Single-game event, not trackable
+        centurion: { current: stats.highestCombo, target: 100 },
+        rivalry: { current: stats.clubsBeaten.length, target: totalClubs },
+        untouchable: { current: null, target: null }, // Single-game event, not trackable
+        comeback_king: { current: stats.comebackWins, target: 1 },
+        marathon: { current: stats.totalChantsPlayed, target: 100 },
+        dedicated: { current: totalMatchdays, target: 10 },
+        high_scorer: { current: stats.highestScore, target: 5000 },
+        fever_master: { current: Math.floor(stats.feverTimeAccumulated), target: 30 }
+    };
+
+    return Object.entries(ACHIEVEMENTS).map(([id, achievement]) => {
+        const progress = progressData[id] || { current: null, target: null };
+        const isTrackable = progress.current !== null && progress.target !== null;
+        const progressPercent = isTrackable
+            ? Math.min(100, (progress.current / progress.target) * 100)
+            : 0;
+
+        return {
+            ...achievement,
+            ...prog.achievements[id],
+            progress: progress.current,
+            target: progress.target,
+            progressPercent,
+            isTrackable
+        };
+    });
 }
 
 // ============================================
@@ -907,16 +947,31 @@ export function getUnlockedChoreos() {
 export function getAllChoreoStatuses() {
     const prog = getProgression();
     const unlocked = prog.unlockedChoreos || [...CHOREO_UNLOCKS.starting];
+    const currentLevel = prog.level;
+
+    // Get achievement progress data for achievement-locked choreos
+    const allAchievements = getAllAchievements();
+    const achievementProgressMap = {};
+    allAchievements.forEach(a => {
+        achievementProgressMap[a.id] = a;
+    });
 
     return CHOREO_UNLOCKS.allChoreos.map(choreo => {
         const isUnlocked = unlocked.includes(choreo.id);
         let unlockRequirement = null;
+        let progress = null;
+        let target = null;
+        let progressPercent = 0;
 
         if (!isUnlocked) {
             // Find how to unlock this choreo
             for (const [level, unlock] of Object.entries(CHOREO_UNLOCKS.level)) {
                 if (unlock.choreo === choreo.id) {
-                    unlockRequirement = { type: 'level', level: parseInt(level) };
+                    const requiredLevel = parseInt(level);
+                    unlockRequirement = { type: 'level', level: requiredLevel };
+                    progress = currentLevel;
+                    target = requiredLevel;
+                    progressPercent = Math.min(100, (currentLevel / requiredLevel) * 100);
                     break;
                 }
             }
@@ -924,11 +979,18 @@ export function getAllChoreoStatuses() {
                 for (const [achievementId, unlock] of Object.entries(CHOREO_UNLOCKS.achievement)) {
                     if (unlock.choreo === choreo.id) {
                         const achievement = ACHIEVEMENTS[achievementId];
+                        const achievementData = achievementProgressMap[achievementId];
                         unlockRequirement = {
                             type: 'achievement',
                             achievementId,
                             achievementName: achievement?.name || achievementId
                         };
+                        // Use achievement progress if trackable
+                        if (achievementData && achievementData.isTrackable) {
+                            progress = achievementData.progress;
+                            target = achievementData.target;
+                            progressPercent = achievementData.progressPercent;
+                        }
                         break;
                     }
                 }
@@ -938,7 +1000,10 @@ export function getAllChoreoStatuses() {
         return {
             ...choreo,
             unlocked: isUnlocked,
-            unlockRequirement
+            unlockRequirement,
+            progress,
+            target,
+            progressPercent
         };
     });
 }

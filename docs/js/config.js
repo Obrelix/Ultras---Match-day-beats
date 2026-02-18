@@ -836,6 +836,180 @@ export const CHOREO_UNLOCKS = {
 // Hold Beat (Long Press) System
 // ============================================
 
+// ============================================
+// Analytics Dashboard
+// ============================================
+
+export const ANALYTICS = {
+    MAX_HISTORY_ENTRIES: 100,      // Maximum games to store (FIFO pruning)
+    TREND_WINDOW_SIZE: 10,         // Number of games for trend calculations
+    MIN_GAMES_FOR_TRENDS: 3,       // Minimum games needed to show trends
+    CHART_ANIMATION_DURATION: 500, // Chart animation in ms
+    SESSION_TIMEOUT: 30 * 60 * 1000, // 30 min session timeout
+    COLORS: {
+        perfect: '#00ff88',
+        good: '#88ff00',
+        ok: '#ffaa00',
+        miss: '#ff4444',
+        trend: '#00aaff',
+        trendFill: 'rgba(0, 170, 255, 0.15)',
+        grid: 'rgba(255, 255, 255, 0.1)',
+        label: 'rgba(255, 255, 255, 0.7)'
+    }
+};
+
+// ============================================
+// Input Lag Calibration
+// ============================================
+
+export const CALIBRATION = {
+    TEMPO_MS: 600,           // 100 BPM metronome tempo
+    WARMUP_BEATS: 4,         // Non-recorded beats to warm up
+    RECORD_BEATS: 8,         // Beats to record for calibration
+    MIN_OFFSET: -150,        // Minimum offset (ms) - player taps early
+    MAX_OFFSET: 150,         // Maximum offset (ms) - player taps late
+    OUTLIER_THRESHOLD: 250   // Ignore mistaps beyond this deviation (ms)
+};
+
+// ============================================
+// AI Trash Talk System
+// ============================================
+
+export const TRASH_TALK = {
+    ENABLED_DEFAULT: true,
+    MIN_INTERVAL: 4000,      // Minimum ms between trash talk messages
+    DISPLAY_DURATION: 2500,  // How long message stays visible
+    MISS_STREAK_THRESHOLD: 3, // Misses in a row to trigger taunt
+
+    // Message categories with weighted random selection
+    MESSAGES: {
+        // When AI is significantly ahead
+        winning: [
+            "Is that all you've got?",
+            "My grandma has better rhythm!",
+            "Too easy!",
+            "You call that support?",
+            "The away section is louder!",
+            "Wake up!",
+            "Amateur hour over there!",
+            "Even the ball boys are better!"
+        ],
+        // When AI gets a perfect hit
+        aiPerfect: [
+            "PERFECT! Watch and learn!",
+            "That's how it's done!",
+            "Feel the rhythm!",
+            "Poetry in motion!",
+            "Textbook timing!"
+        ],
+        // When player misses
+        playerMiss: [
+            "MISS! Ha!",
+            "Oops!",
+            "Off beat!",
+            "That was painful to watch",
+            "Did you even try?",
+            "Butterfingers!",
+            "Wrong sport?",
+            "My turn to shine!"
+        ],
+        // When player misses multiple times in a row
+        missStreak: [
+            "Having trouble there?",
+            "Maybe try an easier song?",
+            "Need a tutorial?",
+            "This is embarrassing...",
+            "Your crowd is leaving!",
+            "Should I slow down for you?"
+        ],
+        // When AI builds a combo
+        aiCombo: [
+            "Combo! Can you keep up?",
+            "On fire!",
+            "Unstoppable!",
+            "The ultras are with ME!",
+            "Feel that momentum!"
+        ],
+        // When player breaks their combo
+        comboBreak: [
+            "There goes your streak!",
+            "Combo CRUSHED!",
+            "Back to zero!",
+            "All that work, gone!",
+            "Momentum shift!"
+        ],
+        // When AI is losing (cocky denial)
+        losing: [
+            "Lucky streak, that's all!",
+            "I'm just warming up!",
+            "Don't get comfortable!",
+            "The comeback is coming!",
+            "You can't keep this up!"
+        ],
+        // Game start taunts
+        gameStart: [
+            "Let's see what you've got!",
+            "Prepare to lose!",
+            "My stadium now!",
+            "Hope you're ready!",
+            "This won't take long!"
+        ],
+        // Near end of game (AI winning)
+        nearEndWinning: [
+            "It's almost over for you!",
+            "Too little, too late!",
+            "Accept defeat!",
+            "The final whistle approaches!"
+        ],
+        // Near end of game (AI losing)
+        nearEndLosing: [
+            "Not over yet!",
+            "Miracle time!",
+            "Never surrender!",
+            "One last push!"
+        ],
+        // Matchday specific - AI scores goal
+        aiGoal: [
+            "GOOOOAL! Get in!",
+            "The net is BULGING!",
+            "What a strike!",
+            "Your defense is WEAK!",
+            "Too clinical!"
+        ],
+        // Matchday specific - Player scores goal
+        playerGoal: [
+            "Lucky goal...",
+            "Won't happen again!",
+            "Fluke!",
+            "Enjoy it while it lasts!"
+        ]
+    }
+};
+
+// Personality-specific trash talk styles (modifies tone/frequency)
+export const TRASH_TALK_PERSONALITIES = {
+    aggressive: {
+        frequency: 1.5,      // More frequent trash talk
+        categories: ['winning', 'playerMiss', 'aiPerfect', 'comboBreak']
+    },
+    comebackKing: {
+        frequency: 1.0,
+        categories: ['losing', 'nearEndLosing', 'comboBreak']
+    },
+    consistent: {
+        frequency: 0.7,      // Less frequent, more measured
+        categories: ['winning', 'aiCombo']
+    },
+    clutch: {
+        frequency: 1.2,
+        categories: ['nearEndWinning', 'nearEndLosing', 'aiPerfect']
+    },
+    wildcard: {
+        frequency: 1.3,
+        categories: ['playerMiss', 'missStreak', 'aiCombo', 'winning', 'losing']
+    }
+};
+
 export const HOLD_BEAT = {
     MIN_DURATION: 0.3,           // Minimum hold duration (seconds)
     MAX_DURATION: 15.0,           // Maximum hold duration (seconds)

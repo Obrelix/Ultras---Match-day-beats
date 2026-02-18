@@ -29,7 +29,9 @@ export function loadSettings() {
         difficulty: 'normal',
         reducedEffects: false,
         tutorialSeen: false,
-        metronomeEnabled: false
+        metronomeEnabled: false,
+        inputOffset: 0,       // Calibration offset in ms (positive = player taps late)
+        trashTalkEnabled: true // AI trash talk feature
     };
     const store = getStore();
     // Merge stored settings with defaults to handle missing properties from older versions
@@ -122,4 +124,98 @@ export function saveLeaderboardCache(cache) {
     const store = getStore();
     store.leaderboardCache = cache;
     setStore(store);
+}
+
+// ============================================
+// Game History (for Analytics Dashboard)
+// ============================================
+
+const MAX_HISTORY_ENTRIES = 100;
+
+/**
+ * Load game history array
+ * @returns {Array} Array of game records, newest first
+ */
+export function loadGameHistory() {
+    const store = getStore();
+    return store.gameHistory || [];
+}
+
+/**
+ * Save a game record to history
+ * Automatically prunes oldest entries if over limit
+ * @param {Object} record - Game record object
+ */
+export function saveGameRecord(record) {
+    const store = getStore();
+    if (!store.gameHistory) {
+        store.gameHistory = [];
+    }
+
+    // Add unique ID and timestamp if not present
+    if (!record.id) {
+        record.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+    }
+    if (!record.timestamp) {
+        record.timestamp = Date.now();
+    }
+
+    // Add to beginning (newest first)
+    store.gameHistory.unshift(record);
+
+    // Prune if over limit
+    if (store.gameHistory.length > MAX_HISTORY_ENTRIES) {
+        store.gameHistory = store.gameHistory.slice(0, MAX_HISTORY_ENTRIES);
+    }
+
+    setStore(store);
+}
+
+/**
+ * Clear all game history
+ */
+export function clearGameHistory() {
+    const store = getStore();
+    store.gameHistory = [];
+    setStore(store);
+}
+
+/**
+ * Get current session ID (creates new one if expired or none exists)
+ * @returns {Object} { sessionId, sessionStartTime, isNew }
+ */
+export function getOrCreateSession() {
+    const store = getStore();
+    const now = Date.now();
+    const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+
+    // Check if existing session is still valid
+    if (store.currentSession && store.currentSession.startTime) {
+        const elapsed = now - store.currentSession.lastActivity;
+        if (elapsed < SESSION_TIMEOUT) {
+            // Update last activity
+            store.currentSession.lastActivity = now;
+            setStore(store);
+            return {
+                sessionId: store.currentSession.id,
+                sessionStartTime: store.currentSession.startTime,
+                isNew: false
+            };
+        }
+    }
+
+    // Create new session
+    const newSession = {
+        id: now.toString(36) + Math.random().toString(36).substr(2, 5),
+        startTime: now,
+        lastActivity: now
+    };
+    store.currentSession = newSession;
+    setStore(store);
+
+    return {
+        sessionId: newSession.id,
+        sessionStartTime: newSession.startTime,
+        isNew: true
+    };
 }
