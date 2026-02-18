@@ -97,6 +97,120 @@ function updateFrameCache(now) {
 }
 
 // ============================================
+// Screen Effect System - Shake, Flash, Color Tint
+// ============================================
+
+// Apply screen shake transform - returns offset to apply via ctx.translate
+function applyScreenShake(now) {
+    const shake = state.screenShake;
+    if (!shake || !shake.active) return { x: 0, y: 0 };
+
+    const elapsed = now - shake.startTime;
+    if (elapsed >= shake.duration) {
+        shake.active = false;
+        return { x: 0, y: 0 };
+    }
+
+    const progress = elapsed / shake.duration;
+    let decayFactor;
+
+    switch (shake.decay) {
+        case 'exponential':
+            decayFactor = Math.pow(1 - progress, 2);
+            break;
+        case 'bounce':
+            // Oscillating decay
+            decayFactor = (1 - progress) * Math.abs(Math.cos(progress * Math.PI * 3));
+            break;
+        case 'explosion':
+            // Sharp start, long tail
+            decayFactor = Math.pow(1 - progress, 1.5) * (1 + Math.sin(progress * Math.PI * 4) * 0.3);
+            break;
+        case 'snap':
+            // Quick jolt then settle
+            decayFactor = progress < 0.3 ? 1 : Math.pow(1 - (progress - 0.3) / 0.7, 3);
+            break;
+        case 'linear':
+        default:
+            decayFactor = 1 - progress;
+    }
+
+    const intensity = shake.intensity * decayFactor;
+    const angle = elapsed * 0.05; // Rotating shake direction
+    const x = Math.sin(angle) * intensity * (Math.random() * 0.4 + 0.8);
+    const y = Math.cos(angle * 1.3) * intensity * (Math.random() * 0.4 + 0.8);
+
+    return { x, y };
+}
+
+// Draw screen flash overlay
+function drawScreenFlash(ctx, w, h, now) {
+    const flash = state.screenFlash;
+    if (!flash || !flash.active) return;
+
+    const elapsed = now - flash.startTime;
+    if (elapsed >= flash.duration) {
+        flash.active = false;
+        return;
+    }
+
+    const progress = elapsed / flash.duration;
+    // Quick fade-in, gradual fade-out
+    const alpha = progress < 0.15
+        ? (progress / 0.15) * flash.intensity
+        : flash.intensity * (1 - (progress - 0.15) / 0.85);
+
+    // Radial gradient from center
+    const gradient = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.7);
+    gradient.addColorStop(0, flash.color);
+    gradient.addColorStop(1, 'transparent');
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+}
+
+// Get combo color tint for continuous ambient effect at high combos
+function getComboColorTint(combo, now) {
+    if (combo < 10) return null;
+
+    // Pulsing intensity
+    const pulseSpeed = combo >= 50 ? 150 : combo >= 25 ? 200 : 300;
+    const baseAlpha = combo >= 50 ? 0.08 : combo >= 25 ? 0.05 : 0.03;
+    const pulseRange = combo >= 50 ? 0.04 : 0.02;
+    const alpha = baseAlpha + Math.sin(now / pulseSpeed) * pulseRange;
+
+    // Color based on combo level
+    let color;
+    if (combo >= 100) {
+        // Rainbow cycling at 100+
+        const hue = (now / 20) % 360;
+        color = `hsla(${hue}, 100%, 60%, ${alpha})`;
+    } else if (combo >= 50) {
+        color = `rgba(255, 68, 0, ${alpha})`; // Deep orange/red
+    } else if (combo >= 25) {
+        color = `rgba(255, 136, 0, ${alpha})`; // Orange
+    } else {
+        color = `rgba(255, 215, 0, ${alpha})`; // Gold
+    }
+
+    return color;
+}
+
+// Draw combo color tint overlay
+function drawComboTint(ctx, w, h, combo, now) {
+    const tint = getComboColorTint(combo, now);
+    if (!tint) return;
+
+    ctx.save();
+    ctx.fillStyle = tint;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+}
+
+// ============================================
 // Coreo Configuration System
 // Each coreo type defines its unique crowd behavior
 // To add a new coreo: add an entry here and implement any new item/overlay renderers
@@ -3000,6 +3114,11 @@ export function drawGameVisuals() {
 
     ctx.clearRect(0, 0, w, h);
 
+    // Apply screen shake transform (affects all drawing)
+    const shakeOffset = applyScreenShake(now);
+    ctx.save();
+    ctx.translate(shakeOffset.x, shakeOffset.y);
+
     // Sky / stadium background gradient (use cached for static states)
     const emotion = _frameCache.crowdEmotion;
     const reducedEffects = _frameCache.reducedEffects;
@@ -3284,114 +3403,147 @@ export function drawGameVisuals() {
         hudY += 28;
     }
 
-    // 3) Frenzy progress indicator (combo 2-5, pre-frenzy)
-    if (state.comboDisplayCount >= 2 && state.comboDisplayCount <= 5 && !currentFrenzy) {
-        const progressText = `COMBO ${state.comboDisplayCount}/6 → FEVER!`;
-        ctx.save();
-        ctx.font = 'bold 16px monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 3;
-        ctx.strokeText(progressText, w / 2, hudY);
-        const gradProgress = state.comboDisplayCount / 6;
-        const hue = 30 + gradProgress * 30;
-        ctx.fillStyle = `hsl(${hue}, 100%, 60%)`;
-        ctx.globalAlpha = 0.7 + gradProgress * 0.3;
-        ctx.fillText(progressText, w / 2, hudY);
-        ctx.globalAlpha = 1;
-        ctx.restore();
-        hudY += 24;
-    }
-
-    // 4) Combo counter (frenzy mode, combo > 5)
-    if (state.comboDisplayCount > 5) {
+    // 3) Combo counter - shows from combo >= 3, grows progressively
+    if (state.comboDisplayCount >= 3) {
+        const combo = state.comboDisplayCount;
         const sinceBump = now - state.comboBumpTime;
-        const bumpT = Math.min(1, sinceBump / 200);
+        const bumpT = Math.min(1, sinceBump / 250);
 
-        let comboScale;
-        if (bumpT < 0.4) {
-            comboScale = 1 + (1 - bumpT / 0.4) * 0.25;
-        } else {
-            comboScale = 1.0;
-        }
+        // Milestone detection: 10, 25, 50, 75, 100, and every 50 after
+        const isMilestone = combo === 10 || combo === 25 || combo === 50 ||
+                            combo === 75 || combo === 100 || (combo > 100 && combo % 50 === 0);
 
-        const pulse = (Math.sin(now / 120) + 1) * 0.5;
-        comboScale *= 1 + pulse * 0.04;
+        // Smooth easing for milestone bump (ease-out cubic)
+        const milestoneBumpScale = isMilestone && bumpT < 0.6
+            ? 1 + 0.4 * Math.pow(1 - bumpT / 0.6, 3)
+            : 1.0;
+
+        // Regular bump with ease-out
+        let comboScale = bumpT < 0.5
+            ? 1 + 0.2 * Math.pow(1 - bumpT / 0.5, 2)
+            : 1.0;
+        comboScale *= milestoneBumpScale;
+
+        // Subtle pulse - intensity scales with combo
+        const pulseSpeed = Math.max(60, 140 - combo);
+        const pulseAmount = Math.min(0.06, 0.02 + combo * 0.0005);
+        const pulse = (Math.sin(now / pulseSpeed) + 1) * 0.5;
+        comboScale *= 1 + pulse * pulseAmount;
+
+        // Progressive font sizing with smoother transitions
+        let fontSize;
+        if (combo >= 75) fontSize = 48;
+        else if (combo >= 50) fontSize = 44;
+        else if (combo >= 25) fontSize = 38;
+        else if (combo >= 10) fontSize = 30;
+        else fontSize = 22;
 
         const multiplier = getComboMultiplier();
-        let comboColor, glowColor;
-        if (multiplier >= 3) {
-            comboColor = '#ff4444'; glowColor = '#ff0000';
-        } else if (multiplier >= 2) {
-            comboColor = '#ff8800'; glowColor = '#ff6600';
-        } else if (multiplier >= 1.5) {
-            comboColor = '#ffd700'; glowColor = '#ffaa00';
+        let comboColor;
+
+        // Color based on combo level - rainbow at 100+
+        if (combo >= 100) {
+            const hue = (now / 12) % 360;
+            comboColor = `hsl(${hue}, 100%, 60%)`;
+        } else if (combo >= 50) {
+            comboColor = '#ff3333';
+        } else if (combo >= 25) {
+            comboColor = '#ff6600';
+        } else if (combo >= 10) {
+            comboColor = '#ffaa00';
         } else {
-            comboColor = '#cccccc'; glowColor = '#888888';
+            comboColor = '#dddddd';
         }
 
-        // Use cached strings to avoid allocation during frenzy
-        if (_frameCache.lastComboCount !== state.comboDisplayCount || _frameCache.lastMultiplier !== multiplier) {
-            _frameCache.comboStr = state.comboDisplayCount + ' COMBO';
+        // Cached strings to avoid allocation during frenzy
+        if (_frameCache.lastComboCount !== combo || _frameCache.lastMultiplier !== multiplier) {
+            _frameCache.comboStr = combo + ' COMBO';
             _frameCache.multiStr = multiplier > 1 ? ` x${multiplier}` : '';
             _frameCache.fullStr = _frameCache.comboStr + _frameCache.multiStr;
-            _frameCache.lastComboCount = state.comboDisplayCount;
+            _frameCache.lastComboCount = combo;
             _frameCache.lastMultiplier = multiplier;
         }
-        const comboStr = _frameCache.comboStr;
-        const multiStr = _frameCache.multiStr;
-        const fullStr = _frameCache.fullStr;
 
         ctx.save();
         ctx.translate(w / 2, hudY);
         ctx.scale(comboScale, comboScale);
-        ctx.font = 'bold 20px monospace';
+
+        // Explicitly clear any shadow state
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+
+        ctx.font = `bold ${fontSize}px monospace`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
-        // Layer 1: black outline (no shadow)
-        ctx.shadowColor = 'transparent';
-        ctx.shadowBlur = 0;
+        // Layer 1: Black outline only
         ctx.strokeStyle = '#000';
-        ctx.lineWidth = 4;
-        ctx.strokeText(fullStr, 0, 0);
+        ctx.lineWidth = fontSize >= 38 ? 5 : 4;
+        ctx.strokeText(_frameCache.fullStr, 0, 0);
 
-        // Layer 2: colored fill with glow
-        ctx.shadowColor = glowColor;
-        ctx.shadowBlur = 10 + pulse * 6 + multiplier * 3;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 0;
+        // Layer 2: Colored fill
         ctx.fillStyle = comboColor;
-        ctx.fillText(comboStr, 0, 0);
+        ctx.fillText(_frameCache.comboStr, 0, 0);
 
-        // Turn off shadow before drawing multiplier
-        ctx.shadowColor = 'transparent';
-        ctx.shadowBlur = 0;
-
-        // Layer 3: multiplier suffix (no shadow)
-        if (multiStr) {
+        // Layer 3: White multiplier suffix
+        if (_frameCache.multiStr) {
             ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 16px monospace';
-            const comboW = ctx.measureText(comboStr).width;
-            const multiW = ctx.measureText(multiStr).width;
-            ctx.fillText(multiStr, (comboW + multiW) / 2, 0);
+            ctx.font = `bold ${Math.floor(fontSize * 0.75)}px monospace`;
+            const comboW = ctx.measureText(_frameCache.comboStr).width;
+            const multiW = ctx.measureText(_frameCache.multiStr).width;
+            ctx.fillText(_frameCache.multiStr, (comboW + multiW) / 2, 0);
         }
 
-        ctx.globalAlpha = 1;
         ctx.restore();
+
+        // Milestone burst text (no shadow)
+        if (isMilestone && sinceBump < 700) {
+            const burstProgress = sinceBump / 700;
+            const burstEase = 1 - Math.pow(1 - burstProgress, 3); // ease-out cubic
+            const burstScale = 0.7 + Math.sin(burstProgress * Math.PI) * 0.6;
+            const burstAlpha = 1 - burstEase;
+            const burstY = hudY - 35 - burstEase * 45;
+
+            ctx.save();
+            ctx.translate(w / 2, burstY);
+            ctx.scale(burstScale, burstScale);
+            ctx.globalAlpha = burstAlpha;
+
+            // Explicitly clear shadow state
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 0;
+
+            ctx.font = 'bold 26px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 4;
+            ctx.strokeText(`${combo} COMBO!`, 0, 0);
+
+            ctx.fillStyle = combo >= 100
+                ? `hsl(${(now / 8 + burstProgress * 180) % 360}, 100%, 70%)`
+                : '#ffffff';
+            ctx.fillText(`${combo} COMBO!`, 0, 0);
+
+            ctx.restore();
+        }
 
         // Combo meter arc: progress to next multiplier threshold
         let nextThreshold, currentBase;
-        if (state.playerCombo < 10) { nextThreshold = 10; currentBase = 5; }
-        else if (state.playerCombo < 15) { nextThreshold = 15; currentBase = 10; }
-        else if (state.playerCombo < 20) { nextThreshold = 20; currentBase = 15; }
+        if (combo < 10) { nextThreshold = 10; currentBase = 5; }
+        else if (combo < 15) { nextThreshold = 15; currentBase = 10; }
+        else if (combo < 20) { nextThreshold = 20; currentBase = 15; }
         else { nextThreshold = null; }
 
         if (nextThreshold) {
             const progress = (state.playerCombo - currentBase) / (nextThreshold - currentBase);
-            const arcR = 14;
-            const arcX = w / 2 + 100;
+            const arcR = fontSize >= 38 ? 18 : 14;
+            const arcX = w / 2 + (fontSize >= 38 ? 130 : 100);
             const arcY = hudY;
 
             ctx.save();
@@ -3417,6 +3569,17 @@ export function drawGameVisuals() {
             ctx.restore();
         }
     }
+
+    // Draw combo color tint overlay (subtle ambient glow at high combos)
+    if (!reducedEffects) {
+        drawComboTint(ctx, w, h, state.playerCombo, now);
+    }
+
+    // Draw screen flash effect (on top of everything)
+    drawScreenFlash(ctx, w, h, now);
+
+    // Restore from shake transform
+    ctx.restore();
 }
 
 export function drawAmbientCrowd() {

@@ -166,15 +166,9 @@ export function handleInput() {
         state.playerStats.perfect++;
         state.playerCombo++;
 
-        // Screen shake on perfect streaks (#1)
-        if (!state.settings.reducedEffects && state.crowdBgCanvas) {
-            const combo = state.playerCombo;
-            if (combo >= 10) {
-                const shakeClass = combo >= 30 ? 'shake-intense' : 'shake';
-                state.crowdBgCanvas.classList.remove('shake', 'shake-intense');
-                void state.crowdBgCanvas.offsetWidth;  // Force reflow for re-animation
-                state.crowdBgCanvas.classList.add(shakeClass);
-            }
+        // Screen shake on perfect hits (combo >= 10)
+        if (state.playerCombo >= 10) {
+            triggerScreenShake('perfect');
         }
     } else if (rating === 'GOOD') {
         state.playerStats.good++;
@@ -183,6 +177,9 @@ export function handleInput() {
         state.playerStats.ok++;
         state.playerCombo++;
     }
+
+    // Check for combo milestone effects
+    checkComboMilestone(state.playerCombo);
 
     // Record result for visualizer beat coloring
     if (bestBeat.index !== undefined) {
@@ -382,11 +379,26 @@ export function registerMiss() {
 
     const beatIndex = state.activeBeat?.index ?? -1;
 
+    // Trigger combo break effect if breaking a significant combo
+    const brokenCombo = state.playerCombo;
+    if (brokenCombo >= 10) {
+        triggerScreenShake('comboBreak');
+        triggerScreenFlash('comboBreak');
+
+        // Add CSS animation fallback for combo break
+        if (state.crowdBgCanvas) {
+            state.crowdBgCanvas.classList.remove('combo-break');
+            void state.crowdBgCanvas.offsetWidth;
+            state.crowdBgCanvas.classList.add('combo-break');
+        }
+    }
+
     if (state.activeBeat && state.activeBeat.index !== undefined) {
         state.beatResults[state.activeBeat.index] = 'miss';
     }
     state.playerStats.miss++;
     state.playerCombo = 0;
+    state.lastMilestoneCombo = 0;  // Reset milestone tracker
     state.powerupChargeProgress = 0;  // Reset power-up charge on miss
 
     // Record miss for replay
@@ -407,6 +419,85 @@ export function getComboMultiplier() {
     if (state.playerCombo >= 10) return 2;
     if (state.playerCombo >= 5) return 1.5;
     return 1;
+}
+
+// ============================================
+// Screen Shake & Flash Effects
+// ============================================
+
+const SHAKE_PRESETS = {
+    perfect: { intensity: 3, duration: 120, decay: 'exponential' },
+    combo10: { intensity: 5, duration: 180, decay: 'bounce' },
+    combo25: { intensity: 7, duration: 220, decay: 'bounce' },
+    combo50: { intensity: 9, duration: 280, decay: 'explosion' },
+    combo100: { intensity: 12, duration: 350, decay: 'explosion' },
+    comboBreak: { intensity: 6, duration: 200, decay: 'snap' }
+};
+
+const FLASH_PRESETS = {
+    combo10: { color: '#ffd700', intensity: 0.15, duration: 200 },
+    combo20: { color: '#ff8800', intensity: 0.2, duration: 250 },
+    combo25: { color: '#ffaa00', intensity: 0.22, duration: 280 },
+    combo50: { color: '#ff4400', intensity: 0.28, duration: 320 },
+    combo100: { color: '#ffffff', intensity: 0.35, duration: 400 },
+    comboBreak: { color: '#ff0000', intensity: 0.3, duration: 250 }
+};
+
+export function triggerScreenShake(type) {
+    if (state.settings?.reducedEffects) return;
+    const preset = SHAKE_PRESETS[type];
+    if (!preset) return;
+
+    state.screenShake = {
+        active: true,
+        intensity: preset.intensity,
+        startTime: performance.now(),
+        duration: preset.duration,
+        decay: preset.decay
+    };
+}
+
+export function triggerScreenFlash(type) {
+    if (state.settings?.reducedEffects) return;
+    const preset = FLASH_PRESETS[type];
+    if (!preset) return;
+
+    state.screenFlash = {
+        active: true,
+        color: preset.color,
+        intensity: preset.intensity,
+        startTime: performance.now(),
+        duration: preset.duration
+    };
+}
+
+// Check for combo milestones and trigger effects
+function checkComboMilestone(combo) {
+    if (state.settings?.reducedEffects) return;
+
+    // Only trigger milestone effects once per milestone
+    const lastMilestone = state.lastMilestoneCombo || 0;
+
+    if (combo >= 100 && lastMilestone < 100 && combo % 100 === 0) {
+        triggerScreenShake('combo100');
+        triggerScreenFlash('combo100');
+        state.lastMilestoneCombo = combo;
+    } else if (combo === 50) {
+        triggerScreenShake('combo50');
+        triggerScreenFlash('combo50');
+        state.lastMilestoneCombo = 50;
+    } else if (combo === 25) {
+        triggerScreenShake('combo25');
+        triggerScreenFlash('combo25');
+        state.lastMilestoneCombo = 25;
+    } else if (combo === 20 && lastMilestone < 20) {
+        triggerScreenFlash('combo20');
+        state.lastMilestoneCombo = 20;
+    } else if (combo === 10 && lastMilestone < 10) {
+        triggerScreenShake('combo10');
+        triggerScreenFlash('combo10');
+        state.lastMilestoneCombo = 10;
+    }
 }
 
 export function showFeedback(rating) {
@@ -656,15 +747,13 @@ export function handleInputRelease() {
             state.playerMaxCombo = state.playerCombo;
         }
 
-        // Screen shake on perfect holds
-        if (!state.settings.reducedEffects && state.crowdBgCanvas) {
-            if (state.playerCombo >= 10) {
-                const shakeClass = state.playerCombo >= 30 ? 'shake-intense' : 'shake';
-                state.crowdBgCanvas.classList.remove('shake', 'shake-intense');
-                void state.crowdBgCanvas.offsetWidth;
-                state.crowdBgCanvas.classList.add(shakeClass);
-            }
+        // Screen shake on perfect holds (combo >= 10)
+        if (state.playerCombo >= 10) {
+            triggerScreenShake('perfect');
         }
+
+        // Check for combo milestones
+        checkComboMilestone(state.playerCombo);
     } else if (overallRating === 'good') {
         state.playerStats.good++;
         // Combo maintained, no bonus

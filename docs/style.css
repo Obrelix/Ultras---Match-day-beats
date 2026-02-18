@@ -1281,6 +1281,17 @@ body {
     animation: screenShakeIntense 0.2s ease-out;
 }
 
+/* Combo break pulse animation */
+@keyframes comboBreakPulse {
+    0% { filter: brightness(1) saturate(1); }
+    15% { filter: brightness(0.6) saturate(0.4); }
+    100% { filter: brightness(1) saturate(1); }
+}
+
+#crowd-bg.combo-break {
+    animation: comboBreakPulse 0.3s ease-out;
+}
+
 #scoreboard {
     display: flex;
     align-items: center;

@@ -96,6 +96,11 @@ export const state = {
     confettiParticles: [],
     weatherIntensity: 0,  // 0-1 for gradual transitions
 
+    // Screen effects (combo visuals)
+    screenShake: { active: false, intensity: 0, startTime: 0, duration: 0, decay: 'linear' },
+    screenFlash: { active: false, color: '#ffffff', intensity: 0, startTime: 0, duration: 0 },
+    lastMilestoneCombo: 0,
+
     // Tifo display (coreoType 3)
     tifoMap: null,        // 2D array of colors sampled from club logo
     tifoReady: false,     // True when tifo map is loaded and ready
@@ -204,6 +209,11 @@ export function resetGameState() {
     state.weatherIntensity = 0;
     state.lastCoreoId = 0;
     state.coreoStartTime = 0;
+
+    // Reset screen effects
+    state.screenShake = { active: false, intensity: 0, startTime: 0, duration: 0, decay: 'linear' };
+    state.screenFlash = { active: false, color: '#ffffff', intensity: 0, startTime: 0, duration: 0 };
+    state.lastMilestoneCombo = 0;
 
     state.feedbackText = '';
     state.feedbackAlpha = 0;
