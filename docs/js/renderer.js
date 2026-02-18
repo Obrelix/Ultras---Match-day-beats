@@ -795,40 +795,45 @@ export function drawVisualizer() {
             color = '#ffcc00';
             const distFromRight = isMirror ? x : w - x;
             const approach = Math.min(1, distFromRight / leadPx);
-            radius = beatR * (0.5 + 0.7 * approach);
-            alpha = 0.4 + 0.6 * approach;
+            radius = beatR * (0.6 + 0.6 * approach);
+            alpha = 0.5 + 0.5 * approach;
 
             // Hidden modifier: fade out beats as they approach hit line
             if (isHidden) {
-                const approachProgress = 1 - approach;  // 0 = just spawned, 1 = at hit line
+                const approachProgress = 1 - approach;
                 if (approachProgress >= hiddenFadeStart) {
                     const fadeProgress = (approachProgress - hiddenFadeStart) / (hiddenFadeEnd - hiddenFadeStart);
                     alpha *= Math.max(0, 1 - fadeProgress);
                 }
             }
 
-            // Enhanced motion trails (#3) - more trails at higher combos
-            if (approach > 0.2 && approach < 0.95) {
+            // Enhanced motion trails with gradient fade
+            if (approach > 0.2 && approach < 0.95 && !state.settings.reducedEffects) {
                 const comboMult = getComboMultiplier();
-                const trailCount = comboMult >= 2 ? 5 : comboMult >= 1.5 ? 4 : 3;
-                const trailIntensity = 0.15 + (comboMult - 1) * 0.05;
+                const trailCount = comboMult >= 2 ? 6 : comboMult >= 1.5 ? 5 : 4;
 
                 for (let t = 1; t <= trailCount; t++) {
-                    const trailX = x + t * 10;
+                    const trailX = x + t * 12;
                     if (trailX > w) break;
-                    ctx.globalAlpha = alpha * (trailIntensity - t * 0.03);
+                    const trailAlpha = alpha * (0.2 - t * 0.03) * (1 + (comboMult - 1) * 0.3);
+                    const trailRadius = radius * (0.8 - t * 0.08);
+
+                    ctx.globalAlpha = trailAlpha;
                     ctx.beginPath();
-                    ctx.arc(trailX, midY, radius * (0.75 - t * 0.08), 0, Math.PI * 2);
+                    ctx.arc(trailX, midY, trailRadius, 0, Math.PI * 2);
                     ctx.fillStyle = color;
                     ctx.fill();
                 }
 
-                // Glow trail for high combos
-                if (comboMult >= 2 && !state.settings.reducedEffects) {
-                    ctx.globalAlpha = alpha * 0.1;
+                // Comet tail glow for high combos
+                if (comboMult >= 1.5) {
+                    const glowGrad = ctx.createLinearGradient(x, midY, x + 50, midY);
+                    glowGrad.addColorStop(0, color);
+                    glowGrad.addColorStop(1, 'rgba(255,204,0,0)');
+                    ctx.globalAlpha = alpha * 0.15 * comboMult;
+                    ctx.fillStyle = glowGrad;
                     ctx.beginPath();
-                    ctx.arc(x + 8, midY, radius * 1.3, 0, Math.PI * 2);
-                    ctx.fillStyle = color;
+                    ctx.ellipse(x + 20, midY, 30, radius * 0.6, 0, 0, Math.PI * 2);
                     ctx.fill();
                 }
             }
@@ -839,34 +844,43 @@ export function drawVisualizer() {
         // Beat enters the hit zone
         const distToHitLine = Math.abs(x - hitLineX);
         const isInHitZone = !isPast && distToHitLine < okHalfW;
-        let strokeColor = '#ffffff';
+        let strokeColor = 'rgba(255,255,255,0.8)';
         let strokeWidth = 2;
+        let glowColor = color;
+        let glowIntensity = 0;
 
         if (isInHitZone) {
             if (distToHitLine < perfectHalfW) {
                 color = '#00ff88';
+                glowColor = '#00ffaa';
                 strokeColor = '#ffffff';
-                strokeWidth = 3;
+                strokeWidth = 2.5;
+                glowIntensity = 0.4;
             } else if (distToHitLine < goodHalfW) {
                 color = '#88ff00';
-                strokeColor = '#ccffcc';
-                strokeWidth = 2.5;
+                glowColor = '#aaff44';
+                strokeColor = '#eeffee';
+                strokeWidth = 2;
+                glowIntensity = 0.25;
             } else {
                 color = '#ffaa00';
-                strokeColor = '#ffddaa';
-                strokeWidth = 2.5;
+                glowColor = '#ffcc44';
+                strokeColor = '#ffeecc';
+                strokeWidth = 2;
+                glowIntensity = 0.15;
             }
 
             radius *= 1.15;
             alpha = 1;
 
-            const pulsePhase = (performance.now() % 400) / 400;
-            const pulseAlpha = 0.15 + Math.sin(pulsePhase * Math.PI * 2) * 0.1;
-            ctx.beginPath();
-            ctx.arc(x, midY, radius + 8, 0, Math.PI * 2);
-            ctx.fillStyle = color;
-            ctx.globalAlpha = pulseAlpha;
-            ctx.fill();
+            // Single subtle glow layer
+            if (glowIntensity > 0) {
+                ctx.globalAlpha = 0.12 * glowIntensity;
+                ctx.beginPath();
+                ctx.arc(x, midY, radius + 6, 0, Math.PI * 2);
+                ctx.fillStyle = glowColor;
+                ctx.fill();
+            }
         }
 
         ctx.globalAlpha = alpha;
@@ -881,66 +895,81 @@ export function drawVisualizer() {
             const countdown = 1.5;
             const ringProgress = Math.max(0, Math.min(1, timeUntil / countdown));
             const fill = 1 - ringProgress;
-            const ringRadius = radius * (1 + ringProgress * 0.8);
+            const ringRadius = radius * (1.1 + ringProgress * 0.7);
 
-            const queueFade = 1 / (1 + upcomingIdx * 0.75);
+            const queueFade = 1 / (1 + upcomingIdx * 0.6);
 
-            // Background track ring
+            // Background track ring with gradient
             ctx.beginPath();
             ctx.arc(x, midY, ringRadius, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-            ctx.lineWidth = 3;
+            ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+            ctx.lineWidth = 4;
             ctx.globalAlpha = alpha * queueFade;
             ctx.stroke();
 
-            // Filling progress arc
+            // Filling progress arc with color transition
             const sweepAngle = fill * Math.PI * 2;
-            const arcWidth = 2 + fill * 2;
+            const arcWidth = 3 + fill * 2;
             let arcColor;
-            if (fill < 0.6) {
-                arcColor = '#ffffff';
-            } else if (fill < 0.85) {
+            if (fill < 0.5) {
+                arcColor = 'rgba(255,255,255,0.7)';
+            } else if (fill < 0.75) {
                 arcColor = primary;
             } else {
                 arcColor = '#00ff88';
             }
+
             ctx.beginPath();
             ctx.arc(x, midY, ringRadius, -Math.PI / 2, -Math.PI / 2 + sweepAngle, false);
             ctx.strokeStyle = arcColor;
             ctx.lineWidth = arcWidth;
-            ctx.globalAlpha = alpha * (0.4 + 0.6 * fill) * queueFade;
+            ctx.globalAlpha = alpha * (0.5 + 0.5 * fill) * queueFade;
             ctx.stroke();
 
-            // Countdown text
-            if (timeUntil > 0.05 && timeUntil <= countdown) {
-                const label = timeUntil.toFixed(1);
-                ctx.font = upcomingIdx === 0 ? 'bold 11px monospace' : '10px monospace';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'bottom';
-                ctx.fillStyle = arcColor;
-                ctx.globalAlpha = alpha * (0.5 + 0.5 * fill) * queueFade;
-                ctx.fillText(label, x, midY - ringRadius - 4);
-            }
+            // Countdown number removed for cleaner look - progress ring is enough
 
-            // Urgency pulse on closest beat
-            if (upcomingIdx === 0 && timeUntil < 0.3 && timeUntil > 0) {
-                const urgency = 1 - (timeUntil / 0.3);
+            // Urgency effects on closest beat
+            if (upcomingIdx === 0 && timeUntil < 0.4 && timeUntil > 0) {
+                const urgency = 1 - (timeUntil / 0.4);
+
+                // Pulsing ring
                 ctx.beginPath();
-                ctx.arc(x, midY, radius + 5 + urgency * 3, 0, Math.PI * 2);
+                ctx.arc(x, midY, radius + 4 + urgency * 6, 0, Math.PI * 2);
                 ctx.strokeStyle = '#00ff88';
-                ctx.lineWidth = 1.5;
-                ctx.globalAlpha = alpha * urgency * 0.5;
+                ctx.lineWidth = 2 + urgency;
+                ctx.globalAlpha = alpha * urgency * 0.6;
                 ctx.stroke();
+
+                // Inner urgency glow
+                if (urgency > 0.5) {
+                    ctx.globalAlpha = (urgency - 0.5) * 0.3;
+                    ctx.beginPath();
+                    ctx.arc(x, midY, radius + 2, 0, Math.PI * 2);
+                    ctx.fillStyle = '#00ff88';
+                    ctx.fill();
+                }
             }
 
             ctx.globalAlpha = alpha;
         }
 
-        // Main circle
+        // === Main beat circle ===
+
+        // Simple gradient fill
+        const beatGrad = ctx.createRadialGradient(x - radius * 0.2, midY - radius * 0.2, 0, x, midY, radius);
+        beatGrad.addColorStop(0, lightenColor(color, 30));
+        beatGrad.addColorStop(0.6, color);
+        beatGrad.addColorStop(1, darkenColor(color, 20));
+
+        ctx.globalAlpha = alpha;
         ctx.beginPath();
         ctx.arc(x, midY, radius, 0, Math.PI * 2);
-        ctx.fillStyle = color;
+        ctx.fillStyle = beatGrad;
         ctx.fill();
+
+        // Outer stroke
+        ctx.beginPath();
+        ctx.arc(x, midY, radius, 0, Math.PI * 2);
         ctx.strokeStyle = strokeColor;
         ctx.lineWidth = strokeWidth;
         ctx.stroke();
@@ -948,63 +977,174 @@ export function drawVisualizer() {
         ctx.globalAlpha = 1;
     }
 
-    // --- Beat hit effects (expanding rings) ---
+    // Helper functions for color manipulation
+    function lightenColor(hex, percent) {
+        const num = parseInt(hex.replace('#', ''), 16);
+        const amt = Math.round(2.55 * percent);
+        const R = Math.min(255, (num >> 16) + amt);
+        const G = Math.min(255, ((num >> 8) & 0x00FF) + amt);
+        const B = Math.min(255, (num & 0x0000FF) + amt);
+        return `rgb(${R},${G},${B})`;
+    }
+
+    function darkenColor(hex, percent) {
+        const num = parseInt(hex.replace('#', ''), 16);
+        const amt = Math.round(2.55 * percent);
+        const R = Math.max(0, (num >> 16) - amt);
+        const G = Math.max(0, ((num >> 8) & 0x00FF) - amt);
+        const B = Math.max(0, (num & 0x0000FF) - amt);
+        return `rgb(${R},${G},${B})`;
+    }
+
+    // --- Beat hit effects (expanding rings with enhanced visuals) ---
     {
         const now = performance.now();
         for (let i = state.beatHitEffects.length - 1; i >= 0; i--) {
             const fx = state.beatHitEffects[i];
             const elapsed = now - fx.spawnTime;
-            if (elapsed > 400) {
+            if (elapsed > 500) {
                 state.beatHitEffects[i] = state.beatHitEffects[state.beatHitEffects.length - 1];
                 state.beatHitEffects.pop();
                 continue;
             }
-            const progress = elapsed / 400;
-            const ringR = beatR * (1 + progress * 1.5);
-            const ringAlpha = (1 - progress) * 0.6;
+            const progress = elapsed / 500;
+            const easeOut = 1 - Math.pow(1 - progress, 3);  // Cubic ease out
             const bx = timeToX(fx.beatTime);
-            if (bx < -30 || bx > w + 30) continue;
+            if (bx < -50 || bx > w + 50) continue;
 
+            // Inner bright ring
+            const ringR1 = beatR * (1 + easeOut * 1.8);
             ctx.beginPath();
-            ctx.arc(bx, midY, ringR, 0, Math.PI * 2);
-            ctx.strokeStyle = fx.color;
-            ctx.lineWidth = 3 * (1 - progress);
-            ctx.globalAlpha = ringAlpha;
+            ctx.arc(bx, midY, ringR1, 0, Math.PI * 2);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 4 * (1 - progress);
+            ctx.globalAlpha = (1 - progress) * 0.7;
             ctx.stroke();
 
-            if (progress > 0.1) {
-                const p2 = (progress - 0.1) / 0.9;
-                const r2 = beatR * (1 + p2 * 2);
+            // Colored expanding ring
+            const ringR2 = beatR * (1.2 + easeOut * 2.2);
+            ctx.beginPath();
+            ctx.arc(bx, midY, ringR2, 0, Math.PI * 2);
+            ctx.strokeStyle = fx.color;
+            ctx.lineWidth = 3 * (1 - progress);
+            ctx.globalAlpha = (1 - progress) * 0.5;
+            ctx.stroke();
+
+            // Outer glow ring
+            const ringR3 = beatR * (1.5 + easeOut * 2.8);
+            ctx.beginPath();
+            ctx.arc(bx, midY, ringR3, 0, Math.PI * 2);
+            ctx.lineWidth = 6 * (1 - progress);
+            ctx.globalAlpha = (1 - progress) * 0.15;
+            ctx.stroke();
+
+            // Central flash (quick fade)
+            if (progress < 0.3) {
+                const flashAlpha = (1 - progress / 0.3) * 0.4;
+                const flashGrad = ctx.createRadialGradient(bx, midY, 0, bx, midY, beatR * 1.5);
+                flashGrad.addColorStop(0, fx.color);
+                flashGrad.addColorStop(0.5, fx.color);
+                flashGrad.addColorStop(1, 'rgba(255,255,255,0)');
+                ctx.globalAlpha = flashAlpha;
+                ctx.fillStyle = flashGrad;
                 ctx.beginPath();
-                ctx.arc(bx, midY, r2, 0, Math.PI * 2);
-                ctx.lineWidth = 2 * (1 - p2);
-                ctx.globalAlpha = (1 - p2) * 0.3;
-                ctx.stroke();
+                ctx.arc(bx, midY, beatR * 1.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Starburst lines for PERFECT hits
+            if (fx.color === '#00ff88' && !state.settings.reducedEffects) {
+                const lineCount = 8;
+                const lineLength = beatR * (0.5 + easeOut * 2);
+                ctx.strokeStyle = fx.color;
+                ctx.lineWidth = 2 * (1 - progress);
+                ctx.globalAlpha = (1 - progress) * 0.4;
+                for (let l = 0; l < lineCount; l++) {
+                    const angle = (l / lineCount) * Math.PI * 2 + progress * 0.5;
+                    const startR = beatR * 0.8;
+                    ctx.beginPath();
+                    ctx.moveTo(bx + Math.cos(angle) * startR, midY + Math.sin(angle) * startR);
+                    ctx.lineTo(bx + Math.cos(angle) * (startR + lineLength), midY + Math.sin(angle) * (startR + lineLength));
+                    ctx.stroke();
+                }
             }
         }
         ctx.globalAlpha = 1;
     }
 
-    // --- PERFECT hit particles (using object pool) ---
+    // --- PERFECT hit particles (using object pool) with enhanced visuals ---
     {
         const now = performance.now();
         for (let i = state.hitParticles.length - 1; i >= 0; i--) {
             const p = state.hitParticles[i];
             const elapsed = now - p.spawnTime;
-            if (elapsed > 350) {
-                // Return to pool before removing
+            if (elapsed > 450) {
                 releaseParticle(p);
                 state.hitParticles[i] = state.hitParticles[state.hitParticles.length - 1];
                 state.hitParticles.pop();
                 continue;
             }
-            const progress = elapsed / 350;
-            const px = timeToX(p.beatTime) + p.vx * elapsed * 0.15;
-            const py = midY + p.vy * elapsed * 0.15 + 0.0003 * elapsed * elapsed;
-            const size = 3 * (1 - progress * 0.5);
-            ctx.fillStyle = p.color;
-            ctx.globalAlpha = (1 - progress) * 0.8;
-            ctx.fillRect(px - size / 2, py - size / 2, size, size);
+            const progress = elapsed / 450;
+            const easeOut = 1 - Math.pow(1 - progress, 2);
+            const px = timeToX(p.beatTime) + p.vx * elapsed * 0.18;
+            const py = midY + p.vy * elapsed * 0.18 + 0.0004 * elapsed * elapsed;
+
+            // Confetti particles are larger and rotate
+            if (p.isConfetti) {
+                const size = 5 * (1 - progress * 0.4);
+                const rotation = elapsed * 0.008 + (p.vx * 10);
+
+                ctx.save();
+                ctx.translate(px, py);
+                ctx.rotate(rotation);
+                ctx.globalAlpha = (1 - easeOut) * 0.9;
+
+                // Diamond shape for confetti
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.moveTo(0, -size);
+                ctx.lineTo(size * 0.6, 0);
+                ctx.lineTo(0, size);
+                ctx.lineTo(-size * 0.6, 0);
+                ctx.closePath();
+                ctx.fill();
+
+                // Shine highlight
+                ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                ctx.beginPath();
+                ctx.moveTo(0, -size * 0.5);
+                ctx.lineTo(size * 0.3, 0);
+                ctx.lineTo(0, size * 0.3);
+                ctx.lineTo(-size * 0.3, 0);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.restore();
+            } else {
+                // Regular sparkle particles
+                const size = 4 * (1 - progress * 0.5);
+
+                // Glow behind particle
+                ctx.globalAlpha = (1 - progress) * 0.3;
+                ctx.beginPath();
+                ctx.arc(px, py, size * 1.5, 0, Math.PI * 2);
+                ctx.fillStyle = p.color;
+                ctx.fill();
+
+                // Main particle (circle)
+                ctx.globalAlpha = (1 - progress) * 0.9;
+                ctx.beginPath();
+                ctx.arc(px, py, size, 0, Math.PI * 2);
+                ctx.fillStyle = p.color;
+                ctx.fill();
+
+                // Bright center
+                ctx.globalAlpha = (1 - progress) * 0.7;
+                ctx.beginPath();
+                ctx.arc(px, py, size * 0.4, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+            }
         }
         ctx.globalAlpha = 1;
     }

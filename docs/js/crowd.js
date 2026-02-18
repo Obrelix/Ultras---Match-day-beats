@@ -964,7 +964,7 @@ function drawSupporterCached(ctx, s, jumpOffset, armsUp, frenzy, now, coreo, bat
     if (currentFrenzy && !_frameCache.reducedEffects) {
         const glowPhase = (Math.sin(now / 200 + s.jumpPhase) + 1) * 0.5;
         ctx.fillStyle = primary;
-        ctx.globalAlpha = 0.12 + glowPhase * 0.1;
+        ctx.globalAlpha = 0.05 + glowPhase * 0.05;
         ctx.fillRect(x - px, y + 2 * px, 12 * px, 12 * px);
         ctx.globalAlpha = 1;
     }
@@ -2134,7 +2134,7 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, coreo, batch = n
     if (currentFrenzy && !_frameCache.reducedEffects) {
         const glowPhase = (Math.sin(now / 200 + s.jumpPhase) + 1) * 0.5;
         ctx.fillStyle = primary;
-        ctx.globalAlpha = 0.12 + glowPhase * 0.1;
+        ctx.globalAlpha = 0.05 + glowPhase * 0.05;
         ctx.fillRect(x - px, y + 2 * px, 12 * px, 12 * px);
         ctx.globalAlpha = 1;
     }

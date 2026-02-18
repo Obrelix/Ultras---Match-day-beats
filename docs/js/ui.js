@@ -12,7 +12,8 @@ import { stopRecording } from './replay.js';
 import {
     processGameEnd, getPlayerProfile, getAllAchievements,
     getWeeklyChallenge, getSeasonChallenges, getClubLoyalty,
-    getPendingNotifications, getLevelBadge, loadProgression, getLevelTitle
+    getPendingNotifications, getLevelBadge, loadProgression, getLevelTitle,
+    getXPForNextLevel
 } from './progression.js';
 // DOM Elements (module runs after DOM is parsed due to type="module")
 export const screens = {
@@ -59,6 +60,12 @@ export const elements = {
     statOk: document.getElementById('stat-ok'),
     statMiss: document.getElementById('stat-miss'),
     statMaxCombo: document.getElementById('stat-max-combo'),
+
+    // XP reward display (results screen)
+    xpRewardDisplay: document.getElementById('xp-reward-display'),
+    xpRewardAmount: document.getElementById('xp-reward-amount'),
+    xpMiniFill: document.getElementById('xp-mini-fill'),
+    xpMiniLevel: document.getElementById('xp-mini-level'),
 
     // Mode select
     modePractice: document.getElementById('mode-practice'),
@@ -497,7 +504,10 @@ export function endGame() {
 
         // Process progression (XP, achievements, challenges, loyalty)
         const isWin = state.playerScore > state.aiScore;
-        processEndGameProgression(isWin, false, null);
+        const progressionResult = processEndGameProgression(isWin, false, null);
+
+        // Update XP reward display
+        updateXPRewardDisplay(progressionResult);
 
         // Submit to leaderboard
         if (_onScoreSubmit) {
@@ -1013,6 +1023,34 @@ export function showXPGained(xpResult) {
     setTimeout(() => {
         elements.xpPopup.classList.add('hidden');
     }, 3000);
+}
+
+/**
+ * Update XP reward display on results screen
+ */
+function updateXPRewardDisplay(progressionResult) {
+    if (!progressionResult || !progressionResult.xp) return;
+
+    const { xp } = progressionResult;
+
+    // Update XP gained amount
+    if (elements.xpRewardAmount) {
+        elements.xpRewardAmount.textContent = `+${xp.xpGained} XP`;
+    }
+
+    // Get current XP progress for the bar
+    const xpProgress = getXPForNextLevel();
+
+    // Update mini progress bar fill
+    if (elements.xpMiniFill) {
+        const percent = Math.min(100, xpProgress.progress * 100);
+        elements.xpMiniFill.style.width = `${percent}%`;
+    }
+
+    // Update level display
+    if (elements.xpMiniLevel) {
+        elements.xpMiniLevel.textContent = `Lv. ${progressionResult.level}`;
+    }
 }
 
 /**
