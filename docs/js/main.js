@@ -19,7 +19,7 @@ import {
     updateTitleLevelBadge, renderProfileScreen,
     navigateBack, navigateHome, hideAbandonMatchConfirm, confirmAbandonMatch
 } from './ui.js';
-import { loadProgression } from './progression.js';
+import { loadProgression, toggleChoreoDebug } from './progression.js';
 import { loadSettings, saveSettings, hasTutorialSeen, markTutorialSeen } from './storage.js';
 import { initLeaderboard } from './leaderboard.js';
 import { setupLeaderboardUI, handleScoreSubmission } from './leaderboardUI.js';
@@ -1897,6 +1897,10 @@ elements.uploadSaveBtn?.addEventListener('click', async () => {
 
 // Load progression data on startup
 loadProgression();
+
+// Expose debug toggle for browser console
+// Usage: toggleChoreoDebug() or toggleChoreoDebug(true/false)
+window.toggleChoreoDebug = toggleChoreoDebug;
 
 // Update title screen level badge
 updateTitleLevelBadge();

@@ -615,6 +615,20 @@ export const ACHIEVEMENTS = {
         icon: '🩸',
         xpReward: 100
     },
+    first_win: {
+        id: 'first_win',
+        name: 'First Victory',
+        description: 'Win your first Match Day',
+        icon: '🏅',
+        xpReward: 150
+    },
+    loyal_fan: {
+        id: 'loyal_fan',
+        name: 'Loyal Fan',
+        description: 'Play 50 games with a single club',
+        icon: '💚',
+        xpReward: 200
+    },
     perfect_chant: {
         id: 'perfect_chant',
         name: 'Perfect Chant',
@@ -777,7 +791,11 @@ export const CHOREO_UNLOCKS = {
         5: { choreo: 'scarfUp', name: 'Scarf Display', icon: '🧣' },
         15: { choreo: 'bounce', name: 'Bounce Mode', icon: '🦘' },
         25: { choreo: 'clap', name: 'Clap Sync', icon: '👏' },
-        50: { choreo: 'columns', name: 'Vertical Columns', icon: '📊' }
+        35: { choreo: 'drums', name: 'Drums Display', icon: '🥁' },
+        50: { choreo: 'columns', name: 'Vertical Columns', icon: '📊' },
+        60: { choreo: 'spotlight', name: 'Spotlight Display', icon: '📱' },
+        75: { choreo: 'tornado', name: 'Tornado Display', icon: '🌪️' },
+        90: { choreo: 'surge', name: 'Crowd Surge', icon: '🌊' }
     },
 
     // Achievement-based unlocks: achievement id -> choreo info
@@ -786,7 +804,9 @@ export const CHOREO_UNLOCKS = {
         fever_master: { choreo: 'moshpit', name: 'Mosh Pit', icon: '🌀' },
         perfect_chant: { choreo: 'checkerboard', name: 'Checkerboard Display', icon: '🏁' },
         rivalry: { choreo: 'ultras', name: 'Ultras Display', icon: '🚩' },
-        marathon: { choreo: 'inferno', name: 'Inferno Mode', icon: '🔥' }
+        marathon: { choreo: 'inferno', name: 'Inferno Mode', icon: '🔥' },
+        first_win: { choreo: 'viking', name: 'Viking Clap', icon: '👏' },
+        loyal_fan: { choreo: 'anthem', name: 'Anthem Display', icon: '🫡' }
     },
 
     // All choreo IDs in order (for display purposes)
@@ -802,7 +822,13 @@ export const CHOREO_UNLOCKS = {
         { id: 'moshpit', name: 'Mosh Pit', icon: '🌀' },
         { id: 'checkerboard', name: 'Checkerboard Display', icon: '🏁' },
         { id: 'columns', name: 'Vertical Columns', icon: '📊' },
-        { id: 'ultras', name: 'Ultras Display', icon: '🚩' }
+        { id: 'ultras', name: 'Ultras Display', icon: '🚩' },
+        { id: 'drums', name: 'Drums Display', icon: '🥁' },
+        { id: 'spotlight', name: 'Spotlight Display', icon: '📱' },
+        { id: 'viking', name: 'Viking Clap', icon: '👏' },
+        { id: 'tornado', name: 'Tornado Display', icon: '🌪️' },
+        { id: 'anthem', name: 'Anthem Display', icon: '🫡' },
+        { id: 'surge', name: 'Crowd Surge', icon: '🌊' }
     ]
 };
 

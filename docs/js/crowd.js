@@ -5,7 +5,7 @@
 import { state } from './state.js';
 import { elements } from './ui.js';
 import { getComboMultiplier } from './input.js';
-import { isChoreoUnlocked } from './progression.js';
+import { isChoreoUnlocked, isDebugMode } from './progression.js';
 
 // ============================================
 // Performance Optimization: Gradient & Color Cache
@@ -416,75 +416,197 @@ const CHOREO_TYPES = {
         flagWaveSpeed: 200,
         showOverlay: true,
         overlayRenderer: 'drawUltrasOverlay'
+    },
+
+    // Type 12: Drums - percussion display with alternating drum hits
+    drums: {
+        id: 12,
+        name: 'drums',
+        comboMin: 105,
+        swayType: 'synchronized',
+        swaySpeed: 100,
+        swayAmplitude: 4,
+        armsPosition: 'drumming',
+        jumpPattern: 'synchronized',
+        showItem: 'drumsticks',
+        drumSpeed: 150,              // ms per drum hit cycle
+        showOverlay: false,
+        overlayRenderer: null
+    },
+
+    // Type 13: Spotlight - phone flashlight display
+    spotlight: {
+        id: 13,
+        name: 'spotlight',
+        comboMin: 110,
+        swayType: 'synchronized',
+        swaySpeed: 400,              // Slow gentle sway
+        swayAmplitude: 3,
+        armsPosition: 'phone-hold',
+        jumpPattern: 'none',         // Stationary for phone display
+        showItem: 'phone-light',
+        phoneGlowSpeed: 300,         // ms per glow pulse
+        showOverlay: true,
+        overlayRenderer: 'drawSpotlightOverlay'
+    },
+
+    // Type 14: Viking - thunderclap with wide-to-together motion
+    viking: {
+        id: 14,
+        name: 'viking',
+        comboMin: 115,
+        swayType: 'none',
+        swaySpeed: 0,
+        swayAmplitude: 0,
+        armsPosition: 'viking-clap',
+        jumpPattern: 'synchronized',
+        pogoHeight: 8,               // Small stomp
+        pogoSpeed: 800,              // Slow building rhythm
+        vikingClapSpeed: 800,        // ms per clap cycle
+        showItem: null,
+        showOverlay: false,
+        overlayRenderer: null
+    },
+
+    // Type 15: Tornado - spinning scarf display
+    tornado: {
+        id: 15,
+        name: 'tornado',
+        comboMin: 120,
+        swayType: 'synchronized',
+        swaySpeed: 150,
+        swayAmplitude: 5,
+        armsPosition: 'scarf-spin',
+        jumpPattern: 'default',
+        showItem: 'spinning-scarf',
+        spinSpeed: 200,              // ms per rotation
+        showOverlay: false,
+        overlayRenderer: null
+    },
+
+    // Type 16: Anthem - hand on heart, solemn display
+    anthem: {
+        id: 16,
+        name: 'anthem',
+        comboMin: 125,
+        swayType: 'none',
+        swaySpeed: 0,
+        swayAmplitude: 0,
+        armsPosition: 'heart',
+        jumpPattern: 'none',         // Completely stationary
+        showItem: null,
+        showOverlay: true,
+        overlayRenderer: 'drawAnthemOverlay'
+    },
+
+    // Type 17: Surge - forward crowd surge with push motion
+    surge: {
+        id: 17,
+        name: 'surge',
+        comboMin: 130,
+        swayType: 'surge',           // Forward/back wave
+        swaySpeed: 120,
+        swayAmplitude: 12,           // Large forward movement
+        armsPosition: 'push',
+        jumpPattern: 'wave',
+        waveRowDelay: 0.8,           // Fast cascading
+        showItem: null,
+        showOverlay: false,
+        overlayRenderer: null
     }
 };
 
 // Order of choreo types for initial progression (0-59)
 const CHOREO_PROGRESSION = ['default', 'wave', 'scarfUp', 'tifo', 'bounce', 'clap'];
 
-// High-intensity cycle (60+): cycles between unlockable choreos
-const CHOREO_HIGH_CYCLE = ['scarfUp', 'tifo', 'bounce', 'clap', 'pyro', 'moshpit', 'checkerboard', 'columns', 'ultras'];
+// High-intensity cycle (70+): cycles through ALL choreos (excluding default and inferno)
+// Inferno is milestone-only (100-109, 200-209, etc.)
+const CHOREO_HIGH_CYCLE = ['wave', 'scarfUp', 'tifo', 'bounce', 'clap', 'pyro', 'moshpit', 'checkerboard', 'columns', 'ultras', 'drums', 'spotlight', 'viking', 'tornado', 'anthem', 'surge'];
 
-// Extended progression for combo 60-99 (new unlockable choreos)
+// Extended progression for combo 60-99+ (new unlockable choreos)
 const CHOREO_EXTENDED = [
     { id: 'pyro', comboMin: 70 },
     { id: 'moshpit', comboMin: 80 },
     { id: 'checkerboard', comboMin: 90 },
     { id: 'columns', comboMin: 95 },
-    { id: 'ultras', comboMin: 100 }
+    { id: 'ultras', comboMin: 100 },
+    { id: 'drums', comboMin: 105 },
+    { id: 'spotlight', comboMin: 110 },
+    { id: 'viking', comboMin: 115 },
+    { id: 'tornado', comboMin: 120 },
+    { id: 'anthem', comboMin: 125 },
+    { id: 'surge', comboMin: 130 }
 ];
+
+// Track last logged combo to avoid spam
+let _lastLoggedCombo = -1;
 
 // Get current choreo config based on combo count, respecting unlock status
 // Uses fallback logic: if desired choreo is locked, use highest unlocked
 function getChoreoConfig(combo) {
-    // Special: Inferno triggers at every 100 combo milestone (if unlocked)
-    if (combo >= 100 && combo % 100 < 10) {
-        if (isChoreoUnlocked('inferno')) {
-            return CHOREO_TYPES.inferno;
-        }
-        // Fall through to find best unlocked alternative
-    }
+    let result;
+    let debugInfo = { combo, reason: '' };
 
-    // Special: Ultras triggers at exactly 100+ milestones (if unlocked and not inferno)
-    if (combo >= 100 && combo % 100 >= 10) {
-        if (isChoreoUnlocked('ultras')) {
-            return CHOREO_TYPES.ultras;
-        }
-    }
-
-    // Check extended progression (70-99) for new choreos
-    if (combo >= 70 && combo < 100) {
-        for (let i = CHOREO_EXTENDED.length - 1; i >= 0; i--) {
-            const ext = CHOREO_EXTENDED[i];
-            if (combo >= ext.comboMin && isChoreoUnlocked(ext.id)) {
-                return CHOREO_TYPES[ext.id];
-            }
-        }
-    }
-
-    // Initial progression (0-69)
+    // Initial progression (0-69): step through choreos as combo grows
     if (combo < 70) {
-        // Find highest unlocked choreo for this combo level
         const targetIndex = Math.min(Math.floor(combo / 10), CHOREO_PROGRESSION.length - 1);
         for (let i = targetIndex; i >= 0; i--) {
             const choreoId = CHOREO_PROGRESSION[i];
             if (isChoreoUnlocked(choreoId)) {
-                return CHOREO_TYPES[choreoId];
+                result = CHOREO_TYPES[choreoId];
+                debugInfo.reason = `progression[${i}]`;
+                break;
             }
         }
-        // Fallback to default (always unlocked)
-        return CHOREO_TYPES.default;
+        if (!result) {
+            result = CHOREO_TYPES.default;
+            debugInfo.reason = 'fallback default';
+        }
+    }
+    // Special: INFERNO milestone at 100-109, 200-209, 300-309, etc.
+    else if (combo >= 100 && combo % 100 < 10) {
+        if (isChoreoUnlocked('inferno')) {
+            result = CHOREO_TYPES.inferno;
+            debugInfo.reason = `MILESTONE ${Math.floor(combo/100)*100}-${Math.floor(combo/100)*100+9}`;
+        }
+        // Fall through to regular cycle if inferno not unlocked
     }
 
-    // High-intensity cycling (60+): rotate through unlocked choreos
-    // Filter to only unlocked choreos
-    const unlockedHighCycle = CHOREO_HIGH_CYCLE.filter(id => isChoreoUnlocked(id));
-    if (unlockedHighCycle.length === 0) {
-        return CHOREO_TYPES.default;
+    // High combo (70+): cycle through all unlocked choreos
+    if (!result) {
+        const unlockedHighCycle = CHOREO_HIGH_CYCLE.filter(id => isChoreoUnlocked(id));
+        debugInfo.unlockedCount = unlockedHighCycle.length;
+
+        if (unlockedHighCycle.length === 0) {
+            result = CHOREO_TYPES.default;
+            debugInfo.reason = 'no unlocked choreos';
+        } else {
+            // Calculate effective combo, excluding inferno windows (10 combos each)
+            let effectiveCombo = combo - 70;
+            const infernoWindowsPassed = combo >= 110 ? Math.floor((combo - 10) / 100) : 0;
+            if (infernoWindowsPassed > 0) {
+                effectiveCombo -= infernoWindowsPassed * 10;
+            }
+
+            const cycleIndex = Math.floor(effectiveCombo / 10) % unlockedHighCycle.length;
+            result = CHOREO_TYPES[unlockedHighCycle[cycleIndex]];
+
+            debugInfo.effectiveCombo = effectiveCombo;
+            debugInfo.infernoWindowsPassed = infernoWindowsPassed;
+            debugInfo.cycleIndex = cycleIndex;
+            debugInfo.cycleLength = unlockedHighCycle.length;
+            debugInfo.reason = `cycle[${cycleIndex}] = ${unlockedHighCycle[cycleIndex]}`;
+        }
     }
 
-    const cycleIndex = Math.floor((combo - 60) / 10) % unlockedHighCycle.length;
-    return CHOREO_TYPES[unlockedHighCycle[cycleIndex]];
+    // Log only when combo changes and debug mode is enabled
+    if (isDebugMode() && combo !== _lastLoggedCombo && combo >= 70) {
+        _lastLoggedCombo = combo;
+        console.log(`%c[CHOREO] Combo ${combo} → ${result.name.toUpperCase()}`,
+            'color: #00ff88; font-weight: bold', debugInfo);
+    }
+
+    return result;
 }
 
 // Get choreo type ID (for backwards compatibility)
@@ -520,6 +642,11 @@ function getChoreoSway(choreo, supporter, now, preCalc = {}) {
         case 'none':
             // Stationary - no sway
             return 0;
+
+        case 'surge':
+            // Forward/back wave motion - each row slightly delayed
+            const surgePhase = now / swaySpeed + supporter.row * 0.5;
+            return Math.sin(surgePhase) * swayAmplitude;
 
         case 'individual':
         default:
@@ -613,6 +740,18 @@ function drawChoreoItem(ctx, choreo, supporter, x, y, now, colors, batch) {
 
         case 'large-flag':
             drawChoreoLargeFlag(ctx, choreo, supporter, x, y, now, colors, px, batch);
+            break;
+
+        case 'drumsticks':
+            drawChoreoDrumsticks(ctx, choreo, supporter, x, y, now, colors, px, batch);
+            break;
+
+        case 'phone-light':
+            drawChoreoPhoneLight(ctx, choreo, supporter, x, y, now, colors, px, batch);
+            break;
+
+        case 'spinning-scarf':
+            drawChoreoSpinningScarf(ctx, choreo, supporter, x, y, now, colors, px, batch);
             break;
 
         default:
@@ -837,6 +976,85 @@ function drawChoreoLargeFlag(ctx, choreo, supporter, x, y, now, colors, px, batc
     drawPixelRect(ctx, flagX + flagW * px + edgeWave, flagY + 2 * px, 2, flagH - 4, primary, px, batch);
 }
 
+// Draw drumsticks above head for drums choreo
+function drawChoreoDrumsticks(ctx, choreo, supporter, x, y, now, colors, px, batch) {
+    const secondary = colors.secondary || '#FFFFFF';
+    const drumSpeed = choreo.drumSpeed || 150;
+    const drumPhase = Math.sin(now / drumSpeed);
+
+    // Stick color - darker wood tone with secondary tint
+    const stickColor = '#8B7355';
+    const stickTip = secondary;
+
+    // Base position above head
+    const baseY = y - 4 * px;
+    const centerX = x + 5 * px;
+
+    // Left drumstick
+    const leftAngle = drumPhase > 0 ? -0.3 : 0.3;
+    const leftY = drumPhase > 0 ? baseY - 4 * px : baseY;
+    drawPixelRect(ctx, centerX - 4 * px, leftY, 1, 6, stickColor, px, batch);
+    drawPixelRect(ctx, centerX - 4 * px, leftY - px, 1, 1, stickTip, px, batch);
+
+    // Right drumstick
+    const rightY = drumPhase > 0 ? baseY : baseY - 4 * px;
+    drawPixelRect(ctx, centerX + 3 * px, rightY, 1, 6, stickColor, px, batch);
+    drawPixelRect(ctx, centerX + 3 * px, rightY - px, 1, 1, stickTip, px, batch);
+}
+
+// Draw phone with glowing screen for spotlight choreo
+function drawChoreoPhoneLight(ctx, choreo, supporter, x, y, now, colors, px, batch) {
+    const glowSpeed = choreo.phoneGlowSpeed || 300;
+    const glowPhase = (Math.sin(now / glowSpeed) + 1) * 0.5;
+
+    // Phone position above head
+    const phoneX = x + 3 * px;
+    const phoneY = y - 6 * px;
+
+    // Phone body (dark rectangle)
+    drawPixelRect(ctx, phoneX, phoneY, 4, 6, '#222222', px, batch);
+
+    // Phone screen (glowing)
+    const glowIntensity = 0.6 + glowPhase * 0.4;
+    const glowColor = `rgba(255, 255, 220, ${glowIntensity})`;
+    ctx.fillStyle = glowColor;
+    ctx.fillRect(phoneX + px, phoneY + px, 2 * px, 4 * px);
+
+    // Glow effect around phone (if not reduced effects)
+    if (!_frameCache.reducedEffects && glowPhase > 0.5) {
+        ctx.fillStyle = `rgba(255, 255, 200, ${glowPhase * 0.2})`;
+        ctx.fillRect(phoneX - px, phoneY - px, 6 * px, 8 * px);
+    }
+}
+
+// Draw spinning scarf overhead for tornado choreo
+function drawChoreoSpinningScarf(ctx, choreo, supporter, x, y, now, colors, px, batch) {
+    const primary = colors.primary || '#006633';
+    const spinSpeed = choreo.spinSpeed || 200;
+    const spinAngle = (now / spinSpeed) * Math.PI * 2;
+
+    // Center position above head
+    const centerX = x + 5 * px;
+    const centerY = y - 6 * px;
+
+    // Scarf traces elliptical path overhead
+    const radiusX = 6 * px;
+    const radiusY = 3 * px;
+
+    // Draw scarf as a series of points tracing the ellipse
+    const scarfLength = 8;
+    for (let i = 0; i < scarfLength; i++) {
+        const angle = spinAngle - i * 0.3;
+        const sx = centerX + Math.cos(angle) * radiusX;
+        const sy = centerY + Math.sin(angle) * radiusY;
+        const alpha = 1 - i * 0.1;
+        ctx.fillStyle = primary;
+        ctx.globalAlpha = alpha;
+        ctx.fillRect((sx - px) | 0, (sy - px / 2) | 0, 2 * px, px);
+    }
+    ctx.globalAlpha = 1;
+}
+
 // Draw choreo overlay (tifo badge, banners, etc.)
 function drawChoreoOverlay(ctx, choreo, w, h, now) {
     if (!choreo.showOverlay) return;
@@ -856,6 +1074,14 @@ function drawChoreoOverlay(ctx, choreo, w, h, now) {
 
         case 'drawUltrasOverlay':
             drawUltrasOverlay(ctx, w, h, now);
+            break;
+
+        case 'drawSpotlightOverlay':
+            drawSpotlightOverlay(ctx, w, h, now);
+            break;
+
+        case 'drawAnthemOverlay':
+            drawAnthemOverlay(ctx, w, h, now);
             break;
 
         default:
@@ -1392,7 +1618,7 @@ function drawDynamicArms(ctx, s, x, y, px, armsUp, frenzy, now, choreo, armsPos,
     const clapSpeed = choreo?.clapSpeed || 200;
 
     // Arm transition
-    const targetArm = (armsUp || armsPos === 'scarf-hold' || armsPos === 'up' || armsPos === 'placard-hold' || armsPos === 'flag-hold') ? 1 : 0;
+    const targetArm = (armsUp || armsPos === 'scarf-hold' || armsPos === 'up' || armsPos === 'placard-hold' || armsPos === 'flag-hold' || armsPos === 'phone-hold' || armsPos === 'scarf-spin') ? 1 : 0;
     if (s.armTransition === undefined) s.armTransition = 0;
     if (targetArm > s.armTransition) {
         s.armTransition = Math.min(1, s.armTransition + 0.08);
@@ -1460,6 +1686,61 @@ function drawDynamicArms(ctx, s, x, y, px, armsUp, frenzy, now, choreo, armsPos,
         ctx.fillRect(x + 9 * px, y + 1 * px, 2 * px, 5 * px);
         ctx.fillRect(x - px, y, 2 * px, px);
         ctx.fillRect(x + 9 * px, y, 2 * px, px);
+    } else if (armsPos === 'drumming' && !s.hasFlag && !s.hasFlare) {
+        // Alternating drum hits - left up when right down
+        const drumSpeed = choreo?.drumSpeed || 150;
+        const drumPhase = Math.sin(now / drumSpeed);
+        if (drumPhase > 0) {
+            // Left arm up (striking), right arm down
+            ctx.fillRect(x - px, y + 1 * px, 2 * px, 4 * px);
+            ctx.fillRect(x - px, y - px, 2 * px, 2 * px);
+            ctx.fillRect(x + 9 * px, y + 5 * px, 2 * px, 4 * px);
+        } else {
+            // Right arm up (striking), left arm down
+            ctx.fillRect(x - px, y + 5 * px, 2 * px, 4 * px);
+            ctx.fillRect(x + 9 * px, y + 1 * px, 2 * px, 4 * px);
+            ctx.fillRect(x + 9 * px, y - px, 2 * px, 2 * px);
+        }
+    } else if (armsPos === 'phone-hold' && !s.hasFlag && !s.hasFlare) {
+        // Both arms straight up holding phone
+        ctx.fillRect(x - px, y - 2 * px, 2 * px, 6 * px);
+        ctx.fillRect(x + 9 * px, y - 2 * px, 2 * px, 6 * px);
+        // Hands at top
+        ctx.fillRect(x + px, y - 3 * px, 2 * px, 2 * px);
+        ctx.fillRect(x + 7 * px, y - 3 * px, 2 * px, 2 * px);
+    } else if (armsPos === 'viking-clap' && !s.hasFlag && !s.hasFlare) {
+        // Wide spread to together clapping - slow building rhythm
+        const vikingSpeed = choreo?.vikingClapSpeed || 800;
+        const vikingPhase = Math.sin(now / vikingSpeed);
+        if (vikingPhase > 0.3) {
+            // Arms together (clap)
+            ctx.fillRect(x + 2 * px, y + 4 * px, 3 * px, 3 * px);
+            ctx.fillRect(x + 5 * px, y + 4 * px, 3 * px, 3 * px);
+        } else if (vikingPhase > -0.3) {
+            // Arms mid-spread
+            ctx.fillRect(x - px, y + 5 * px, 3 * px, 3 * px);
+            ctx.fillRect(x + 8 * px, y + 5 * px, 3 * px, 3 * px);
+        } else {
+            // Arms wide spread
+            ctx.fillRect(x - 3 * px, y + 5 * px, 4 * px, 2 * px);
+            ctx.fillRect(x + 9 * px, y + 5 * px, 4 * px, 2 * px);
+        }
+    } else if (armsPos === 'scarf-spin' && !s.hasFlag && !s.hasFlare) {
+        // Circular motion overhead for scarf spin
+        const spinSpeed = choreo?.spinSpeed || 200;
+        const spinAngle = (now / spinSpeed) * Math.PI * 2;
+        const armOffsetX = Math.cos(spinAngle) * 3 * px;
+        const armOffsetY = Math.sin(spinAngle) * 2 * px;
+        // Arms follow circular path
+        ctx.fillRect((x + 4 * px + armOffsetX) | 0, (y + px + armOffsetY) | 0, 2 * px, 4 * px);
+        ctx.fillRect((x + 4 * px - armOffsetX) | 0, (y + px - armOffsetY) | 0, 2 * px, 4 * px);
+    } else if (armsPos === 'heart' && !s.hasFlag && !s.hasFlare) {
+        // Hand on heart - right arm across to left chest, left arm down
+        // Right arm across chest
+        ctx.fillRect(x + 2 * px, y + 6 * px, 4 * px, 2 * px);
+        ctx.fillRect(x + px, y + 5 * px, 2 * px, 2 * px);
+        // Left arm down at side
+        ctx.fillRect(x + 8 * px, y + 7 * px, 2 * px, 4 * px);
     } else if (frenzy) {
         const armPhase = Math.sin(now / 150 + s.jumpPhase);
         if (armPhase > 0.3) {
@@ -2597,7 +2878,7 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, choreo, batch = 
     const clapSpeed = choreo?.clapSpeed || 200;
 
     // Smooth arm transition (#7) - update transition state
-    const targetArm = (currentArmsUp || armsPos === 'scarf-hold' || armsPos === 'up') ? 1 : 0;
+    const targetArm = (currentArmsUp || armsPos === 'scarf-hold' || armsPos === 'up' || armsPos === 'phone-hold' || armsPos === 'scarf-spin' || armsPos === 'placard-hold' || armsPos === 'flag-hold') ? 1 : 0;
     const transitionSpeed = 0.08;  // How fast arms move (0-1 per frame)
     if (s.armTransition === undefined) s.armTransition = 0;
     if (targetArm > s.armTransition) {
@@ -2645,6 +2926,79 @@ function drawSupporter(ctx, s, jumpOffset, armsUp, frenzy, now, choreo, batch = 
         drawPixelRect(ctx, x + 9 * px, y + 1 * px, 2, 5, s.skinColor, px, batch);
         drawPixelRect(ctx, x - px, y, 2, 1, s.skinColor, px, batch);
         drawPixelRect(ctx, x + 9 * px, y, 2, 1, s.skinColor, px, batch);
+    } else if (armsPos === 'push' && !s.hasFlag && !s.hasFlare) {
+        // Moshpit/surge pushing motion
+        const pushPhase = Math.sin(now / 80 + s.jumpPhase * 3);
+        if (pushPhase > 0.2) {
+            drawPixelRect(ctx, x - 2 * px, y + 5 * px, 3, 2, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 9 * px, y + 5 * px, 3, 2, s.skinColor, px, batch);
+        } else if (pushPhase > -0.2) {
+            drawPixelRect(ctx, x - px, y + 6 * px, 2, 3, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 9 * px, y + 6 * px, 2, 3, s.skinColor, px, batch);
+        } else {
+            drawPixelRect(ctx, x, y + 7 * px, 2, 3, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 8 * px, y + 7 * px, 2, 3, s.skinColor, px, batch);
+        }
+    } else if (armsPos === 'placard-hold' && !s.hasFlag && !s.hasFlare) {
+        drawPixelRect(ctx, x - px, y + 1 * px, 2, 5, s.skinColor, px, batch);
+        drawPixelRect(ctx, x + 9 * px, y + 1 * px, 2, 5, s.skinColor, px, batch);
+        drawPixelRect(ctx, x, y, 2, 1, s.skinColor, px, batch);
+        drawPixelRect(ctx, x + 8 * px, y, 2, 1, s.skinColor, px, batch);
+    } else if (armsPos === 'flag-hold' && !s.hasFlag && !s.hasFlare) {
+        drawPixelRect(ctx, x - px, y, 2, 6, s.skinColor, px, batch);
+        drawPixelRect(ctx, x + 9 * px, y, 2, 6, s.skinColor, px, batch);
+        drawPixelRect(ctx, x - px, y - px, 2, 1, s.skinColor, px, batch);
+        drawPixelRect(ctx, x + 9 * px, y - px, 2, 1, s.skinColor, px, batch);
+    } else if (armsPos === 'drumming' && !s.hasFlag && !s.hasFlare) {
+        // Alternating drum hits
+        const drumSpeed = choreo?.drumSpeed || 150;
+        const drumPhase = Math.sin(now / drumSpeed);
+        if (drumPhase > 0) {
+            drawPixelRect(ctx, x - px, y + 1 * px, 2, 4, s.skinColor, px, batch);
+            drawPixelRect(ctx, x - px, y - px, 2, 2, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 9 * px, y + 5 * px, 2, 4, s.skinColor, px, batch);
+        } else {
+            drawPixelRect(ctx, x - px, y + 5 * px, 2, 4, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 9 * px, y + 1 * px, 2, 4, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 9 * px, y - px, 2, 2, s.skinColor, px, batch);
+        }
+    } else if (armsPos === 'phone-hold' && !s.hasFlag && !s.hasFlare) {
+        // Both arms straight up holding phone
+        drawPixelRect(ctx, x - px, y - 2 * px, 2, 6, s.skinColor, px, batch);
+        drawPixelRect(ctx, x + 9 * px, y - 2 * px, 2, 6, s.skinColor, px, batch);
+        drawPixelRect(ctx, x + px, y - 3 * px, 2, 2, s.skinColor, px, batch);
+        drawPixelRect(ctx, x + 7 * px, y - 3 * px, 2, 2, s.skinColor, px, batch);
+    } else if (armsPos === 'viking-clap' && !s.hasFlag && !s.hasFlare) {
+        // Wide spread to together clapping
+        const vikingSpeed = choreo?.vikingClapSpeed || 800;
+        const vikingPhase = Math.sin(now / vikingSpeed);
+        if (vikingPhase > 0.3) {
+            drawPixelRect(ctx, x + 2 * px, y + 4 * px, 3, 3, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 5 * px, y + 4 * px, 3, 3, s.skinColor, px, batch);
+        } else if (vikingPhase > -0.3) {
+            drawPixelRect(ctx, x - px, y + 5 * px, 3, 3, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 8 * px, y + 5 * px, 3, 3, s.skinColor, px, batch);
+        } else {
+            drawPixelRect(ctx, x - 3 * px, y + 5 * px, 4, 2, s.skinColor, px, batch);
+            drawPixelRect(ctx, x + 9 * px, y + 5 * px, 4, 2, s.skinColor, px, batch);
+        }
+    } else if (armsPos === 'scarf-spin' && !s.hasFlag && !s.hasFlare) {
+        // Circular motion overhead
+        const spinSpeed = choreo?.spinSpeed || 200;
+        const spinAngle = (now / spinSpeed) * Math.PI * 2;
+        const armOffsetX = Math.cos(spinAngle) * 3 * px;
+        const armOffsetY = Math.sin(spinAngle) * 2 * px;
+        const armX1 = (x + 4 * px + armOffsetX) | 0;
+        const armY1 = (y + px + armOffsetY) | 0;
+        const armX2 = (x + 4 * px - armOffsetX) | 0;
+        const armY2 = (y + px - armOffsetY) | 0;
+        drawPixelRect(ctx, armX1, armY1, 2, 4, s.skinColor, px, batch);
+        drawPixelRect(ctx, armX2, armY2, 2, 4, s.skinColor, px, batch);
+    } else if (armsPos === 'heart' && !s.hasFlag && !s.hasFlare) {
+        // Hand on heart
+        drawPixelRect(ctx, x + 2 * px, y + 6 * px, 4, 2, s.skinColor, px, batch);
+        drawPixelRect(ctx, x + px, y + 5 * px, 2, 2, s.skinColor, px, batch);
+        drawPixelRect(ctx, x + 8 * px, y + 7 * px, 2, 4, s.skinColor, px, batch);
     } else if (currentFrenzy) {
         const armPhase = Math.sin(now / 150 + s.jumpPhase);
         if (armPhase > 0.3) {
@@ -2751,6 +3105,58 @@ function drawFeverText(ctx, w, h, now, yPos) {
     ctx.fillText('FEVER!', 0, 0);
 
     // Reset shadow
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+    ctx.restore();
+}
+
+// Choreo name display - shows current crowd choreography to user
+function drawChoreoText(ctx, w, h, now, choreo, yPos) {
+    // Don't show for default choreo
+    if (choreo.name === 'default') return;
+
+    const primary = state.cachedColors?.primary || '#006633';
+
+    // Entrance animation when choreo changes
+    const sinceStart = now - state.choreoStartTime;
+    const entranceT = Math.min(1, sinceStart / 300);
+    const elastic = entranceT < 1
+        ? 1 - Math.pow(1 - entranceT, 3) * Math.cos(entranceT * Math.PI * 1.5)
+        : 1;
+    const entranceScale = 0.5 + 0.5 * Math.min(1, elastic);
+    const entranceAlpha = Math.min(1, sinceStart / 200);
+
+    // Subtle pulse
+    const pulse = (Math.sin(now / 300) + 1) * 0.5;
+    const scale = entranceScale * (1 + pulse * 0.05);
+
+    ctx.save();
+    ctx.translate(w / 2, yPos);
+    ctx.scale(scale, scale);
+    ctx.globalAlpha = entranceAlpha * 0.9;
+
+    // Glow effect
+    ctx.shadowColor = primary;
+    ctx.shadowBlur = 6 + pulse * 4;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+
+    // Format choreo name nicely
+    const displayName = choreo.name.replace(/([A-Z])/g, ' $1').trim().toUpperCase();
+
+    ctx.font = 'bold 16px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 3;
+    ctx.strokeText(displayName, 0, 0);
+
+    // Use team primary color
+    ctx.fillStyle = primary;
+    ctx.fillText(displayName, 0, 0);
+
+    // Reset
     ctx.shadowColor = 'transparent';
     ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
@@ -3162,6 +3568,95 @@ function drawUltrasOverlay(ctx, w, h, now) {
         ctx.shadowBlur = 0;
         ctx.restore();
     }
+}
+
+// Spotlight overlay - sparkle/star effect for phone flashlight display
+function drawSpotlightOverlay(ctx, w, h, now) {
+    if (_frameCache.reducedEffects) return;
+
+    const timeSinceBeat = (now - state.crowdBeatTime) / 1000;
+    const beatPulse = Math.max(0, 1 - timeSinceBeat * 2);
+    const primary = _frameCache.primaryColor || '#006633';
+
+    // Random sparkle points
+    const sparkleCount = 15 + Math.floor(beatPulse * 10);
+    ctx.save();
+
+    for (let i = 0; i < sparkleCount; i++) {
+        // Use deterministic positions based on index but change with time
+        const seed = (i * 127 + Math.floor(now / 500)) % 1000;
+        const sparkleX = (seed * 1.234) % w;
+        const sparkleY = (seed * 0.567 + i * 23) % (h * 0.6);
+        const phase = Math.sin(now / 200 + i * 0.5);
+        const alpha = (phase + 1) * 0.25 + beatPulse * 0.2;
+
+        if (alpha > 0.1) {
+            // Star shape
+            ctx.fillStyle = `rgba(255, 255, 220, ${alpha})`;
+            const size = 2 + beatPulse * 2;
+
+            // Draw simple 4-point star
+            ctx.beginPath();
+            ctx.moveTo(sparkleX, sparkleY - size);
+            ctx.lineTo(sparkleX + size / 3, sparkleY);
+            ctx.lineTo(sparkleX + size, sparkleY);
+            ctx.lineTo(sparkleX + size / 3, sparkleY + size / 3);
+            ctx.lineTo(sparkleX, sparkleY + size);
+            ctx.lineTo(sparkleX - size / 3, sparkleY + size / 3);
+            ctx.lineTo(sparkleX - size, sparkleY);
+            ctx.lineTo(sparkleX - size / 3, sparkleY);
+            ctx.closePath();
+            ctx.fill();
+        }
+    }
+
+    // Subtle phone glow from crowd area
+    ctx.globalAlpha = 0.1 + beatPulse * 0.1;
+    const glowGrad = ctx.createLinearGradient(0, h * 0.5, 0, h);
+    glowGrad.addColorStop(0, 'rgba(255, 255, 200, 0.3)');
+    glowGrad.addColorStop(1, 'rgba(255, 255, 200, 0)');
+    ctx.fillStyle = glowGrad;
+    ctx.fillRect(0, h * 0.5, w, h * 0.5);
+
+    ctx.restore();
+}
+
+// Anthem overlay - solemn pride glow with team colors
+function drawAnthemOverlay(ctx, w, h, now) {
+    const primary = _frameCache.primaryColor || '#006633';
+    const secondary = _frameCache.secondaryColor || '#ffffff';
+
+    // Subtle radial gradient from center
+    ctx.save();
+
+    const centerX = w / 2;
+    const centerY = h / 2;
+    const maxRadius = Math.max(w, h) * 0.6;
+
+    // Pulsing radial glow
+    const pulsePhase = (Math.sin(now / 2000) + 1) * 0.5;
+    const glowAlpha = 0.08 + pulsePhase * 0.04;
+
+    ctx.globalAlpha = glowAlpha;
+    const radialGrad = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, maxRadius);
+    radialGrad.addColorStop(0, primary);
+    radialGrad.addColorStop(0.4, primary);
+    radialGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = radialGrad;
+    ctx.fillRect(0, 0, w, h);
+
+    // Top banner with team colors (subtle)
+    if (!_frameCache.reducedEffects) {
+        ctx.globalAlpha = 0.15;
+        const bannerGrad = ctx.createLinearGradient(0, 0, w, 0);
+        bannerGrad.addColorStop(0, primary);
+        bannerGrad.addColorStop(0.5, secondary);
+        bannerGrad.addColorStop(1, primary);
+        ctx.fillStyle = bannerGrad;
+        ctx.fillRect(0, 0, w, h * 0.05);
+    }
+
+    ctx.restore();
 }
 
 // Pre-allocated rgba string buffer to avoid string creation in hot loop
@@ -3715,7 +4210,7 @@ export function drawGameVisuals() {
         ctx.globalAlpha = 1;
     }
 
-    // --- HUD text stack: FEVER -> Feedback -> Combo ---
+    // --- HUD text stack: FEVER -> Choreo -> Feedback -> Combo ---
     if (currentFrenzy && !state.wasFrenzy) {
         state.frenzyStartTime = now;
         state.wasFrenzy = true;
@@ -3732,7 +4227,13 @@ export function drawGameVisuals() {
         hudY += 30;
     }
 
-    // 2) Feedback text
+    // 2) Choreo name (when not default)
+    if (choreo.name !== 'default') {
+        drawChoreoText(ctx, w, h, now, choreo, hudY);
+        hudY += 22;
+    }
+
+    // 3) Feedback text
     if (state.feedbackAlpha > 0) {
         const elapsed = now - state.feedbackSpawnTime;
         const totalDuration = 800;

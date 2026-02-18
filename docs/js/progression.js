@@ -16,6 +16,30 @@ import { state } from './state.js';
 const STORAGE_KEY = 'ultras_progression';
 
 // ============================================
+// Debug Mode - Unlocks all choreos for testing
+// ============================================
+
+let _debugMode = false;
+
+/**
+ * Toggle debug mode - unlocks all choreos when enabled
+ * Call from browser console: toggleChoreoDebug() or toggleChoreoDebug(true/false)
+ */
+export function toggleChoreoDebug(enable = null) {
+    _debugMode = enable !== null ? enable : !_debugMode;
+    console.log(`%c[DEBUG] Choreo debug mode: ${_debugMode ? 'ON - All choreos unlocked' : 'OFF'}`,
+        _debugMode ? 'color: #00ff00; font-weight: bold' : 'color: #ff6600');
+    return _debugMode;
+}
+
+/**
+ * Check if debug mode is active
+ */
+export function isDebugMode() {
+    return _debugMode;
+}
+
+// ============================================
 // Default Progression Data
 // ============================================
 
@@ -366,6 +390,21 @@ export function checkAchievements(gameResult) {
 
             case 'fever_master':
                 earned = prog.stats.feverTimeAccumulated >= 30;
+                break;
+
+            case 'first_win':
+                // Win first Match Day
+                earned = prog.stats.totalMatchdayWins >= 1;
+                break;
+
+            case 'loyal_fan':
+                // Play 50 games with a single club
+                for (const games of Object.values(prog.clubGames || {})) {
+                    if (games >= 50) {
+                        earned = true;
+                        break;
+                    }
+                }
                 break;
         }
 
@@ -846,8 +885,10 @@ export function processGameEnd(gameResult) {
 
 /**
  * Check if a choreo is unlocked
+ * Returns true for all choreos when debug mode is enabled
  */
 export function isChoreoUnlocked(choreoId) {
+    if (_debugMode) return true;
     const prog = getProgression();
     return prog.unlockedChoreos?.includes(choreoId) || false;
 }
@@ -922,7 +963,14 @@ export function getHighestUnlockedChoreoForCombo(combo) {
         { id: 'moshpit', comboMin: 80 },
         { id: 'checkerboard', comboMin: 90 },
         { id: 'columns', comboMin: 95 },
-        { id: 'ultras', comboMin: 100 }
+        { id: 'ultras', comboMin: 100 },
+        // New choreos added
+        { id: 'drums', comboMin: 105 },
+        { id: 'spotlight', comboMin: 110 },
+        { id: 'viking', comboMin: 115 },
+        { id: 'tornado', comboMin: 120 },
+        { id: 'anthem', comboMin: 125 },
+        { id: 'surge', comboMin: 130 }
     ];
 
     // Find the highest unlocked choreo that matches the combo level
