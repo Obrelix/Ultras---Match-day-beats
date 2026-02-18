@@ -2426,6 +2426,157 @@ body {
 }
 
 /* ============================================
+   Global Navigation Bar
+   ============================================ */
+
+#global-nav {
+    position: fixed;
+    top: 16px;
+    left: 76px;  /* Position after settings button (16px + 48px + 12px gap) */
+    z-index: 100;
+    display: flex;
+    gap: 8px;
+}
+
+#global-nav.hidden {
+    display: none;
+}
+
+.nav-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: linear-gradient(145deg, rgba(30, 30, 45, 0.9), rgba(15, 15, 25, 0.95));
+    color: var(--text-light);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.25s ease;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.nav-btn:hover {
+    background: linear-gradient(145deg, rgba(40, 40, 60, 0.95), rgba(20, 20, 35, 0.95));
+    border-color: var(--primary-color);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 15px rgba(var(--primary-color-rgb, 0, 102, 51), 0.3);
+    transform: translateY(-2px);
+}
+
+.nav-btn:active {
+    transform: translateY(0) scale(0.95);
+}
+
+.nav-btn svg {
+    transition: transform 0.2s ease;
+}
+
+.nav-btn:hover svg {
+    transform: scale(1.1);
+}
+
+/* Abandon Match Modal */
+#abandon-match-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    backdrop-filter: blur(4px);
+    animation: fadeIn 0.2s ease;
+}
+
+#abandon-match-modal.hidden {
+    display: none;
+}
+
+#abandon-match-modal .modal-content {
+    background: linear-gradient(145deg, rgba(25, 25, 40, 0.98), rgba(10, 10, 20, 0.98));
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    padding: 28px 32px;
+    text-align: center;
+    max-width: 400px;
+    width: auto;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+#abandon-match-modal h3 {
+    color: var(--accent-gold);
+    font-size: 1.3rem;
+    margin-bottom: 12px;
+}
+
+#abandon-match-modal p {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin-bottom: 24px;
+}
+
+#abandon-match-modal .modal-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+#abandon-match-modal .modal-actions button {
+    min-width: 150px;
+    max-width: none;
+    width: auto;
+    padding: 14px 24px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    overflow: visible;
+    text-overflow: clip;
+}
+
+#abandon-match-modal #abandon-confirm-btn {
+    background: linear-gradient(145deg, #cc3333, #aa2222) !important;
+    background-size: 100% 100% !important;
+    border: 1px solid rgba(255, 100, 100, 0.3);
+    color: #fff;
+    box-shadow: 0 4px 15px rgba(180, 50, 50, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+#abandon-match-modal #abandon-confirm-btn::before {
+    display: none !important;
+}
+
+#abandon-match-modal #abandon-confirm-btn:hover {
+    background: linear-gradient(145deg, #dd4444, #bb3333) !important;
+    box-shadow: 0 6px 20px rgba(200, 50, 50, 0.5);
+}
+
+#abandon-match-modal #abandon-cancel-btn {
+    background: linear-gradient(145deg, rgba(50, 50, 65, 0.95), rgba(30, 30, 40, 0.95)) !important;
+    background-size: 100% 100% !important;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: var(--text-light);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+#abandon-match-modal #abandon-cancel-btn::before {
+    display: none !important;
+}
+
+#abandon-match-modal #abandon-cancel-btn:hover {
+    background: linear-gradient(145deg, rgba(60, 60, 80, 0.95), rgba(40, 40, 55, 0.95)) !important;
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* ============================================
    Pause Button & Overlay
    ============================================ */
 
@@ -3553,6 +3704,49 @@ body {
 
     #settings-panel input[type="range"] {
         width: 80px;
+    }
+
+    /* Global Navigation */
+    #global-nav {
+        top: 12px;
+        left: 58px;  /* 12px + 38px + 8px gap */
+    }
+
+    .nav-btn {
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+    }
+
+    .nav-btn svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    /* Abandon Match Modal */
+    #abandon-match-modal .modal-content {
+        padding: 20px 24px;
+        max-width: 320px;
+        margin: 0 16px;
+    }
+
+    #abandon-match-modal h3 {
+        font-size: 1.15rem;
+    }
+
+    #abandon-match-modal p {
+        font-size: 0.9rem;
+    }
+
+    #abandon-match-modal .modal-actions {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    #abandon-match-modal .modal-actions button {
+        width: 100%;
+        min-width: unset;
+        white-space: normal;
     }
 
     /* Tutorial */
@@ -5641,6 +5835,17 @@ body {
 
     #settings-panel .toggle-label input[type="checkbox"]:checked::before {
         transform: translateX(18px);
+    }
+
+    /* Global Navigation */
+    #global-nav {
+        top: 10px;
+        left: 62px;  /* 10px + 42px + 10px gap */
+    }
+
+    .nav-btn {
+        width: 36px;
+        height: 36px;
     }
 }
 

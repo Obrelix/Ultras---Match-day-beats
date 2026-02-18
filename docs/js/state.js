@@ -7,6 +7,7 @@ import { GameState } from './config.js';
 export const state = {
     // Navigation
     currentState: GameState.TITLE,
+    navigationHistory: [],  // Stack of previous screen names for back navigation
     selectedClub: null,
     selectedChant: null,
 

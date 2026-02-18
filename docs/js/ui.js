@@ -3,7 +3,7 @@
 // ============================================
 
 import { GameState, clubs, MATCHDAY, ACHIEVEMENTS, LOYALTY_CONFIG } from './config.js';
-import { state } from './state.js';
+import { state, resetMatchState } from './state.js';
 import { stopAudio } from './audio.js';
 import { saveHighScore, loadHighScore, saveMatchdayStats, loadMatchdayStats } from './storage.js';
 import { setCrowdEmotion } from './crowd.js';
@@ -227,6 +227,16 @@ export const elements = {
     // Audio Settings
     metronomeToggle: document.getElementById('metronome-toggle'),
 
+    // Global Navigation
+    globalNav: document.getElementById('global-nav'),
+    navBackBtn: document.getElementById('nav-back-btn'),
+    navHomeBtn: document.getElementById('nav-home-btn'),
+
+    // Abandon Match Modal
+    abandonMatchModal: document.getElementById('abandon-match-modal'),
+    abandonConfirmBtn: document.getElementById('abandon-confirm-btn'),
+    abandonCancelBtn: document.getElementById('abandon-cancel-btn'),
+
     // Custom Chants
     customChantList: document.getElementById('custom-chant-list'),
     uploadChantBtn: document.getElementById('upload-chant-btn'),
@@ -252,10 +262,103 @@ export const elements = {
     uploadSaveBtn: document.getElementById('upload-save-btn'),
 };
 
-export function showScreen(screenName) {
+export function showScreen(screenName, addToHistory = true) {
+    // Push current screen to history before switching (if not already there)
+    if (addToHistory && state.currentState && state.currentState !== screenName) {
+        state.navigationHistory.push(state.currentState);
+        // Limit history size to prevent memory issues
+        if (state.navigationHistory.length > 20) state.navigationHistory.shift();
+    }
+
     Object.values(screens).forEach(screen => screen.classList.remove('active'));
     screens[screenName].classList.add('active');
     state.currentState = screenName;
+
+    updateNavVisibility();
+}
+
+/**
+ * Navigate back to the previous screen
+ */
+export function navigateBack() {
+    // If in active matchday, show confirmation
+    if (isInActiveMatch()) {
+        showAbandonMatchConfirm(() => {
+            state.navigationHistory = [];
+            resetMatchState();
+            showScreen('title', false);
+        });
+        return;
+    }
+
+    if (state.navigationHistory.length === 0) return;
+    const previousScreen = state.navigationHistory.pop();
+    showScreen(previousScreen, false); // Don't add to history when going back
+}
+
+/**
+ * Navigate directly to home/title screen
+ */
+export function navigateHome() {
+    // If in active matchday, show confirmation
+    if (isInActiveMatch()) {
+        showAbandonMatchConfirm(() => {
+            state.navigationHistory = [];
+            resetMatchState();
+            showScreen('title', false);
+        });
+        return;
+    }
+
+    state.navigationHistory = []; // Clear history
+    showScreen('title', false);
+}
+
+/**
+ * Check if we're in an active Match Day flow (not Practice)
+ */
+function isInActiveMatch() {
+    const matchScreens = ['matchdayIntro', 'chantResult', 'halftime'];
+    return state.gameMode === 'matchday' && matchScreens.includes(state.currentState);
+}
+
+/**
+ * Show/hide the abandon match confirmation modal
+ */
+let _abandonCallback = null;
+
+function showAbandonMatchConfirm(onConfirm) {
+    _abandonCallback = onConfirm;
+    if (elements.abandonMatchModal) {
+        elements.abandonMatchModal.classList.remove('hidden');
+    }
+}
+
+export function hideAbandonMatchConfirm() {
+    if (elements.abandonMatchModal) {
+        elements.abandonMatchModal.classList.add('hidden');
+    }
+    _abandonCallback = null;
+}
+
+export function confirmAbandonMatch() {
+    if (_abandonCallback) {
+        _abandonCallback();
+    }
+    hideAbandonMatchConfirm();
+}
+
+/**
+ * Update global nav visibility based on current screen
+ */
+function updateNavVisibility() {
+    if (!elements.globalNav) return;
+
+    // Hide on title screen (nothing to go back to) and during gameplay (use pause menu)
+    const hideOn = ['title', 'gameplay'];
+    const shouldHide = hideOn.includes(state.currentState);
+
+    elements.globalNav.classList.toggle('hidden', shouldHide);
 }
 
 // Helper to convert hex color to RGB values for CSS rgba()

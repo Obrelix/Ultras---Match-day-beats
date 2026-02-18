@@ -16,7 +16,8 @@ import {
     showScreen, applyClubTheme, renderClubSelection, renderChantSelection,
     renderMatchdayIntro, updateMatchScoreboard, updateScoreboardTeams,
     setMatchdayChantStarter, setScoreSubmitHandler, endGame, elements, screens,
-    updateTitleLevelBadge, renderProfileScreen
+    updateTitleLevelBadge, renderProfileScreen,
+    navigateBack, navigateHome, hideAbandonMatchConfirm, confirmAbandonMatch
 } from './ui.js';
 import { loadProgression } from './progression.js';
 import { loadSettings, saveSettings, hasTutorialSeen, markTutorialSeen } from './storage.js';
@@ -631,6 +632,27 @@ elements.playAgainBtn.addEventListener('click', () => {
 
 elements.changeChantBtn.addEventListener('click', () => {
     showScreen('chantSelect');
+});
+
+// ============================================
+// Global Navigation
+// ============================================
+
+elements.navBackBtn?.addEventListener('click', () => {
+    navigateBack();
+});
+
+elements.navHomeBtn?.addEventListener('click', () => {
+    navigateHome();
+});
+
+// Abandon match modal handlers
+elements.abandonConfirmBtn?.addEventListener('click', () => {
+    confirmAbandonMatch();
+});
+
+elements.abandonCancelBtn?.addEventListener('click', () => {
+    hideAbandonMatchConfirm();
 });
 
 // ============================================

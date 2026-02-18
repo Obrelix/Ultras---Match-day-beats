@@ -14,6 +14,7 @@ let firebaseDb = null;
 let firebaseAuth = null;
 let isInitialized = false;
 let lastSubmitTime = 0;
+let permissionDenied = false; // Track if we've hit permission errors
 
 // ============================================
 // Firebase Initialization
@@ -53,7 +54,13 @@ export async function initLeaderboard() {
 
         return true;
     } catch (error) {
-        console.error('Leaderboard: Failed to initialize Firebase:', error);
+        // Handle common auth errors gracefully
+        if (error.code === 'auth/requests-from-referer-are-blocked' ||
+            (error.message && error.message.includes('requests-from-referer'))) {
+            console.warn('Leaderboard: Domain not authorized in Firebase. Add this domain to Firebase Auth settings.');
+        } else {
+            console.error('Leaderboard: Failed to initialize Firebase:', error);
+        }
         return false;
     }
 }
@@ -116,28 +123,31 @@ export async function submitScore(scoreData) {
         return { success: false, reason: 'rate_limited' };
     }
 
+    // Entry format matches Firebase rules: name, score, timestamp required
+    // clubId/chantId/difficulty kept for offline queue path reconstruction
     const entry = {
         playerId: profile.playerId,
-        playerName: profile.playerName,
-        clubId: scoreData.clubId,
-        chantId: scoreData.chantId,
-        difficulty: scoreData.difficulty,
+        name: profile.playerName,  // 'name' to match Firebase rules
         score: scoreData.score,
         maxCombo: scoreData.maxCombo,
         accuracy: scoreData.accuracy,
-        stats: scoreData.stats,
-        timestamp: now
+        timestamp: now,
+        // Metadata for offline queue (not validated by Firebase rules)
+        clubId: scoreData.clubId,
+        chantId: scoreData.chantId,
+        difficulty: scoreData.difficulty
     };
 
-    if (!isInitialized || !navigator.onLine) {
-        // Queue for later
+    if (!isInitialized || !navigator.onLine || permissionDenied) {
+        // Queue for later (or if permissions are blocked)
         queueOfflineSubmission(entry);
         return { success: true, offline: true };
     }
 
     try {
         const { ref, push } = window._firebaseRefs;
-        const scoresRef = ref(firebaseDb, `scores/${scoreData.clubId}/${scoreData.chantId}/${scoreData.difficulty}`);
+        const chantKey = `${scoreData.clubId}_${scoreData.chantId}_${scoreData.difficulty}`;
+        const scoresRef = ref(firebaseDb, `leaderboards/${chantKey}`);
         await push(scoresRef, entry);
         lastSubmitTime = now;
 
@@ -146,7 +156,13 @@ export async function submitScore(scoreData) {
 
         return { success: true };
     } catch (error) {
-        console.error('Leaderboard: Failed to submit score:', error);
+        // Check for permission denied
+        if (error.message && error.message.includes('PERMISSION_DENIED')) {
+            console.warn('Leaderboard: Database write permission denied. Check Firebase rules.');
+            permissionDenied = true;
+        } else {
+            console.error('Leaderboard: Failed to submit score:', error);
+        }
         queueOfflineSubmission(entry);
         return { success: true, offline: true };
     }
@@ -177,7 +193,8 @@ export async function fetchLeaderboard(clubId, chantId, difficulty) {
 
     try {
         const { ref, get, query, orderByChild, limitToLast } = window._firebaseRefs;
-        const scoresRef = ref(firebaseDb, `scores/${clubId}/${chantId}/${difficulty}`);
+        const chantKey = `${clubId}_${chantId}_${difficulty}`;
+        const scoresRef = ref(firebaseDb, `leaderboards/${chantKey}`);
         const topScoresQuery = query(scoresRef, orderByChild('score'), limitToLast(100));
 
         const snapshot = await get(topScoresQuery);
@@ -209,7 +226,7 @@ export async function fetchLeaderboard(clubId, chantId, difficulty) {
         const profile = getPlayerProfile();
         const entries = uniqueEntries.map((entry, index) => ({
             rank: index + 1,
-            playerName: entry.playerName,
+            playerName: entry.name,  // 'name' in DB, 'playerName' for UI
             score: entry.score,
             maxCombo: entry.maxCombo,
             isCurrentPlayer: entry.playerId === profile.playerId
@@ -267,7 +284,7 @@ function queueOfflineSubmission(entry) {
 }
 
 async function flushOfflineQueue() {
-    if (!isInitialized || !navigator.onLine) return;
+    if (!isInitialized || !navigator.onLine || permissionDenied) return;
 
     const queue = loadOfflineQueue();
     if (!queue.length) return;
@@ -277,10 +294,19 @@ async function flushOfflineQueue() {
 
     for (const entry of queue) {
         try {
-            const scoresRef = ref(firebaseDb, `scores/${entry.clubId}/${entry.chantId}/${entry.difficulty}`);
+            const chantKey = `${entry.clubId}_${entry.chantId}_${entry.difficulty}`;
+            const scoresRef = ref(firebaseDb, `leaderboards/${chantKey}`);
             await push(scoresRef, entry);
             invalidateCache(entry.clubId, entry.chantId, entry.difficulty);
         } catch (error) {
+            // Check for permission denied - stop retrying if database rules block writes
+            if (error.message && error.message.includes('PERMISSION_DENIED')) {
+                console.warn('Leaderboard: Database write permission denied. Check Firebase rules.');
+                permissionDenied = true;
+                // Keep entries in queue for when permissions are fixed
+                saveOfflineQueue(queue);
+                return;
+            }
             console.error('Leaderboard: Failed to flush entry:', error);
             remaining.push(entry);
         }
