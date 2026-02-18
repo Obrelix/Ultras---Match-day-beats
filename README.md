@@ -18,10 +18,13 @@ A full football match experience across 6 chants (2 halves, 3 chants each). Scor
 
 ### Core Gameplay
 - **Automatic beat detection** — Custom FFT-based spectral flux analysis extracts vocal rhythm directly from audio. No manual BPM configuration.
+- **Hold beats** — Long-press mechanic auto-generated from beat clusters. Press at the start, hold through the duration, release at the end for bonus points.
 - **Dual-canvas rendering** — Scrolling beat track with timing zones, approach countdown rings, and hit effects on top; pixel art supporter crowd with procedural animations on bottom.
 - **Combo multipliers** — Chain consecutive hits for up to 3x score multiplier (thresholds at 5/10/15/20).
+- **Perfect streak bonus** — Consecutive PERFECT hits build an extra multiplier (+10% per perfect, up to 2x). Milestone bonuses at 5/10/15/20 perfects.
 - **Three difficulty levels** — Easy, Normal, and Hard with varying timing windows.
-- **Mobile friendly** — Tap/click input alongside keyboard.
+- **Input calibration** — Measure and compensate for device-specific input lag with a metronome-based calibration tool.
+- **Mobile friendly** — Tap/click input alongside keyboard, haptic feedback on supported devices.
 
 ### Frenzy Mode & Crowd Effects
 - **Frenzy mode** — Hit combo streaks above 5 to trigger crowd frenzy: waving flags, burning flares, billowing smoke, fire particles, and a "FEVER!" HUD.
@@ -29,7 +32,7 @@ A full football match experience across 6 chants (2 halves, 3 chants each). Scor
 - **Screen shake** — Intense visual feedback on perfect hit streaks.
 
 ### Modifiers & Power-ups
-- **Difficulty modifiers** — Double Time (faster beats), Hidden (fading notes), Mirror (reversed track). Stack for score bonuses up to 50%.
+- **Difficulty modifiers** — Double Time (1.5x scroll speed), Hidden (beats fade before hit line), Mirror (reversed scroll direction). Stack for score bonuses: 1 mod = +20%, 2 mods = +50%, 3 mods = +100%.
 - **Power-ups** — Charge by building combos:
   - **Shield** (10 combo) — Absorbs one miss
   - **Score Burst** (15 combo) — 2x score for 5 seconds
@@ -44,6 +47,7 @@ A full football match experience across 6 chants (2 halves, 3 chants each). Scor
   - **Wildcard** — Unpredictable streaks of brilliance
 - **Rubber banding** — AI adjusts difficulty based on score difference.
 - **Mood indicator** — See when the AI is confident or struggling.
+- **Trash talk** — AI taunts appear during gameplay based on game events (misses, combo breaks, score lead). Messages use the rival club's colors. Can be toggled in settings.
 
 ### Progression System
 - **XP & Leveling** — Earn XP from scores, combos, and wins. Level up through 15 ranks from "Newcomer" to "Supreme Ultra".
@@ -89,8 +93,8 @@ Or use **VS Code Live Server** / any static file server.
 
 | Input | Action |
 |-------|--------|
-| `SPACEBAR` | Hit the beat |
-| `Click / Tap` | Hit the beat (mobile) |
+| `SPACEBAR` | Hit beat / Hold for long notes |
+| `Click / Tap` | Hit beat / Hold for long notes (mobile) |
 | `SHIFT` | Activate charged power-up |
 | `ESC` | Pause / Resume |
 
@@ -123,17 +127,18 @@ docs/js/
 ├── audio.js           Web Audio API pipeline, SFX synthesis, metronome
 ├── beatDetection.js   Spectral flux + onset detection + tempo estimation (custom FFT)
 ├── beatWorker.js      Web Worker for off-main-thread beat analysis
-├── input.js           Input handling, scoring, combo, AI simulation
+├── input.js           Input handling, scoring, combo, AI simulation, perfect streaks, trash talk
 ├── renderer.js        Beat track visualizer (top canvas)
 ├── crowd.js           Pixel crowd, particles, flags, flares, smoke, weather, HUD (bottom canvas)
 ├── crowdBg.js         Persistent background canvas manager
-├── ui.js              Screen management, DOM elements, progression UI
+├── ui.js              Screen management, DOM elements, calibration UI
 ├── storage.js         localStorage persistence layer
 ├── progression.js     XP, leveling, achievements, challenges, loyalty
 ├── replay.js          Input recording and playback
 ├── customChants.js    IndexedDB storage for custom uploaded chants
 ├── leaderboard.js     Firebase Realtime Database integration
 ├── leaderboardUI.js   Leaderboard screen rendering
+├── analytics.js       Session tracking, accuracy trends, performance charts
 └── main.js            Entry point, game loop, event wiring
 ```
 
