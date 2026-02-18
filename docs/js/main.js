@@ -245,6 +245,21 @@ async function startMatchdayChant() {
             const holdCount = state.detectedBeats.filter(b => b.type === 'hold').length;
             console.log(`Auto-detected ${rawBeats.length} beats, generated ${holdCount} hold beats`);
         }
+
+        // Bug #24 fix: Guard against empty beat detection
+        if (!state.detectedBeats || state.detectedBeats.length === 0) {
+            console.warn('No beats detected in audio - gameplay may not work correctly');
+            // Generate fallback beats at regular intervals based on audio duration
+            const duration = state.audioBuffer?.duration || 60;
+            const fallbackBPM = 120;
+            const interval = 60 / fallbackBPM;
+            state.detectedBeats = [];
+            for (let t = 0.5; t < duration - 0.5; t += interval) {
+                state.detectedBeats.push({ time: t, type: 'tap' });
+            }
+            console.log(`Generated ${state.detectedBeats.length} fallback beats at ${fallbackBPM} BPM`);
+        }
+
         computeWaveformPeaks();
         buildWaveformCache();
 
@@ -337,6 +352,21 @@ async function startGame() {
             const holdCount = state.detectedBeats.filter(b => b.type === 'hold').length;
             console.log(`Auto-detected ${rawBeats.length} beats, generated ${holdCount} hold beats`);
         }
+
+        // Bug #24 fix: Guard against empty beat detection
+        if (!state.detectedBeats || state.detectedBeats.length === 0) {
+            console.warn('No beats detected in audio - gameplay may not work correctly');
+            // Generate fallback beats at regular intervals based on audio duration
+            const duration = state.audioBuffer?.duration || 60;
+            const fallbackBPM = 120;
+            const interval = 60 / fallbackBPM;
+            state.detectedBeats = [];
+            for (let t = 0.5; t < duration - 0.5; t += interval) {
+                state.detectedBeats.push({ time: t, type: 'tap' });
+            }
+            console.log(`Generated ${state.detectedBeats.length} fallback beats at ${fallbackBPM} BPM`);
+        }
+
         computeWaveformPeaks();
         buildWaveformCache();
 
@@ -543,6 +573,15 @@ async function resumeGame() {
     // Also shift crowdBeatTime to keep visual sync
     if (state.crowdBeatTime > 0) {
         state.crowdBeatTime += pauseDuration;
+    }
+    // Bug #15 fix: Shift hold beat timing to stay in sync after pause
+    if (state.holdState.isHolding) {
+        if (state.holdState.pressTime > 0) {
+            state.holdState.pressTime += pauseDuration;
+        }
+        if (state.holdState.expectedEndTime > 0) {
+            state.holdState.expectedEndTime += pauseDuration;
+        }
     }
 
     state.isPaused = false;
