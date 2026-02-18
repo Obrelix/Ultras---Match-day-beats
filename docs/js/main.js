@@ -779,13 +779,47 @@ document.addEventListener('touchcancel', (e) => {
 
 // Mouse support - mousedown/mouseup for hold beats
 screens.gameplay.addEventListener('mousedown', (e) => {
+    if (state.currentState !== GameState.PLAYING) return;
     if (state.isPaused) return;
-    // Skip if this was triggered by touch
-    if (performance.now() - lastInputTime < 500) return;
+    // Skip if this was triggered by touch (reduced from 500ms to 100ms)
+    if (performance.now() - lastInputTime < 100) return;
     // Don't handle clicks on UI controls
     if (e.target.closest('#global-settings') ||
         e.target.closest('#pause-btn') ||
-        e.target.closest('#powerup-hud')) return;
+        e.target.closest('#powerup-hud') ||
+        e.target.closest('.btn-primary') ||
+        e.target.closest('.btn-secondary')) return;
+
+    e.preventDefault();
+    isPointerDown = true;
+    lastInputTime = performance.now();
+
+    triggerTapFeedback(e.clientX, e.clientY);
+    handleInput();
+});
+
+// Also handle clicks on the tap zone specifically
+if (tapZone) {
+    tapZone.addEventListener('mousedown', (e) => {
+        if (state.currentState !== GameState.PLAYING) return;
+        if (state.isPaused) return;
+        if (performance.now() - lastInputTime < 100) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+        isPointerDown = true;
+        lastInputTime = performance.now();
+
+        triggerTapFeedback(e.clientX, e.clientY);
+        handleInput();
+    });
+}
+
+// Direct handler on game canvas for reliable click detection
+elements.gameCanvas.addEventListener('mousedown', (e) => {
+    if (state.currentState !== GameState.PLAYING) return;
+    if (state.isPaused) return;
+    if (performance.now() - lastInputTime < 100) return;
 
     e.preventDefault();
     isPointerDown = true;

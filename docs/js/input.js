@@ -19,7 +19,7 @@ export function setMainCallbacks(updatePowerupUI, updateAIMoodUI, recordInput) {
     _recordInput = recordInput;
 }
 
-const INPUT_COOLDOWN_MS = 80;
+const INPUT_COOLDOWN_MS = 50;
 let lastInputTime = 0;
 
 // Confetti colors (club primary + celebratory colors)

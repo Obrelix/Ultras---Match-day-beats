@@ -428,17 +428,17 @@ export function buildWaveformCache() {
 
     const ctx = state.waveformCacheCtx;
 
-    // Subtle center-line glow
-    const glowGrad = ctx.createLinearGradient(0, midY - 2, 0, midY + 2);
-    glowGrad.addColorStop(0, 'rgba(255,255,255,0)');
-    glowGrad.addColorStop(0.5, 'rgba(255,255,255,0.04)');
-    glowGrad.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = glowGrad;
-    ctx.fillRect(0, midY - 2, cacheW, 4);
+    // Create gradient for waveform
+    const waveGrad = ctx.createLinearGradient(0, 0, 0, cacheH);
+    waveGrad.addColorStop(0, primary);
+    waveGrad.addColorStop(0.3, shadeColor(primary, 20));
+    waveGrad.addColorStop(0.5, shadeColor(primary, 40));
+    waveGrad.addColorStop(0.7, shadeColor(primary, 20));
+    waveGrad.addColorStop(1, primary);
 
-    // Draw the full waveform
-    ctx.fillStyle = primary;
-    ctx.globalAlpha = 0.25;
+    // Draw the full waveform with gradient
+    ctx.fillStyle = waveGrad;
+    ctx.globalAlpha = 0.35;
     ctx.beginPath();
     ctx.moveTo(0, midY);
 
@@ -450,9 +450,31 @@ export function buildWaveformCache() {
     }
     ctx.closePath();
     ctx.fill();
-    ctx.globalAlpha = 1;
 
+    // Brighter center line overlay
+    ctx.globalAlpha = 0.15;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, midY);
+    for (let i = 0; i < totalPeaks; i++) {
+        const avg = (state.waveformPeaks[i].max + state.waveformPeaks[i].min) / 2;
+        ctx.lineTo(i, midY - avg * amp * 0.5);
+    }
+    ctx.stroke();
+
+    ctx.globalAlpha = 1;
     state.waveformCacheReady = true;
+}
+
+// Helper to lighten/darken a hex color
+function shadeColor(color, percent) {
+    const num = parseInt(color.replace('#', ''), 16);
+    const amt = Math.round(2.55 * percent);
+    const R = Math.min(255, Math.max(0, (num >> 16) + amt));
+    const G = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amt));
+    const B = Math.min(255, Math.max(0, (num & 0x0000FF) + amt));
+    return '#' + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
 }
 
 export function drawVisualizer() {
@@ -481,10 +503,34 @@ export function drawVisualizer() {
         return ((t - timeStart) / totalWindow) * w;
     }
 
-    // --- Background ---
+    // --- Background with gradient ---
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = '#1a1a2e';
+
+    // Base gradient
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+    bgGrad.addColorStop(0, '#0d0d1a');
+    bgGrad.addColorStop(0.3, '#151528');
+    bgGrad.addColorStop(0.5, '#1a1a30');
+    bgGrad.addColorStop(0.7, '#151528');
+    bgGrad.addColorStop(1, '#0d0d1a');
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, w, h);
+
+    // Subtle horizontal scan lines
+    if (!state.settings.reducedEffects) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+        for (let y = 0; y < h; y += 4) {
+            ctx.fillRect(0, y, w, 1);
+        }
+    }
+
+    // Center line glow
+    const centerGlow = ctx.createLinearGradient(0, midY - 15, 0, midY + 15);
+    centerGlow.addColorStop(0, 'rgba(255,255,255,0)');
+    centerGlow.addColorStop(0.5, 'rgba(255,255,255,0.03)');
+    centerGlow.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = centerGlow;
+    ctx.fillRect(0, midY - 15, w, 30);
 
     // --- Scrolling waveform (cached blit) ---
     if (state.waveformCacheReady && state.waveformCache) {
@@ -561,21 +607,55 @@ export function drawVisualizer() {
     const goodHalfW = (state.activeTiming.GOOD / 1000) * pxPerSec;
     const perfectHalfW = (state.activeTiming.PERFECT / 1000) * pxPerSec;
 
-    // Simplified zone bands - use solid fills instead of gradients for performance
-    // OK zone (orange)
-    ctx.fillStyle = 'rgba(255,170,0,0.07)';
+    // OK zone gradient (orange) - outer ring
+    const okGrad = ctx.createLinearGradient(hitLineX - okHalfW, 0, hitLineX + okHalfW, 0);
+    okGrad.addColorStop(0, 'rgba(255,170,0,0)');
+    okGrad.addColorStop(0.15, 'rgba(255,170,0,0.06)');
+    okGrad.addColorStop(0.5, 'rgba(255,170,0,0.08)');
+    okGrad.addColorStop(0.85, 'rgba(255,170,0,0.06)');
+    okGrad.addColorStop(1, 'rgba(255,170,0,0)');
+    ctx.fillStyle = okGrad;
     ctx.fillRect(hitLineX - okHalfW, 0, okHalfW * 2, h);
-    // GOOD zone (green)
-    ctx.fillStyle = 'rgba(136,255,0,0.07)';
+
+    // GOOD zone gradient (lime green)
+    const goodGrad = ctx.createLinearGradient(hitLineX - goodHalfW, 0, hitLineX + goodHalfW, 0);
+    goodGrad.addColorStop(0, 'rgba(136,255,0,0)');
+    goodGrad.addColorStop(0.2, 'rgba(136,255,0,0.07)');
+    goodGrad.addColorStop(0.5, 'rgba(136,255,0,0.1)');
+    goodGrad.addColorStop(0.8, 'rgba(136,255,0,0.07)');
+    goodGrad.addColorStop(1, 'rgba(136,255,0,0)');
+    ctx.fillStyle = goodGrad;
     ctx.fillRect(hitLineX - goodHalfW, 0, goodHalfW * 2, h);
-    // PERFECT zone (cyan-green)
-    ctx.fillStyle = 'rgba(0,255,136,0.12)';
+
+    // PERFECT zone gradient (cyan-green) - inner core
+    const perfectGrad = ctx.createLinearGradient(hitLineX - perfectHalfW, 0, hitLineX + perfectHalfW, 0);
+    perfectGrad.addColorStop(0, 'rgba(0,255,136,0)');
+    perfectGrad.addColorStop(0.25, 'rgba(0,255,136,0.12)');
+    perfectGrad.addColorStop(0.5, 'rgba(0,255,136,0.18)');
+    perfectGrad.addColorStop(0.75, 'rgba(0,255,136,0.12)');
+    perfectGrad.addColorStop(1, 'rgba(0,255,136,0)');
+    ctx.fillStyle = perfectGrad;
     ctx.fillRect(hitLineX - perfectHalfW, 0, perfectHalfW * 2, h);
 
-    // Zone boundary hairlines
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    // Vertical glow in perfect zone
+    const perfectVertGlow = ctx.createLinearGradient(0, 0, 0, h);
+    perfectVertGlow.addColorStop(0, 'rgba(0,255,136,0.1)');
+    perfectVertGlow.addColorStop(0.3, 'rgba(0,255,136,0)');
+    perfectVertGlow.addColorStop(0.7, 'rgba(0,255,136,0)');
+    perfectVertGlow.addColorStop(1, 'rgba(0,255,136,0.1)');
+    ctx.fillStyle = perfectVertGlow;
+    ctx.fillRect(hitLineX - perfectHalfW, 0, perfectHalfW * 2, h);
+
+    // Zone boundary lines with gradient fade
     ctx.lineWidth = 1;
-    for (const halfW of [okHalfW, goodHalfW, perfectHalfW]) {
+    for (const [halfW, color] of [[okHalfW, '255,170,0'], [goodHalfW, '136,255,0'], [perfectHalfW, '0,255,136']]) {
+        const lineGrad = ctx.createLinearGradient(0, 0, 0, h);
+        lineGrad.addColorStop(0, `rgba(${color},0.3)`);
+        lineGrad.addColorStop(0.2, `rgba(${color},0.08)`);
+        lineGrad.addColorStop(0.5, `rgba(${color},0.15)`);
+        lineGrad.addColorStop(0.8, `rgba(${color},0.08)`);
+        lineGrad.addColorStop(1, `rgba(${color},0.3)`);
+        ctx.strokeStyle = lineGrad;
         ctx.beginPath();
         ctx.moveTo(hitLineX - halfW, 0);
         ctx.lineTo(hitLineX - halfW, h);
@@ -933,39 +1013,64 @@ export function drawVisualizer() {
     const comboMult = getComboMultiplier();
     let hitLineColor = primary;
     let hitLineGlow = primary;
+    let hitLineIntensity = 1;
 
     // Dynamic hit line color based on combo multiplier
     if (comboMult >= 3) {
         hitLineColor = '#ff3300';  // Red-orange at max combo
         hitLineGlow = '#ff6600';
+        hitLineIntensity = 1.5;
     } else if (comboMult >= 2.5) {
         hitLineColor = '#ff6600';  // Orange
         hitLineGlow = '#ff8800';
+        hitLineIntensity = 1.35;
     } else if (comboMult >= 2) {
         hitLineColor = '#ffaa00';  // Gold
         hitLineGlow = '#ffcc00';
+        hitLineIntensity = 1.2;
     } else if (comboMult >= 1.5) {
         hitLineColor = '#ffcc00';  // Yellow
         hitLineGlow = '#ffdd44';
+        hitLineIntensity = 1.1;
     }
 
+    // Animated pulse for high combos
+    const hitLinePulse = comboMult >= 1.5 ? (1 + Math.sin(performance.now() / 150) * 0.15 * (comboMult - 1)) : 1;
+
+    // Outer glow (widest, most transparent)
     ctx.strokeStyle = hitLineGlow;
-    ctx.lineWidth = 8;
-    ctx.globalAlpha = 0.15 + (comboMult - 1) * 0.05;
+    ctx.lineWidth = 14 * hitLinePulse;
+    ctx.globalAlpha = 0.08 * hitLineIntensity;
     ctx.beginPath();
     ctx.moveTo(hitLineX, 0);
     ctx.lineTo(hitLineX, h);
     ctx.stroke();
 
+    // Middle glow
+    ctx.lineWidth = 8 * hitLinePulse;
+    ctx.globalAlpha = 0.15 * hitLineIntensity;
+    ctx.beginPath();
+    ctx.moveTo(hitLineX, 0);
+    ctx.lineTo(hitLineX, h);
+    ctx.stroke();
+
+    // Inner colored glow
     ctx.strokeStyle = hitLineColor;
     ctx.lineWidth = 4;
-    ctx.globalAlpha = 0.3 + (comboMult - 1) * 0.08;
+    ctx.globalAlpha = 0.4 * hitLineIntensity;
     ctx.beginPath();
     ctx.moveTo(hitLineX, 0);
     ctx.lineTo(hitLineX, h);
     ctx.stroke();
 
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+    // Core white line
+    const coreGrad = ctx.createLinearGradient(0, 0, 0, h);
+    coreGrad.addColorStop(0, 'rgba(255,255,255,1)');
+    coreGrad.addColorStop(0.15, 'rgba(255,255,255,0.6)');
+    coreGrad.addColorStop(0.5, 'rgba(255,255,255,0.85)');
+    coreGrad.addColorStop(0.85, 'rgba(255,255,255,0.6)');
+    coreGrad.addColorStop(1, 'rgba(255,255,255,1)');
+    ctx.strokeStyle = coreGrad;
     ctx.lineWidth = 2;
     ctx.globalAlpha = 1;
     ctx.beginPath();
@@ -973,10 +1078,14 @@ export function drawVisualizer() {
     ctx.lineTo(hitLineX, h);
     ctx.stroke();
 
-    // Diamond markers
-    const dSize = 5;
+    // Diamond markers with glow
+    const dSize = 6;
+
+    // Top diamond glow
+    ctx.shadowColor = hitLineColor;
+    ctx.shadowBlur = 8;
     ctx.fillStyle = '#ffffff';
-    ctx.globalAlpha = 0.8;
+    ctx.globalAlpha = 0.95;
     ctx.beginPath();
     ctx.moveTo(hitLineX, 0);
     ctx.lineTo(hitLineX + dSize, dSize);
@@ -984,6 +1093,8 @@ export function drawVisualizer() {
     ctx.lineTo(hitLineX - dSize, dSize);
     ctx.closePath();
     ctx.fill();
+
+    // Bottom diamond
     ctx.beginPath();
     ctx.moveTo(hitLineX, h);
     ctx.lineTo(hitLineX + dSize, h - dSize);
@@ -991,19 +1102,65 @@ export function drawVisualizer() {
     ctx.lineTo(hitLineX - dSize, h - dSize);
     ctx.closePath();
     ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Inner diamond highlight
+    ctx.fillStyle = hitLineColor;
+    ctx.globalAlpha = 0.6;
+    const innerD = dSize * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(hitLineX, dSize * 0.5);
+    ctx.lineTo(hitLineX + innerD, dSize);
+    ctx.lineTo(hitLineX, dSize * 1.5);
+    ctx.lineTo(hitLineX - innerD, dSize);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(hitLineX, h - dSize * 0.5);
+    ctx.lineTo(hitLineX + innerD, h - dSize);
+    ctx.lineTo(hitLineX, h - dSize * 1.5);
+    ctx.lineTo(hitLineX - innerD, h - dSize);
+    ctx.closePath();
+    ctx.fill();
     ctx.globalAlpha = 1;
 
     // Beat flash effect on hit line
     if (state.beatFlashIntensity > 0) {
+        // Wide flash
         ctx.strokeStyle = primary;
-        ctx.lineWidth = 10;
-        ctx.globalAlpha = state.beatFlashIntensity * 0.6;
+        ctx.lineWidth = 16;
+        ctx.globalAlpha = state.beatFlashIntensity * 0.4;
         ctx.beginPath();
         ctx.moveTo(hitLineX, 0);
         ctx.lineTo(hitLineX, h);
         ctx.stroke();
+
+        // Intense core flash
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 6;
+        ctx.globalAlpha = state.beatFlashIntensity * 0.8;
+        ctx.beginPath();
+        ctx.moveTo(hitLineX, 0);
+        ctx.lineTo(hitLineX, h);
+        ctx.stroke();
+
         ctx.globalAlpha = 1;
-        state.beatFlashIntensity *= 0.9;
+        state.beatFlashIntensity *= 0.88;
         if (state.beatFlashIntensity < 0.01) state.beatFlashIntensity = 0;
+    }
+
+    // --- Edge vignette effect ---
+    if (!state.settings.reducedEffects) {
+        const vignetteL = ctx.createLinearGradient(0, 0, 40, 0);
+        vignetteL.addColorStop(0, 'rgba(0,0,0,0.5)');
+        vignetteL.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = vignetteL;
+        ctx.fillRect(0, 0, 40, h);
+
+        const vignetteR = ctx.createLinearGradient(w - 40, 0, w, 0);
+        vignetteR.addColorStop(0, 'rgba(0,0,0,0)');
+        vignetteR.addColorStop(1, 'rgba(0,0,0,0.5)');
+        ctx.fillStyle = vignetteR;
+        ctx.fillRect(w - 40, 0, 40, h);
     }
 }

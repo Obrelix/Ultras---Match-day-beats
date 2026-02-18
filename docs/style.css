@@ -1091,45 +1091,133 @@ body {
     -webkit-tap-highlight-color: transparent;
 }
 
+/* Game Canvas Container */
+#game-canvas-wrapper {
+    position: relative;
+    width: 100%;
+    max-width: 850px;
+    margin-top: 8px;
+}
+
 #game-canvas {
     width: 100%;
-    max-width: 800px;
-    height: 100px;
-    background: rgba(26, 26, 46, 0.85);
-    border-radius: 15px;
-    border: 3px solid rgba(255, 255, 255, 0.1);
-    margin-top: 8px;
-    transition: border-color 0.1s ease, box-shadow 0.1s ease;
+    max-width: 850px;
+    height: 110px;
+    background: linear-gradient(180deg,
+        rgba(15, 15, 30, 0.95) 0%,
+        rgba(20, 20, 40, 0.9) 30%,
+        rgba(25, 25, 50, 0.85) 50%,
+        rgba(20, 20, 40, 0.9) 70%,
+        rgba(15, 15, 30, 0.95) 100%);
+    border-radius: 20px;
+    border: 2px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        0 4px 20px rgba(0, 0, 0, 0.5),
+        0 0 40px rgba(var(--primary-color-rgb), 0.1),
+        inset 0 0 60px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    transition: all 0.15s ease;
+    position: relative;
+    cursor: pointer;
+}
+
+/* Ambient glow behind canvas */
+#game-canvas::before {
+    content: '';
+    position: absolute;
+    top: -10px;
+    left: 5%;
+    right: 5%;
+    bottom: -10px;
+    background: radial-gradient(ellipse at 50% 50%,
+        rgba(var(--primary-color-rgb), 0.15) 0%,
+        transparent 70%);
+    border-radius: 30px;
+    z-index: -1;
+    opacity: 0.5;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}
+
+#game-canvas.beat-pulse::before {
+    opacity: 1;
+}
+
+/* Corner decorations */
+#game-canvas::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 20px;
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+        linear-gradient(-135deg, rgba(255, 255, 255, 0.05) 0%, transparent 30%);
+    pointer-events: none;
 }
 
 #game-canvas.beat-pulse {
-    animation: canvasPulse 0.15s ease-out;
+    animation: canvasPulse 0.2s ease-out;
+    border-color: rgba(var(--primary-color-rgb), 0.5);
 }
 
 #game-canvas.hit-perfect {
     border-color: var(--perfect-color);
-    box-shadow: 0 0 30px var(--perfect-color), inset 0 0 30px rgba(0, 255, 136, 0.1);
+    box-shadow:
+        0 0 40px rgba(0, 255, 136, 0.4),
+        0 0 80px rgba(0, 255, 136, 0.2),
+        inset 0 0 40px rgba(0, 255, 136, 0.1);
 }
 
 #game-canvas.hit-good {
     border-color: var(--good-color);
-    box-shadow: 0 0 25px var(--good-color), inset 0 0 25px rgba(136, 255, 0, 0.1);
+    box-shadow:
+        0 0 35px rgba(136, 255, 0, 0.35),
+        0 0 60px rgba(136, 255, 0, 0.15),
+        inset 0 0 35px rgba(136, 255, 0, 0.08);
 }
 
 #game-canvas.hit-ok {
     border-color: var(--ok-color);
-    box-shadow: 0 0 20px var(--ok-color), inset 0 0 20px rgba(255, 170, 0, 0.1);
+    box-shadow:
+        0 0 30px rgba(255, 170, 0, 0.3),
+        0 0 50px rgba(255, 170, 0, 0.12),
+        inset 0 0 30px rgba(255, 170, 0, 0.06);
 }
 
 #game-canvas.hit-miss {
     border-color: var(--miss-color);
-    box-shadow: 0 0 20px var(--miss-color), inset 0 0 20px rgba(255, 68, 68, 0.1);
+    box-shadow:
+        0 0 25px rgba(255, 68, 68, 0.3),
+        0 0 40px rgba(255, 68, 68, 0.1),
+        inset 0 0 25px rgba(255, 68, 68, 0.05);
+    animation: canvasShake 0.15s ease-out;
 }
 
 @keyframes canvasPulse {
-    0% { transform: scale(1); border-color: var(--primary-color); box-shadow: 0 0 20px var(--primary-color); }
-    50% { transform: scale(1.02); border-color: var(--primary-color); box-shadow: 0 0 40px var(--primary-color); }
-    100% { transform: scale(1); border-color: rgba(255, 255, 255, 0.1); box-shadow: none; }
+    0% {
+        transform: scale(1);
+        border-color: rgba(var(--primary-color-rgb), 0.8);
+    }
+    50% {
+        transform: scale(1.015);
+        border-color: var(--primary-color);
+        box-shadow: 0 0 50px rgba(var(--primary-color-rgb), 0.4);
+    }
+    100% {
+        transform: scale(1);
+        border-color: rgba(255, 255, 255, 0.08);
+    }
+}
+
+@keyframes canvasShake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-3px); }
+    40% { transform: translateX(3px); }
+    60% { transform: translateX(-2px); }
+    80% { transform: translateX(2px); }
 }
 
 /* Frenzy mode visual enhancement (#2) */
@@ -1534,22 +1622,19 @@ body {
 #final-scores {
     display: flex;
     justify-content: center;
-    gap: 30px;
+    align-items: center;
+    gap: 20px;
     margin-bottom: 28px;
     position: relative;
 }
 
-#final-scores::before {
-    content: 'VS';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 1.2rem;
+#final-scores .vs-text {
+    font-size: 1.1rem;
     font-weight: 800;
     color: var(--accent-gold);
     text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
-    z-index: 1;
+    padding: 0 5px;
+    flex-shrink: 0;
 }
 
 .final-score-box {
@@ -2748,7 +2833,8 @@ body {
     }
 
     #game-canvas {
-        height: 80px;
+        height: 90px;
+        border-radius: 16px;
     }
 
     .score-box {
@@ -2908,9 +2994,9 @@ body {
     }
 
     #game-canvas {
-        height: 70px;
-        border-radius: 10px;
-        margin-top: 8px;
+        height: 80px;
+        border-radius: 14px;
+        margin-top: 6px;
     }
 
     #title-screen h1 {
@@ -3275,12 +3361,12 @@ body {
     }
 
     #final-scores {
-        gap: 16px;
+        gap: 12px;
         margin-bottom: 20px;
     }
 
-    #final-scores::before {
-        font-size: 1rem;
+    #final-scores .vs-text {
+        font-size: 0.95rem;
     }
 
     .final-score-box {
@@ -3548,8 +3634,9 @@ body {
     }
 
     #game-canvas {
-        height: 60px;
+        height: 70px;
         margin-top: 4px;
+        border-radius: 12px;
     }
 
     #chant-display {
@@ -3837,11 +3924,11 @@ body {
     }
 
     #final-scores {
-        gap: 14px;
+        gap: 10px;
         margin-bottom: 12px;
     }
 
-    #final-scores::before {
+    #final-scores .vs-text {
         font-size: 0.85rem;
     }
 
