@@ -88,6 +88,12 @@ function crowdLoop(timestamp) {
         return;
     }
 
+    // Pause the crowd visuals if the game is paused
+    if (state.isPaused) {
+        requestAnimationFrame(crowdLoop);
+        return;
+    }
+
     if (state.crowdMode === 'gameplay') {
         // Full 60fps during gameplay
         drawGameVisuals();

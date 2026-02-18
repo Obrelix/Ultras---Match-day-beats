@@ -14,8 +14,6 @@ import {
     getWeeklyChallenge, getSeasonChallenges, getClubLoyalty,
     getPendingNotifications, getLevelBadge, loadProgression, getLevelTitle
 } from './progression.js';
-import { playCrowdCelebration, playCrowdDejection } from './crowdAudio.js';
-
 // DOM Elements (module runs after DOM is parsed due to type="module")
 export const screens = {
     title: document.getElementById('title-screen'),
@@ -119,9 +117,9 @@ export const elements = {
     // Tutorial
     tutorialOverlay: document.getElementById('tutorial-overlay'),
 
-    // Volume / Settings
-    volumeToggle: document.getElementById('volume-toggle'),
-    volumePanel: document.getElementById('volume-panel'),
+    // Global Settings
+    settingsBtn: document.getElementById('settings-btn'),
+    settingsPanel: document.getElementById('settings-panel'),
     volumeSlider: document.getElementById('volume-slider'),
     sfxVolumeSlider: document.getElementById('sfx-volume-slider'),
     reducedEffectsToggle: document.getElementById('reduced-effects-toggle'),
@@ -220,8 +218,6 @@ export const elements = {
     achievementPopupName: document.getElementById('achievement-popup-name'),
 
     // Audio Settings
-    crowdVolumeSlider: document.getElementById('crowd-volume-slider'),
-    crowdAudioToggle: document.getElementById('crowd-audio-toggle'),
     metronomeToggle: document.getElementById('metronome-toggle'),
 
     // Custom Chants
@@ -255,8 +251,17 @@ export function showScreen(screenName) {
     state.currentState = screenName;
 }
 
+// Helper to convert hex color to RGB values for CSS rgba()
+function hexToRgb(hex) {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result
+        ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}`
+        : '0, 102, 51';
+}
+
 export function applyClubTheme(club) {
     document.documentElement.style.setProperty('--primary-color', club.colors.primary);
+    document.documentElement.style.setProperty('--primary-color-rgb', hexToRgb(club.colors.primary));
     document.documentElement.style.setProperty('--secondary-color', club.colors.secondary);
     if (state.rivalClub) {
         document.documentElement.style.setProperty('--rival-color', state.rivalClub.colors.primary);
@@ -331,17 +336,66 @@ export function renderChantSelection(onSelectChant) {
         const item = document.createElement('div');
         item.className = 'chant-item';
 
-        // Build DOM safely to prevent XSS
+        // Left accent bar
+        const accent = document.createElement('div');
+        accent.className = 'chant-accent';
+
+        // Main content wrapper
+        const content = document.createElement('div');
+        content.className = 'chant-content';
+
+        // Music icon
+        const icon = document.createElement('div');
+        icon.className = 'chant-icon';
+        icon.textContent = '♫';
+
+        // Text content wrapper
+        const textWrapper = document.createElement('div');
+        textWrapper.className = 'chant-text';
+
+        // Chant name
         const nameDiv = document.createElement('div');
         nameDiv.className = 'chant-name';
         nameDiv.textContent = chant.name;
 
+        // Info row
         const infoDiv = document.createElement('div');
         infoDiv.className = 'chant-info';
-        infoDiv.textContent = highScore > 0 ? `Best: ${highScore}` : 'Click to play';
 
-        item.appendChild(nameDiv);
-        item.appendChild(infoDiv);
+        // Duration badge
+        if (chant.duration) {
+            const durationBadge = document.createElement('span');
+            durationBadge.className = 'chant-duration-badge';
+            const mins = Math.floor(chant.duration / 60);
+            const secs = Math.floor(chant.duration % 60);
+            durationBadge.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+            infoDiv.appendChild(durationBadge);
+        }
+
+        // High score or play prompt
+        const scoreText = document.createElement('span');
+        if (highScore > 0) {
+            scoreText.className = 'chant-high-score-text';
+            scoreText.innerHTML = `<span style="color: var(--accent-gold);">★</span> Best: ${highScore.toLocaleString()}`;
+        } else {
+            scoreText.textContent = 'Tap to play';
+        }
+        infoDiv.appendChild(scoreText);
+
+        textWrapper.appendChild(nameDiv);
+        textWrapper.appendChild(infoDiv);
+
+        // Play button
+        const playBtn = document.createElement('div');
+        playBtn.className = 'chant-play';
+        playBtn.textContent = '▶';
+
+        content.appendChild(icon);
+        content.appendChild(textWrapper);
+        content.appendChild(playBtn);
+
+        item.appendChild(accent);
+        item.appendChild(content);
         item.addEventListener('click', () => onSelectChant(chant));
         elements.chantList.appendChild(item);
     });
@@ -420,11 +474,9 @@ export function endGame() {
     if (resultClass === 'win') {
         setCrowdEmotion('celebrate');
         setCrowdMode('celebrate');
-        playCrowdCelebration();
     } else if (resultClass === 'lose') {
         setCrowdEmotion('deject');
         setCrowdMode('deject');
-        playCrowdDejection();
     } else {
         setCrowdEmotion('neutral');
         setCrowdMode('idle');
@@ -639,11 +691,9 @@ export function showFulltime() {
     if (resultClass === 'win') {
         setCrowdEmotion('celebrate');
         setCrowdMode('celebrate');
-        playCrowdCelebration();
     } else if (resultClass === 'lose') {
         setCrowdEmotion('deject');
         setCrowdMode('deject');
-        playCrowdDejection();
     } else {
         setCrowdEmotion('neutral');
         setCrowdMode('idle');

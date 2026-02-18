@@ -6,10 +6,6 @@ import { GameState, MATCHDAY, DIFFICULTY_PRESETS, BEAT_DETECTION, clubs, MODIFIE
 import { state, resetGameState, resetMatchState } from './state.js';
 import { initAudio, loadAudio, playAudio, stopAudio, setVolume, setSFXVolume, playMetronomeClick } from './audio.js';
 import {
-    initCrowdAudio, updateCrowdAudio, stopCrowdAudio, setCrowdVolume,
-    playCrowdCheer, playCrowdGroan, playCrowdCelebration, playCrowdDejection
-} from './crowdAudio.js';
-import {
     initCustomChantDB, getAllCustomChants, saveCustomChant, deleteCustomChant,
     processUploadedFile, decodeCustomChantAudio
 } from './customChants.js';
@@ -266,9 +262,6 @@ async function startMatchdayChant() {
             startRecording();
         }
 
-        // Initialize crowd audio
-        initCrowdAudio();
-
         playAudio(endGame);
         state.audioStartTime = state.audioContext.currentTime;
         state.gameStartTime = performance.now();
@@ -361,9 +354,6 @@ async function startGame() {
             startRecording();
         }
 
-        // Initialize crowd audio
-        initCrowdAudio();
-
         playAudio(endGame);
         state.audioStartTime = state.audioContext.currentTime;
         state.gameStartTime = performance.now();
@@ -450,9 +440,6 @@ function gameLoop() {
         registerMiss();
         state.activeBeat = null;
     }
-
-    // Update crowd audio based on combo/performance
-    updateCrowdAudio();
 
     // Update frenzy CSS class for visual filters (#2)
     // Performance: Use state tracking instead of DOM queries
@@ -549,8 +536,8 @@ async function resumeGame() {
     state.isPaused = false;
     if (state.audioContext) await state.audioContext.resume();
     elements.pauseOverlay.classList.add('hidden');
-    // Close volume panel if open
-    elements.volumePanel.classList.add('hidden');
+    // Close settings panel if open
+    elements.settingsPanel.classList.add('hidden');
     // Use requestAnimationFrame instead of direct call to prevent race conditions
     state.gameLoopId = requestAnimationFrame(gameLoop);
 }
@@ -559,13 +546,12 @@ function quitToMenu() {
     state.isPaused = false;
     cancelAnimationFrame(state.gameLoopId);
     stopAudio();
-    stopCrowdAudio();
     setCrowdMode('idle');
     // Clean up countdown overlay if still present
     const countdownEl = document.getElementById('countdown-overlay');
     if (countdownEl) countdownEl.remove();
     elements.pauseOverlay.classList.add('hidden');
-    elements.volumePanel.classList.add('hidden');
+    elements.settingsPanel.classList.add('hidden');
     // Clean up frenzy CSS classes
     if (state.crowdBgCanvas) {
         state.crowdBgCanvas.classList.remove('frenzy', 'frenzy-intense');
@@ -647,6 +633,54 @@ elements.changeChantBtn.addEventListener('click', () => {
     showScreen('chantSelect');
 });
 
+// ============================================
+// Input Handling - Keyboard, Mouse, Touch
+// ============================================
+
+// Tap zone elements
+const tapZone = document.getElementById('tap-zone');
+const tapRipple = document.getElementById('tap-ripple');
+let lastInputTime = 0;
+let isPointerDown = false;
+let activeTouchId = null; // Track single touch to prevent multi-touch
+
+// Visual feedback - ripple effect at tap location
+function triggerTapFeedback(x, y) {
+    if (!tapRipple || !tapZone) return;
+
+    const rect = tapZone.getBoundingClientRect();
+    const relX = x - rect.left;
+    const relY = y - rect.top;
+
+    tapRipple.style.left = `${relX}px`;
+    tapRipple.style.top = `${relY}px`;
+    tapRipple.classList.remove('active');
+    // Force reflow to restart animation
+    void tapRipple.offsetWidth;
+    tapRipple.classList.add('active');
+
+    // Add pressed state to tap zone
+    tapZone.classList.add('pressed');
+}
+
+function releaseTapFeedback() {
+    if (tapZone) {
+        tapZone.classList.remove('pressed');
+    }
+}
+
+// Haptic feedback for mobile
+function triggerHaptic(type = 'light') {
+    if (!navigator.vibrate) return;
+    switch (type) {
+        case 'light': navigator.vibrate(10); break;
+        case 'medium': navigator.vibrate(25); break;
+        case 'heavy': navigator.vibrate([30, 20, 30]); break;
+        case 'success': navigator.vibrate([10, 50, 20]); break;
+        case 'error': navigator.vibrate([50, 30, 50]); break;
+    }
+}
+
 // Input - Spacebar (keydown for press, keyup for release)
 document.addEventListener('keydown', (e) => {
     if (e.code === 'Escape') {
@@ -658,6 +692,7 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
         if (state.isPaused) return;
         handleInput();
+        triggerHaptic('light');
     }
 });
 
@@ -670,31 +705,116 @@ document.addEventListener('keyup', (e) => {
     }
 });
 
-// Touch support for mobile
-let lastTouchTime = 0;
+// Touch support for mobile - with multi-touch prevention
 document.addEventListener('touchstart', (e) => {
-    if (state.currentState === GameState.PLAYING && !state.isPaused) {
-        e.preventDefault();
-        lastTouchTime = performance.now();
-        handleInput();
+    if (state.currentState !== GameState.PLAYING || state.isPaused) return;
+
+    // Only track the first touch, ignore additional fingers
+    if (activeTouchId !== null) return;
+
+    const touch = e.changedTouches[0];
+    activeTouchId = touch.identifier;
+
+    // Don't intercept touches on UI controls
+    const target = document.elementFromPoint(touch.clientX, touch.clientY);
+    if (target?.closest('#global-settings') ||
+        target?.closest('#pause-btn') ||
+        target?.closest('#powerup-hud')) {
+        activeTouchId = null;
+        return;
     }
+
+    e.preventDefault();
+    lastInputTime = performance.now();
+    isPointerDown = true;
+
+    triggerTapFeedback(touch.clientX, touch.clientY);
+    triggerHaptic('light');
+    handleInput();
 }, { passive: false });
+
+// Touch move - update ripple position for hold beats
+document.addEventListener('touchmove', (e) => {
+    if (state.currentState !== GameState.PLAYING || state.isPaused) return;
+    if (activeTouchId === null) return;
+
+    // Find our tracked touch
+    for (const touch of e.changedTouches) {
+        if (touch.identifier === activeTouchId) {
+            triggerTapFeedback(touch.clientX, touch.clientY);
+            break;
+        }
+    }
+}, { passive: true });
 
 // Touch release for hold beats
 document.addEventListener('touchend', (e) => {
+    if (state.currentState !== GameState.PLAYING) return;
+
+    // Only respond to our tracked touch
+    for (const touch of e.changedTouches) {
+        if (touch.identifier === activeTouchId) {
+            activeTouchId = null;
+            isPointerDown = false;
+            releaseTapFeedback();
+            if (!state.isPaused) {
+                handleInputRelease();
+            }
+            break;
+        }
+    }
+}, { passive: true });
+
+// Touch cancel - treat as release
+document.addEventListener('touchcancel', (e) => {
+    if (activeTouchId !== null) {
+        activeTouchId = null;
+        isPointerDown = false;
+        releaseTapFeedback();
+        if (state.currentState === GameState.PLAYING && !state.isPaused) {
+            handleInputRelease();
+        }
+    }
+}, { passive: true });
+
+// Mouse support - mousedown/mouseup for hold beats
+screens.gameplay.addEventListener('mousedown', (e) => {
+    if (state.isPaused) return;
+    // Skip if this was triggered by touch
+    if (performance.now() - lastInputTime < 500) return;
+    // Don't handle clicks on UI controls
+    if (e.target.closest('#global-settings') ||
+        e.target.closest('#pause-btn') ||
+        e.target.closest('#powerup-hud')) return;
+
+    e.preventDefault();
+    isPointerDown = true;
+    lastInputTime = performance.now();
+
+    triggerTapFeedback(e.clientX, e.clientY);
+    handleInput();
+});
+
+// Mouse release for hold beats
+document.addEventListener('mouseup', (e) => {
+    if (!isPointerDown) return;
+    isPointerDown = false;
+    releaseTapFeedback();
+
     if (state.currentState === GameState.PLAYING && !state.isPaused) {
-        e.preventDefault();
         handleInputRelease();
     }
-}, { passive: false });
+});
 
-// Click support during gameplay (skip synthetic clicks from touch)
-screens.gameplay.addEventListener('click', (e) => {
-    if (state.isPaused) return;
-    if (performance.now() - lastTouchTime < 500) return;
-    // Don't handle clicks on UI controls
-    if (e.target.closest('#volume-controls') || e.target.closest('#pause-btn')) return;
-    handleInput();
+// Mouse leave - treat as release if holding
+document.addEventListener('mouseleave', (e) => {
+    if (isPointerDown) {
+        isPointerDown = false;
+        releaseTapFeedback();
+        if (state.currentState === GameState.PLAYING && !state.isPaused) {
+            handleInputRelease();
+        }
+    }
 });
 
 // Pause button
@@ -708,10 +828,19 @@ elements.pauseBtn.addEventListener('click', (e) => {
 elements.resumeBtn.addEventListener('click', () => resumeGame());
 elements.quitBtn.addEventListener('click', () => quitToMenu());
 
-// Volume toggle
-elements.volumeToggle.addEventListener('click', (e) => {
+// Settings toggle
+elements.settingsBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    elements.volumePanel.classList.toggle('hidden');
+    elements.settingsPanel.classList.toggle('hidden');
+});
+
+// Close settings panel when clicking outside
+document.addEventListener('click', (e) => {
+    if (!elements.settingsPanel.classList.contains('hidden') &&
+        !elements.settingsPanel.contains(e.target) &&
+        !elements.settingsBtn.contains(e.target)) {
+        elements.settingsPanel.classList.add('hidden');
+    }
 });
 
 // Music volume slider
@@ -739,23 +868,6 @@ elements.reducedEffectsToggle.addEventListener('change', (e) => {
 // Metronome toggle
 elements.metronomeToggle?.addEventListener('change', (e) => {
     state.settings.metronomeEnabled = e.target.checked;
-    saveSettings(state.settings);
-});
-
-// Crowd audio toggle
-elements.crowdAudioToggle?.addEventListener('change', (e) => {
-    state.settings.crowdAudioEnabled = e.target.checked;
-    saveSettings(state.settings);
-    if (!e.target.checked) {
-        stopCrowdAudio();
-    }
-});
-
-// Crowd volume slider
-elements.crowdVolumeSlider?.addEventListener('input', (e) => {
-    const val = parseInt(e.target.value) / 100;
-    setCrowdVolume(val);
-    state.settings.crowdAudioVolume = val;
     saveSettings(state.settings);
 });
 
@@ -1448,6 +1560,12 @@ async function renderCustomChants() {
         const item = document.createElement('div');
         item.className = 'custom-chant-item';
 
+        // Music icon
+        const icon = document.createElement('div');
+        icon.className = 'custom-chant-icon';
+        icon.textContent = '♪';
+
+        // Info section
         const info = document.createElement('div');
         info.className = 'custom-chant-info';
 
@@ -1464,6 +1582,12 @@ async function renderCustomChants() {
         info.appendChild(name);
         info.appendChild(meta);
 
+        // Play button
+        const playBtn = document.createElement('div');
+        playBtn.className = 'custom-chant-play';
+        playBtn.textContent = '▶';
+
+        // Delete button
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'custom-chant-delete';
         deleteBtn.textContent = '×';
@@ -1476,7 +1600,9 @@ async function renderCustomChants() {
             }
         };
 
+        item.appendChild(icon);
         item.appendChild(info);
+        item.appendChild(playBtn);
         item.appendChild(deleteBtn);
 
         item.onclick = () => playCustomChant(chant);
@@ -1547,8 +1673,6 @@ async function startCustomChantGame(chantId) {
         if (!state.isReplaying) {
             startRecording();
         }
-
-        initCrowdAudio();
 
         playAudio(endGame);
         state.audioStartTime = state.audioContext.currentTime;
@@ -1713,12 +1837,6 @@ initCustomChantDB().catch(err => {
 // Apply audio settings from storage
 if (elements.metronomeToggle) {
     elements.metronomeToggle.checked = state.settings.metronomeEnabled;
-}
-if (elements.crowdAudioToggle) {
-    elements.crowdAudioToggle.checked = state.settings.crowdAudioEnabled;
-}
-if (elements.crowdVolumeSlider) {
-    elements.crowdVolumeSlider.value = Math.round((state.settings.crowdAudioVolume || 0.3) * 100);
 }
 
 // Initialize on load

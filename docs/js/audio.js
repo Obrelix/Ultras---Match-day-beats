@@ -109,51 +109,171 @@ export function playSFX(type) {
     const ctx = state.audioContext;
     const now = ctx.currentTime;
 
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(state.sfxGain);
-
-    // Clean up nodes after oscillator stops to prevent memory leaks
-    osc.onended = () => {
-        osc.disconnect();
-        gain.disconnect();
+    // Helper to create and connect an oscillator with cleanup
+    const createOsc = (waveType, connectTo) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = waveType;
+        osc.connect(gain);
+        gain.connect(connectTo);
+        osc.onended = () => {
+            osc.disconnect();
+            gain.disconnect();
+        };
+        return { osc, gain };
     };
 
     switch (type) {
-        case 'PERFECT':
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(880, now);
-            osc.frequency.exponentialRampToValueAtTime(1320, now + 0.03);
-            gain.gain.setValueAtTime(0.3, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
-            osc.start(now);
-            osc.stop(now + 0.06);
+        case 'PERFECT': {
+            // Triumphant chord with sparkle sweep - celebratory!
+            const masterGain = ctx.createGain();
+            masterGain.connect(state.sfxGain);
+            masterGain.gain.setValueAtTime(0.25, now);
+            masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+            // Root note with pitch rise
+            const { osc: osc1, gain: g1 } = createOsc('sine', masterGain);
+            osc1.frequency.setValueAtTime(880, now);
+            osc1.frequency.exponentialRampToValueAtTime(1320, now + 0.06);
+            g1.gain.setValueAtTime(0.4, now);
+            g1.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+            osc1.start(now);
+            osc1.stop(now + 0.12);
+
+            // Major third harmony
+            const { osc: osc2, gain: g2 } = createOsc('sine', masterGain);
+            osc2.frequency.setValueAtTime(1108, now); // E6
+            osc2.frequency.exponentialRampToValueAtTime(1660, now + 0.06);
+            g2.gain.setValueAtTime(0.25, now);
+            g2.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+            osc2.start(now + 0.01);
+            osc2.stop(now + 0.1);
+
+            // Fifth harmony
+            const { osc: osc3, gain: g3 } = createOsc('triangle', masterGain);
+            osc3.frequency.setValueAtTime(1320, now); // E6
+            osc3.frequency.exponentialRampToValueAtTime(1980, now + 0.05);
+            g3.gain.setValueAtTime(0.2, now);
+            g3.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+            osc3.start(now + 0.02);
+            osc3.stop(now + 0.1);
+
+            // High sparkle
+            const { osc: osc4, gain: g4 } = createOsc('sine', masterGain);
+            osc4.frequency.setValueAtTime(2640, now);
+            osc4.frequency.exponentialRampToValueAtTime(3520, now + 0.04);
+            g4.gain.setValueAtTime(0.12, now);
+            g4.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+            osc4.start(now + 0.03);
+            osc4.stop(now + 0.09);
+
+            setTimeout(() => masterGain.disconnect(), 200);
             break;
-        case 'GOOD':
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(660, now);
-            gain.gain.setValueAtTime(0.25, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-            osc.start(now);
-            osc.stop(now + 0.05);
+        }
+
+        case 'GOOD': {
+            // Pleasant two-tone chime with slight wobble
+            const masterGain = ctx.createGain();
+            masterGain.connect(state.sfxGain);
+            masterGain.gain.setValueAtTime(0.22, now);
+            masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+
+            // Main tone
+            const { osc: osc1, gain: g1 } = createOsc('sine', masterGain);
+            osc1.frequency.setValueAtTime(660, now);
+            osc1.frequency.setValueAtTime(680, now + 0.02);
+            osc1.frequency.setValueAtTime(660, now + 0.04);
+            g1.gain.setValueAtTime(0.35, now);
+            g1.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+            osc1.start(now);
+            osc1.stop(now + 0.1);
+
+            // Octave above for brightness
+            const { osc: osc2, gain: g2 } = createOsc('sine', masterGain);
+            osc2.frequency.setValueAtTime(1320, now);
+            g2.gain.setValueAtTime(0.15, now);
+            g2.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+            osc2.start(now + 0.01);
+            osc2.stop(now + 0.08);
+
+            // Soft sub tone
+            const { osc: osc3, gain: g3 } = createOsc('triangle', masterGain);
+            osc3.frequency.setValueAtTime(330, now);
+            g3.gain.setValueAtTime(0.1, now);
+            g3.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+            osc3.start(now);
+            osc3.stop(now + 0.06);
+
+            setTimeout(() => masterGain.disconnect(), 150);
             break;
-        case 'OK':
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(440, now);
-            gain.gain.setValueAtTime(0.2, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
-            osc.start(now);
-            osc.stop(now + 0.04);
+        }
+
+        case 'OK': {
+            // Muted tap with slight metallic quality
+            const masterGain = ctx.createGain();
+            masterGain.connect(state.sfxGain);
+            masterGain.gain.setValueAtTime(0.18, now);
+            masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+
+            // Main tone - slightly flat feeling
+            const { osc: osc1, gain: g1 } = createOsc('triangle', masterGain);
+            osc1.frequency.setValueAtTime(440, now);
+            osc1.frequency.exponentialRampToValueAtTime(420, now + 0.04);
+            g1.gain.setValueAtTime(0.25, now);
+            g1.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+            osc1.start(now);
+            osc1.stop(now + 0.06);
+
+            // Soft click layer
+            const { osc: osc2, gain: g2 } = createOsc('square', masterGain);
+            osc2.frequency.setValueAtTime(880, now);
+            g2.gain.setValueAtTime(0.05, now);
+            g2.gain.exponentialRampToValueAtTime(0.001, now + 0.02);
+            osc2.start(now);
+            osc2.stop(now + 0.02);
+
+            setTimeout(() => masterGain.disconnect(), 100);
             break;
-        case 'MISS':
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(150, now);
-            gain.gain.setValueAtTime(0.15, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
-            osc.start(now);
-            osc.stop(now + 0.08);
+        }
+
+        case 'MISS': {
+            // Dramatic buzzer with descending wobble
+            const masterGain = ctx.createGain();
+            masterGain.connect(state.sfxGain);
+            masterGain.gain.setValueAtTime(0.18, now);
+            masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+
+            // Low buzz
+            const { osc: osc1, gain: g1 } = createOsc('sawtooth', masterGain);
+            osc1.frequency.setValueAtTime(180, now);
+            osc1.frequency.exponentialRampToValueAtTime(80, now + 0.15);
+            g1.gain.setValueAtTime(0.2, now);
+            g1.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+            osc1.start(now);
+            osc1.stop(now + 0.15);
+
+            // Dissonant minor second
+            const { osc: osc2, gain: g2 } = createOsc('sawtooth', masterGain);
+            osc2.frequency.setValueAtTime(190, now);
+            osc2.frequency.exponentialRampToValueAtTime(85, now + 0.12);
+            g2.gain.setValueAtTime(0.12, now);
+            g2.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+            osc2.start(now);
+            osc2.stop(now + 0.12);
+
+            // Noise-like texture with square wave
+            const { osc: osc3, gain: g3 } = createOsc('square', masterGain);
+            osc3.frequency.setValueAtTime(55, now);
+            osc3.frequency.setValueAtTime(50, now + 0.05);
+            osc3.frequency.setValueAtTime(45, now + 0.1);
+            g3.gain.setValueAtTime(0.08, now);
+            g3.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+            osc3.start(now);
+            osc3.stop(now + 0.1);
+
+            setTimeout(() => masterGain.disconnect(), 250);
             break;
+        }
     }
 }
 

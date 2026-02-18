@@ -6,7 +6,6 @@ import { GameState, SCORE, BEAT_RESULT_COLORS, AI_ACCURACY, AI_RUBBER_BAND, POWE
 import { state } from './state.js';
 import { elements } from './ui.js';
 import { playSFX } from './audio.js';
-import { playCrowdCheer, playCrowdGroan } from './crowdAudio.js';
 
 // Import functions from main.js for power-up UI updates and replay recording
 // Note: We'll call these via callbacks to avoid circular imports
@@ -122,7 +121,6 @@ export function handleInput() {
     if (!bestBeat || bestDiff > state.activeTiming.OK) {
         showFeedback('MISS');
         playSFX('MISS');
-        playCrowdGroan();
         if (navigator.vibrate) navigator.vibrate([40]);
         state.playerStats.miss++;
         state.playerCombo = 0;
@@ -191,25 +189,18 @@ export function handleInput() {
         state.beatResults[bestBeat.index] = rating.toLowerCase();
     }
 
-    // Haptic feedback
+    // Haptic feedback - distinctive patterns for each rating
     if (navigator.vibrate) {
         switch (rating) {
-            case 'PERFECT': navigator.vibrate([15, 5, 15]); break;
-            case 'GOOD': navigator.vibrate([10]); break;
-            case 'OK': navigator.vibrate([5]); break;
-            case 'MISS': navigator.vibrate([40]); break;
+            case 'PERFECT': navigator.vibrate([8, 30, 8, 30, 12]); break; // Celebratory triple pulse
+            case 'GOOD': navigator.vibrate([10, 25, 15]); break; // Double tap
+            case 'OK': navigator.vibrate([8]); break; // Light tap
+            case 'MISS': navigator.vibrate([50, 30, 30]); break; // Heavy buzz with aftershock
         }
     }
 
     // Audio SFX
     playSFX(rating);
-
-    // Crowd audio feedback
-    if (rating === 'PERFECT') {
-        playCrowdCheer(state.playerCombo >= 10 ? 'loud' : 'normal');
-    } else if (rating === 'GOOD') {
-        playCrowdCheer('soft');
-    }
 
     // If this was an early hit on an upcoming beat, advance past it
     if (bestBeat.isEarly && rating !== 'MISS') {
@@ -267,8 +258,21 @@ export function handleInput() {
         const combo = state.playerCombo;
         if (combo === 50 || combo === 100 || combo % 100 === 0) {
             spawnConfetti(beatTime, combo >= 100 ? 30 : 20, now);
+            // Big combo haptic celebration
+            if (navigator.vibrate) {
+                navigator.vibrate([15, 40, 15, 40, 15, 40, 25]);
+            }
         } else if (combo === 25 || combo === 75) {
             spawnConfetti(beatTime, 12, now);
+            // Medium combo haptic
+            if (navigator.vibrate) {
+                navigator.vibrate([10, 30, 10, 30, 15]);
+            }
+        } else if (combo === 10 || combo === 15 || combo === 20) {
+            // Small milestone haptic
+            if (navigator.vibrate) {
+                navigator.vibrate([8, 25, 12]);
+            }
         }
     }
 
@@ -393,7 +397,6 @@ export function registerMiss() {
 
     showFeedback('MISS');
     playSFX('MISS');
-    playCrowdGroan();
     if (navigator.vibrate) navigator.vibrate([40]);
     updateComboDisplay();
 }
@@ -599,9 +602,6 @@ function initiateHoldBeat(beat, beatData, pressRating, now) {
         navigator.vibrate([10, 50, 10]);  // Distinct pattern for hold
     }
 
-    // Crowd audio feedback
-    playCrowdCheer('soft');
-
     // If this was an early hit, advance past the beat
     if (beat.isEarly) {
         if (state.activeBeat) {
@@ -706,15 +706,6 @@ export function handleInputRelease() {
             case 'ok': navigator.vibrate([5]); break;
             case 'miss': navigator.vibrate([40]); break;
         }
-    }
-
-    // Crowd audio
-    if (overallRating === 'perfect') {
-        playCrowdCheer(state.playerCombo >= 10 ? 'loud' : 'normal');
-    } else if (overallRating === 'good') {
-        playCrowdCheer('soft');
-    } else if (overallRating === 'miss') {
-        playCrowdGroan();
     }
 
     // Record hold end for replay

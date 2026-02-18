@@ -26,7 +26,6 @@ A full football match experience across 6 chants (2 halves, 3 chants each). Scor
 ### Frenzy Mode & Crowd Effects
 - **Frenzy mode** — Hit combo streaks above 5 to trigger crowd frenzy: waving flags, burning flares, billowing smoke, fire particles, and a "FEVER!" HUD.
 - **Weather effects** — Rain particles when losing, confetti bursts on victory, smoke intensity scales with combo.
-- **Dynamic crowd audio** — Reactive crowd noise that cheers on hits, groans on misses, and celebrates victories.
 - **Screen shake** — Intense visual feedback on perfect hit streaks.
 
 ### Modifiers & Power-ups
@@ -128,7 +127,6 @@ docs/js/
 ├── renderer.js        Beat track visualizer (top canvas)
 ├── crowd.js           Pixel crowd, particles, flags, flares, smoke, weather, HUD (bottom canvas)
 ├── crowdBg.js         Persistent background canvas manager
-├── crowdAudio.js      Dynamic crowd noise layer (Web Audio API)
 ├── ui.js              Screen management, DOM elements, progression UI
 ├── storage.js         localStorage persistence layer
 ├── progression.js     XP, leveling, achievements, challenges, loyalty

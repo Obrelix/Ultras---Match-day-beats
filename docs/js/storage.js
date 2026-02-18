@@ -29,9 +29,7 @@ export function loadSettings() {
         difficulty: 'normal',
         reducedEffects: false,
         tutorialSeen: false,
-        metronomeEnabled: false,
-        crowdAudioEnabled: true,
-        crowdAudioVolume: 0.3
+        metronomeEnabled: false
     };
     const store = getStore();
     // Merge stored settings with defaults to handle missing properties from older versions
