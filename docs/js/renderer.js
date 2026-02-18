@@ -490,9 +490,11 @@ export function drawVisualizer() {
     // Current audio time
     const audioElapsed = state.audioContext ? state.audioContext.currentTime - state.audioStartTime : 0;
 
-    // Scrolling time window
-    const leadTime = SCROLL_VIS.LEAD_TIME;
-    const trailTime = SCROLL_VIS.TRAIL_TIME;
+    // Scrolling time window (apply Double Time modifier if active)
+    const isDoubleTime = state.activeModifiers?.doubleTime || false;
+    const speedMult = isDoubleTime ? MODIFIERS.doubleTime.speedMultiplier : 1.0;
+    const leadTime = SCROLL_VIS.LEAD_TIME / speedMult;
+    const trailTime = SCROLL_VIS.TRAIL_TIME / speedMult;
     const totalWindow = leadTime + trailTime;
     const timeStart = audioElapsed - trailTime;
     const timeEnd = audioElapsed + leadTime;
