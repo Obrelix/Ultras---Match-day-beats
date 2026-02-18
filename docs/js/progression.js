@@ -975,11 +975,18 @@ export function getLevelBadge(level) {
     const title = getLevelTitle(level);
     let color = '#888888';
 
-    if (level >= 15) color = '#ff00ff';       // Purple for max
-    else if (level >= 12) color = '#ffd700';  // Gold
-    else if (level >= 9) color = '#c0c0c0';   // Silver
-    else if (level >= 6) color = '#cd7f32';   // Bronze
-    else if (level >= 3) color = '#00ff88';   // Green
+    // Color tiers for 100 levels
+    if (level >= 100) color = '#ff0000';      // Red - The Absolute
+    else if (level >= 91) color = '#ff00ff';  // Magenta - Supreme tier
+    else if (level >= 81) color = '#9400d3';  // Dark Violet - Immortal tier
+    else if (level >= 71) color = '#ffd700';  // Gold - Hall of Fame tier
+    else if (level >= 61) color = '#ff8c00';  // Dark Orange - Icon tier
+    else if (level >= 51) color = '#00bfff';  // Deep Sky Blue - Legend tier
+    else if (level >= 41) color = '#c0c0c0';  // Silver - Section Leader tier
+    else if (level >= 31) color = '#cd7f32';  // Bronze - Capo tier
+    else if (level >= 21) color = '#32cd32';  // Lime Green - Ultra tier
+    else if (level >= 11) color = '#00ff88';  // Green - Supporter tier
+    else if (level >= 1) color = '#888888';   // Gray - Newcomer tier
 
     return { level, title, color };
 }

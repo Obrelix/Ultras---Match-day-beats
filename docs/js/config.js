@@ -366,54 +366,241 @@ export const XP_CONFIG = {
     PERFECT_HIT_BONUS: 2,           // Extra XP per perfect hit
     CHALLENGE_MULTIPLIER: 1.5,      // XP multiplier for challenge completion
 
-    // Level thresholds (cumulative XP needed)
+    // Level thresholds (cumulative XP needed) - 100 levels
     LEVEL_THRESHOLDS: [
-        0,      // Level 1
-        500,    // Level 2
-        1500,   // Level 3
-        3000,   // Level 4
-        5000,   // Level 5
-        8000,   // Level 6
-        12000,  // Level 7
-        17000,  // Level 8
-        23000,  // Level 9
-        30000,  // Level 10
-        40000,  // Level 11
-        52000,  // Level 12
-        66000,  // Level 13
-        82000,  // Level 14
-        100000, // Level 15 (max)
+        0,          // Level 1
+        500,        // Level 2
+        1200,       // Level 3
+        2100,       // Level 4
+        3200,       // Level 5
+        4500,       // Level 6
+        6000,       // Level 7
+        7800,       // Level 8
+        9800,       // Level 9
+        12000,      // Level 10
+        14500,      // Level 11
+        17200,      // Level 12
+        20100,      // Level 13
+        23200,      // Level 14
+        26500,      // Level 15
+        30000,      // Level 16
+        33800,      // Level 17
+        37800,      // Level 18
+        42000,      // Level 19
+        46500,      // Level 20
+        51200,      // Level 21
+        56200,      // Level 22
+        61400,      // Level 23
+        66900,      // Level 24
+        72600,      // Level 25
+        78600,      // Level 26
+        84900,      // Level 27
+        91400,      // Level 28
+        98200,      // Level 29
+        105200,     // Level 30
+        112500,     // Level 31
+        120100,     // Level 32
+        128000,     // Level 33
+        136200,     // Level 34
+        144700,     // Level 35
+        153500,     // Level 36
+        162600,     // Level 37
+        172000,     // Level 38
+        181800,     // Level 39
+        192000,     // Level 40
+        202500,     // Level 41
+        213400,     // Level 42
+        224700,     // Level 43
+        236400,     // Level 44
+        248500,     // Level 45
+        261000,     // Level 46
+        274000,     // Level 47
+        287400,     // Level 48
+        301200,     // Level 49
+        315500,     // Level 50
+        330200,     // Level 51
+        345400,     // Level 52
+        361100,     // Level 53
+        377300,     // Level 54
+        394000,     // Level 55
+        411200,     // Level 56
+        429000,     // Level 57
+        447300,     // Level 58
+        466200,     // Level 59
+        485600,     // Level 60
+        505600,     // Level 61
+        526200,     // Level 62
+        547400,     // Level 63
+        569200,     // Level 64
+        591600,     // Level 65
+        614700,     // Level 66
+        638400,     // Level 67
+        662800,     // Level 68
+        687900,     // Level 69
+        713700,     // Level 70
+        740200,     // Level 71
+        767500,     // Level 72
+        795500,     // Level 73
+        824300,     // Level 74
+        853900,     // Level 75
+        884300,     // Level 76
+        915500,     // Level 77
+        947600,     // Level 78
+        980500,     // Level 79
+        1014300,    // Level 80
+        1049000,    // Level 81
+        1084600,    // Level 82
+        1121100,    // Level 83
+        1158600,    // Level 84
+        1197000,    // Level 85
+        1236400,    // Level 86
+        1276800,    // Level 87
+        1318200,    // Level 88
+        1360700,    // Level 89
+        1404200,    // Level 90
+        1448800,    // Level 91
+        1494500,    // Level 92
+        1541400,    // Level 93
+        1589400,    // Level 94
+        1638600,    // Level 95
+        1689000,    // Level 96
+        1740600,    // Level 97
+        1793500,    // Level 98
+        1847600,    // Level 99
+        1903000,    // Level 100 (max)
     ],
 
-    // Level titles
+    // Level titles - 100 unique titles
     LEVEL_TITLES: [
-        'Newcomer',      // 1
-        'Supporter',     // 2
-        'Fan',           // 3
-        'Devoted Fan',   // 4
-        'Ultra',         // 5
-        'Hardcore Ultra',// 6
-        'Capo',          // 7
-        'Section Leader',// 8
-        'Legendary Capo',// 9
-        'Living Legend', // 10
-        'Icon',          // 11
-        'Hall of Famer', // 12
-        'Immortal',      // 13
-        'Demigod',       // 14
-        'Supreme Ultra', // 15
+        // Tier 1: Newcomer (1-10)
+        'Newcomer',           // 1
+        'Rookie',             // 2
+        'Initiate',           // 3
+        'Apprentice',         // 4
+        'Regular',            // 5
+        'Enthusiast',         // 6
+        'Dedicated',          // 7
+        'Committed',          // 8
+        'Passionate',         // 9
+        'True Fan',           // 10
+        // Tier 2: Supporter (11-20)
+        'Supporter',          // 11
+        'Loyal Supporter',    // 12
+        'Devoted Supporter',  // 13
+        'Faithful',           // 14
+        'Steadfast',          // 15
+        'Unwavering',         // 16
+        'Die-Hard',           // 17
+        'Fanatic',            // 18
+        'Zealot',             // 19
+        'Hardcore',           // 20
+        // Tier 3: Ultra (21-30)
+        'Ultra',              // 21
+        'Young Ultra',        // 22
+        'Rising Ultra',       // 23
+        'Proven Ultra',       // 24
+        'Veteran Ultra',      // 25
+        'Elite Ultra',        // 26
+        'Senior Ultra',       // 27
+        'Master Ultra',       // 28
+        'Grand Ultra',        // 29
+        'Supreme Ultra',      // 30
+        // Tier 4: Capo (31-40)
+        'Capo',               // 31
+        'Junior Capo',        // 32
+        'Assistant Capo',     // 33
+        'Deputy Capo',        // 34
+        'Lead Capo',          // 35
+        'Senior Capo',        // 36
+        'Head Capo',          // 37
+        'Chief Capo',         // 38
+        'Master Capo',        // 39
+        'Grand Capo',         // 40
+        // Tier 5: Section Leader (41-50)
+        'Section Leader',     // 41
+        'Block Captain',      // 42
+        'Terrace Boss',       // 43
+        'Stand Commander',    // 44
+        'Curve General',      // 45
+        'North End Chief',    // 46
+        'South End Chief',    // 47
+        'Kop Leader',         // 48
+        'Curva Master',       // 49
+        'Tribune Lord',       // 50
+        // Tier 6: Legend (51-60)
+        'Legend',             // 51
+        'Rising Legend',      // 52
+        'True Legend',        // 53
+        'Living Legend',      // 54
+        'Eternal Legend',     // 55
+        'Mythic Legend',      // 56
+        'Fabled Legend',      // 57
+        'Storied Legend',     // 58
+        'Timeless Legend',    // 59
+        'Undying Legend',     // 60
+        // Tier 7: Icon (61-70)
+        'Icon',               // 61
+        'Stadium Icon',       // 62
+        'Terrace Icon',       // 63
+        'Club Icon',          // 64
+        'Fan Icon',           // 65
+        'Cult Icon',          // 66
+        'Living Icon',        // 67
+        'Eternal Icon',       // 68
+        'Sacred Icon',        // 69
+        'Divine Icon',        // 70
+        // Tier 8: Hall of Fame (71-80)
+        'Hall of Famer',      // 71
+        'Bronze Inductee',    // 72
+        'Silver Inductee',    // 73
+        'Gold Inductee',      // 74
+        'Platinum Member',    // 75
+        'Diamond Member',     // 76
+        'Elite Member',       // 77
+        'Premier Member',     // 78
+        'Founder Member',     // 79
+        'Legendary Member',   // 80
+        // Tier 9: Immortal (81-90)
+        'Immortal',           // 81
+        'Rising Immortal',    // 82
+        'True Immortal',      // 83
+        'Ancient Immortal',   // 84
+        'Eternal Immortal',   // 85
+        'Celestial',          // 86
+        'Transcendent',       // 87
+        'Ascended',           // 88
+        'Exalted',            // 89
+        'Demigod',            // 90
+        // Tier 10: Supreme (91-100)
+        'Minor Deity',        // 91
+        'Lesser God',         // 92
+        'Football God',       // 93
+        'Stadium Deity',      // 94
+        'Terrace Titan',      // 95
+        'Ultras Olympian',    // 96
+        'Pantheon Member',    // 97
+        'Elder God',          // 98
+        'Prime Deity',        // 99
+        'The Absolute',       // 100
     ]
 };
 
 // Unlockable cosmetics by level
 export const LEVEL_UNLOCKS = {
     1: { type: 'scarf', id: 'basic', name: 'Basic Scarf' },
-    3: { type: 'effect', id: 'extra_smoke', name: 'Extra Smoke' },
-    5: { type: 'scarf', id: 'striped', name: 'Striped Scarf' },
-    7: { type: 'effect', id: 'golden_confetti', name: 'Golden Confetti' },
-    10: { type: 'scarf', id: 'premium', name: 'Premium Scarf' },
-    12: { type: 'effect', id: 'fireworks', name: 'Victory Fireworks' },
-    15: { type: 'title', id: 'supreme', name: 'Supreme Ultra Title' }
+    5: { type: 'effect', id: 'extra_smoke', name: 'Extra Smoke' },
+    10: { type: 'scarf', id: 'striped', name: 'Striped Scarf' },
+    15: { type: 'effect', id: 'golden_confetti', name: 'Golden Confetti' },
+    20: { type: 'scarf', id: 'premium', name: 'Premium Scarf' },
+    25: { type: 'effect', id: 'fireworks', name: 'Victory Fireworks' },
+    30: { type: 'title', id: 'supreme', name: 'Supreme Ultra Title' },
+    40: { type: 'effect', id: 'pyro_burst', name: 'Pyro Burst' },
+    50: { type: 'scarf', id: 'legendary', name: 'Legendary Scarf' },
+    60: { type: 'effect', id: 'stadium_lights', name: 'Stadium Lights' },
+    70: { type: 'title', id: 'icon', name: 'Icon Title' },
+    80: { type: 'effect', id: 'golden_aura', name: 'Golden Aura' },
+    90: { type: 'scarf', id: 'immortal', name: 'Immortal Scarf' },
+    100: { type: 'title', id: 'absolute', name: 'The Absolute Title' }
 };
 
 // ============================================
@@ -587,10 +774,10 @@ export const CHOREO_UNLOCKS = {
 
     // Level-based unlocks: level number -> choreo info
     level: {
-        3: { choreo: 'scarfUp', name: 'Scarf Display', icon: '🧣' },
-        8: { choreo: 'bounce', name: 'Bounce Mode', icon: '🦘' },
-        10: { choreo: 'clap', name: 'Clap Sync', icon: '👏' },
-        15: { choreo: 'columns', name: 'Vertical Columns', icon: '📊' }
+        5: { choreo: 'scarfUp', name: 'Scarf Display', icon: '🧣' },
+        15: { choreo: 'bounce', name: 'Bounce Mode', icon: '🦘' },
+        25: { choreo: 'clap', name: 'Clap Sync', icon: '👏' },
+        50: { choreo: 'columns', name: 'Vertical Columns', icon: '📊' }
     },
 
     // Achievement-based unlocks: achievement id -> choreo info

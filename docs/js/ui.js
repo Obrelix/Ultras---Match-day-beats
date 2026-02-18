@@ -233,6 +233,7 @@ export const elements = {
     globalNav: document.getElementById('global-nav'),
     navBackBtn: document.getElementById('nav-back-btn'),
     navHomeBtn: document.getElementById('nav-home-btn'),
+    navProfileBtn: document.getElementById('nav-profile-btn'),
 
     // Abandon Match Modal
     abandonMatchModal: document.getElementById('abandon-match-modal'),
@@ -361,6 +362,11 @@ function updateNavVisibility() {
     const shouldHide = hideOn.includes(state.currentState);
 
     elements.globalNav.classList.toggle('hidden', shouldHide);
+
+    // Hide profile button when already on profile screen
+    if (elements.navProfileBtn) {
+        elements.navProfileBtn.classList.toggle('hidden', state.currentState === 'profile');
+    }
 }
 
 // Helper to convert hex color to RGB values for CSS rgba()

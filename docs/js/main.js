@@ -657,6 +657,11 @@ elements.navHomeBtn?.addEventListener('click', () => {
     navigateHome();
 });
 
+elements.navProfileBtn?.addEventListener('click', () => {
+    renderProfileScreen();
+    showScreen('profile');
+});
+
 // Abandon match modal handlers
 elements.abandonConfirmBtn?.addEventListener('click', () => {
     confirmAbandonMatch();

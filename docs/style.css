@@ -2442,6 +2442,10 @@ body {
     display: none;
 }
 
+#global-nav .nav-btn.hidden {
+    display: none;
+}
+
 .nav-btn {
     width: 40px;
     height: 40px;
