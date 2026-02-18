@@ -85,6 +85,8 @@ export const state = {
     comboBumpTime: 0,
     frenzyStartTime: 0,
     wasFrenzy: false,
+    feverTimeAccumulated: 0,  // Total seconds spent in fever/frenzy mode this game
+    lastFeverCheckTime: 0,    // Last time we checked fever status
 
     // Supporters crowd
     supporters: [],
@@ -102,16 +104,16 @@ export const state = {
     screenFlash: { active: false, color: '#ffffff', intensity: 0, startTime: 0, duration: 0 },
     lastMilestoneCombo: 0,
 
-    // Tifo display (coreoType 3)
+    // Tifo display (choreoType 3)
     tifoMap: null,        // 2D array of colors sampled from club logo
     tifoReady: false,     // True when tifo map is loaded and ready
     tifoImage: null,      // Cached Image element of club badge
     tifoGridCols: 80,     // Grid columns for tifo mapping
     tifoGridRows: 6,      // Grid rows for tifo mapping
 
-    // Coreo transition state (#10 - tifo reveal)
-    lastCoreoId: 0,       // Track coreo changes for reveal animations
-    coreoStartTime: 0,    // When current coreo started
+    // Choreo transition state (#10 - tifo reveal)
+    lastChoreoId: 0,       // Track choreo changes for reveal animations
+    choreoStartTime: 0,    // When current choreo started
 
     // Player stats
     playerScore: 0,
@@ -208,8 +210,8 @@ export function resetGameState() {
     state.rainParticles = [];
     state.confettiParticles = [];
     state.weatherIntensity = 0;
-    state.lastCoreoId = 0;
-    state.coreoStartTime = 0;
+    state.lastChoreoId = 0;
+    state.choreoStartTime = 0;
 
     // Reset screen effects
     state.screenShake = { active: false, intensity: 0, startTime: 0, duration: 0, decay: 'linear' };
@@ -224,6 +226,8 @@ export function resetGameState() {
     state.comboBumpTime = 0;
     state.frenzyStartTime = 0;
     state.wasFrenzy = false;
+    state.feverTimeAccumulated = 0;
+    state.lastFeverCheckTime = 0;
     state.crowdEmotion = 'neutral';
 
     // Reset CSS class tracking

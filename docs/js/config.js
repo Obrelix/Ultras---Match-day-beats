@@ -578,6 +578,48 @@ export const LOYALTY_CONFIG = {
 };
 
 // ============================================
+// Choreo Unlock System
+// ============================================
+
+export const CHOREO_UNLOCKS = {
+    // Starting choreos (unlocked by default for all players)
+    starting: ['default', 'wave', 'tifo'],
+
+    // Level-based unlocks: level number -> choreo info
+    level: {
+        3: { choreo: 'scarfUp', name: 'Scarf Display', icon: '🧣' },
+        8: { choreo: 'bounce', name: 'Bounce Mode', icon: '🦘' },
+        10: { choreo: 'clap', name: 'Clap Sync', icon: '👏' },
+        15: { choreo: 'columns', name: 'Vertical Columns', icon: '📊' }
+    },
+
+    // Achievement-based unlocks: achievement id -> choreo info
+    achievement: {
+        centurion: { choreo: 'pyro', name: 'Pyro Show', icon: '🔥' },
+        fever_master: { choreo: 'moshpit', name: 'Mosh Pit', icon: '🌀' },
+        perfect_chant: { choreo: 'checkerboard', name: 'Checkerboard Display', icon: '🏁' },
+        rivalry: { choreo: 'ultras', name: 'Ultras Display', icon: '🚩' },
+        marathon: { choreo: 'inferno', name: 'Inferno Mode', icon: '🔥' }
+    },
+
+    // All choreo IDs in order (for display purposes)
+    allChoreos: [
+        { id: 'default', name: 'Default', icon: '👥' },
+        { id: 'wave', name: 'Wave', icon: '🌊' },
+        { id: 'scarfUp', name: 'Scarf Display', icon: '🧣' },
+        { id: 'tifo', name: 'Tifo Display', icon: '🎨' },
+        { id: 'bounce', name: 'Bounce Mode', icon: '🦘' },
+        { id: 'clap', name: 'Clap Sync', icon: '👏' },
+        { id: 'inferno', name: 'Inferno Mode', icon: '🔥' },
+        { id: 'pyro', name: 'Pyro Show', icon: '🔥' },
+        { id: 'moshpit', name: 'Mosh Pit', icon: '🌀' },
+        { id: 'checkerboard', name: 'Checkerboard Display', icon: '🏁' },
+        { id: 'columns', name: 'Vertical Columns', icon: '📊' },
+        { id: 'ultras', name: 'Ultras Display', icon: '🚩' }
+    ]
+};
+
+// ============================================
 // Hold Beat (Long Press) System
 // ============================================
 

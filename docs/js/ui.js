@@ -13,7 +13,7 @@ import {
     processGameEnd, getPlayerProfile, getAllAchievements,
     getWeeklyChallenge, getSeasonChallenges, getClubLoyalty,
     getPendingNotifications, getLevelBadge, loadProgression, getLevelTitle,
-    getXPForNextLevel
+    getXPForNextLevel, getAllChoreoStatuses
 } from './progression.js';
 // DOM Elements (module runs after DOM is parsed due to type="module")
 export const screens = {
@@ -209,6 +209,8 @@ export const elements = {
     profileAchievementCount: document.getElementById('achievement-count'),
     profileWeeklyChallenge: document.getElementById('weekly-challenge-content'),
     profileSeasonChallenges: document.getElementById('season-challenges-list'),
+    profileChoreosGrid: document.getElementById('choreos-grid'),
+    profileChoreoCount: document.getElementById('choreo-count'),
 
     // XP Popup
     xpPopup: document.getElementById('xp-popup'),
@@ -1084,6 +1086,51 @@ export function renderProfileScreen() {
             elements.profileSeasonChallenges.innerHTML = '<p class="no-challenge">No season challenges</p>';
         }
     }
+
+    // Render Choreos Section
+    const choreoStatuses = getAllChoreoStatuses();
+
+    // Update choreo count
+    if (elements.profileChoreoCount) {
+        const unlockedCount = choreoStatuses.filter(c => c.unlocked).length;
+        elements.profileChoreoCount.textContent = `${unlockedCount}/${choreoStatuses.length}`;
+    }
+
+    // Render choreo grid
+    if (elements.profileChoreosGrid) {
+        elements.profileChoreosGrid.innerHTML = '';
+
+        choreoStatuses.forEach(choreo => {
+            const div = document.createElement('div');
+            div.className = `choreo-item${choreo.unlocked ? ' unlocked' : ' locked'}`;
+
+            const icon = document.createElement('span');
+            icon.className = 'choreo-icon';
+            icon.textContent = choreo.unlocked ? choreo.icon : '🔒';
+
+            const name = document.createElement('span');
+            name.className = 'choreo-name';
+            name.textContent = choreo.name;
+
+            const status = document.createElement('span');
+            status.className = 'choreo-status';
+            if (choreo.unlocked) {
+                status.textContent = 'Unlocked';
+            } else if (choreo.unlockRequirement) {
+                if (choreo.unlockRequirement.type === 'level') {
+                    status.textContent = `Level ${choreo.unlockRequirement.level}`;
+                } else if (choreo.unlockRequirement.type === 'achievement') {
+                    status.textContent = choreo.unlockRequirement.achievementName;
+                }
+            }
+
+            div.appendChild(icon);
+            div.appendChild(name);
+            div.appendChild(status);
+
+            elements.profileChoreosGrid.appendChild(div);
+        });
+    }
 }
 
 /**
@@ -1239,6 +1286,13 @@ export function showPendingNotifications() {
                     name: 'Challenge Complete!',
                     description: notification.challenge.name
                 });
+            } else if (notification.type === 'choreo_unlock') {
+                // Show choreo unlock notification
+                showAchievementPopup({
+                    icon: notification.icon || '🎭',
+                    name: `${notification.name} Unlocked!`,
+                    description: notification.reason || 'New choreo available!'
+                });
             }
         }, delay);
         delay += 3500;  // Stagger notifications
@@ -1265,7 +1319,8 @@ function processEndGameProgression(isWin, isMatchday = false, matchdayResult = n
         won: isWin,
         isMatchday,
         matchdayResult,
-        rivalClubId: state.rivalClub?.id
+        rivalClubId: state.rivalClub?.id,
+        feverTime: state.feverTimeAccumulated || 0
     };
 
     const result = processGameEnd(gameResult);

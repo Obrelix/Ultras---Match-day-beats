@@ -119,7 +119,7 @@ export function updateCrowdClub() {
             secondary: state.selectedClub.colors.secondary
         };
 
-        // Generate tifo map from club badge for coreoType 3
+        // Generate tifo map from club badge for choreoType 3
         state.tifoReady = false;
         state.tifoMap = null;
         const canvasWidth = state.crowdBgCanvas?.width || 1200;

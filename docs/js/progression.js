@@ -5,7 +5,7 @@
 import {
     XP_CONFIG, LEVEL_UNLOCKS, ACHIEVEMENTS,
     CHALLENGE_TYPES, WEEKLY_CHALLENGES, SEASON_CHALLENGES,
-    LOYALTY_CONFIG, clubs
+    LOYALTY_CONFIG, CHOREO_UNLOCKS, clubs
 } from './config.js';
 import { state } from './state.js';
 
@@ -25,6 +25,7 @@ function getDefaultProgressionData() {
         totalXP: 0,
         level: 1,
         unlockedCosmetics: ['basic'],  // Start with basic scarf
+        unlockedChoreos: [...CHOREO_UNLOCKS.starting],  // Start with default and wave
 
         // Achievements
         achievements: {},  // { achievementId: { unlocked: bool, unlockedAt: timestamp, progress: number } }
@@ -88,6 +89,13 @@ export function loadProgression() {
             }
         }
 
+        // Migration: Initialize unlockedChoreos if not present (existing saves)
+        if (!_progressionData.unlockedChoreos) {
+            _progressionData.unlockedChoreos = [...CHOREO_UNLOCKS.starting];
+        }
+        // Always sync unlocks based on current level and achievements
+        syncChoreoUnlocks();
+
         // Check if weekly challenge needs reset (every Monday)
         checkWeeklyReset();
 
@@ -103,6 +111,43 @@ export function loadProgression() {
     }
 
     return _progressionData;
+}
+
+/**
+ * Sync choreo unlocks: ensures all choreos that should be unlocked ARE unlocked
+ * Runs on every load to catch any missed unlocks from level-ups or achievements
+ */
+function syncChoreoUnlocks() {
+    const prog = _progressionData;
+    let changed = false;
+
+    // Ensure starting choreos are unlocked
+    for (const choreoId of CHOREO_UNLOCKS.starting) {
+        if (!prog.unlockedChoreos.includes(choreoId)) {
+            prog.unlockedChoreos.push(choreoId);
+            changed = true;
+        }
+    }
+
+    // Unlock based on current level
+    for (const [level, unlock] of Object.entries(CHOREO_UNLOCKS.level)) {
+        if (prog.level >= parseInt(level) && !prog.unlockedChoreos.includes(unlock.choreo)) {
+            prog.unlockedChoreos.push(unlock.choreo);
+            changed = true;
+        }
+    }
+
+    // Unlock based on earned achievements
+    for (const [achievementId, unlock] of Object.entries(CHOREO_UNLOCKS.achievement)) {
+        if (prog.achievements[achievementId]?.unlocked && !prog.unlockedChoreos.includes(unlock.choreo)) {
+            prog.unlockedChoreos.push(unlock.choreo);
+            changed = true;
+        }
+    }
+
+    if (changed) {
+        saveProgression();
+    }
 }
 
 export function saveProgression() {
@@ -183,6 +228,7 @@ export function awardXP(amount) {
 
         // Check for unlocks at each level
         for (let lvl = oldLevel + 1; lvl <= newLevel; lvl++) {
+            // Cosmetic unlocks
             const unlock = LEVEL_UNLOCKS[lvl];
             if (unlock && !prog.unlockedCosmetics.includes(unlock.id)) {
                 prog.unlockedCosmetics.push(unlock.id);
@@ -191,6 +237,19 @@ export function awardXP(amount) {
                     level: lvl,
                     title: XP_CONFIG.LEVEL_TITLES[lvl - 1],
                     unlock: unlock
+                });
+            }
+
+            // Choreo unlocks
+            const choreoUnlock = CHOREO_UNLOCKS.level[lvl];
+            if (choreoUnlock && !prog.unlockedChoreos.includes(choreoUnlock.choreo)) {
+                prog.unlockedChoreos.push(choreoUnlock.choreo);
+                queueNotification({
+                    type: 'choreo_unlock',
+                    choreo: choreoUnlock.choreo,
+                    name: choreoUnlock.name,
+                    icon: choreoUnlock.icon,
+                    reason: `Reached Level ${lvl}`
                 });
             }
         }
@@ -340,6 +399,19 @@ function unlockAchievement(achievementId) {
         type: 'achievement',
         achievement: achievement
     });
+
+    // Check for choreo unlock tied to this achievement
+    const choreoUnlock = CHOREO_UNLOCKS.achievement[achievementId];
+    if (choreoUnlock && !prog.unlockedChoreos.includes(choreoUnlock.choreo)) {
+        prog.unlockedChoreos.push(choreoUnlock.choreo);
+        queueNotification({
+            type: 'choreo_unlock',
+            choreo: choreoUnlock.choreo,
+            name: choreoUnlock.name,
+            icon: choreoUnlock.icon,
+            reason: `Earned: ${achievement.name}`
+        });
+    }
 }
 
 /**
@@ -769,6 +841,103 @@ export function processGameEnd(gameResult) {
 }
 
 // ============================================
+// Choreo Unlock System
+// ============================================
+
+/**
+ * Check if a choreo is unlocked
+ */
+export function isChoreoUnlocked(choreoId) {
+    const prog = getProgression();
+    return prog.unlockedChoreos?.includes(choreoId) || false;
+}
+
+/**
+ * Get all unlocked choreos
+ */
+export function getUnlockedChoreos() {
+    const prog = getProgression();
+    return prog.unlockedChoreos || [...CHOREO_UNLOCKS.starting];
+}
+
+/**
+ * Get choreo unlock status for all choreos (for profile display)
+ */
+export function getAllChoreoStatuses() {
+    const prog = getProgression();
+    const unlocked = prog.unlockedChoreos || [...CHOREO_UNLOCKS.starting];
+
+    return CHOREO_UNLOCKS.allChoreos.map(choreo => {
+        const isUnlocked = unlocked.includes(choreo.id);
+        let unlockRequirement = null;
+
+        if (!isUnlocked) {
+            // Find how to unlock this choreo
+            for (const [level, unlock] of Object.entries(CHOREO_UNLOCKS.level)) {
+                if (unlock.choreo === choreo.id) {
+                    unlockRequirement = { type: 'level', level: parseInt(level) };
+                    break;
+                }
+            }
+            if (!unlockRequirement) {
+                for (const [achievementId, unlock] of Object.entries(CHOREO_UNLOCKS.achievement)) {
+                    if (unlock.choreo === choreo.id) {
+                        const achievement = ACHIEVEMENTS[achievementId];
+                        unlockRequirement = {
+                            type: 'achievement',
+                            achievementId,
+                            achievementName: achievement?.name || achievementId
+                        };
+                        break;
+                    }
+                }
+            }
+        }
+
+        return {
+            ...choreo,
+            unlocked: isUnlocked,
+            unlockRequirement
+        };
+    });
+}
+
+/**
+ * Get the highest unlocked choreo for a given combo level (fallback logic)
+ */
+export function getHighestUnlockedChoreoForCombo(combo) {
+    const unlocked = getUnlockedChoreos();
+
+    // Choreo progression order with their combo thresholds
+    const progressionOrder = [
+        { id: 'default', comboMin: 0 },
+        { id: 'wave', comboMin: 10 },
+        { id: 'scarfUp', comboMin: 20 },
+        { id: 'tifo', comboMin: 30 },
+        { id: 'bounce', comboMin: 40 },
+        { id: 'clap', comboMin: 50 },
+        { id: 'inferno', comboMin: 100 },  // Special trigger at 100 milestones
+        // New choreos (unlock doesn't affect combo thresholds, uses same progression)
+        { id: 'pyro', comboMin: 70 },
+        { id: 'moshpit', comboMin: 80 },
+        { id: 'checkerboard', comboMin: 90 },
+        { id: 'columns', comboMin: 95 },
+        { id: 'ultras', comboMin: 100 }
+    ];
+
+    // Find the highest unlocked choreo that matches the combo level
+    let bestChoreo = 'default';
+
+    for (const choreo of progressionOrder) {
+        if (combo >= choreo.comboMin && unlocked.includes(choreo.id)) {
+            bestChoreo = choreo.id;
+        }
+    }
+
+    return bestChoreo;
+}
+
+// ============================================
 // Profile/Stats Display Helpers
 // ============================================
 
@@ -782,6 +951,8 @@ export function getPlayerProfile() {
 
     const unlockedCount = Object.values(prog.achievements).filter(a => a.unlocked).length;
     const totalAchievements = Object.keys(ACHIEVEMENTS).length;
+    const unlockedChoreoCount = prog.unlockedChoreos?.length || 2;
+    const totalChoreos = CHOREO_UNLOCKS.allChoreos.length;
 
     return {
         level: prog.level,
@@ -790,8 +961,10 @@ export function getPlayerProfile() {
         xpProgress,
         stats: prog.stats,
         achievementProgress: `${unlockedCount}/${totalAchievements}`,
+        choreoProgress: `${unlockedChoreoCount}/${totalChoreos}`,
         mostPlayedClub: mostPlayed,
-        unlockedCosmetics: prog.unlockedCosmetics
+        unlockedCosmetics: prog.unlockedCosmetics,
+        unlockedChoreos: prog.unlockedChoreos || [...CHOREO_UNLOCKS.starting]
     };
 }
 

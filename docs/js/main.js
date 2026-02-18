@@ -449,6 +449,17 @@ function gameLoop() {
         const isFrenzy = state.playerCombo > 5 || state.crowdEmotion === 'celebrate';
         const isIntense = state.playerCombo >= 20;
 
+        // Track fever/frenzy time for Fever Master achievement
+        if (isFrenzy) {
+            if (state.lastFeverCheckTime > 0) {
+                const deltaSeconds = (now - state.lastFeverCheckTime) / 1000;
+                state.feverTimeAccumulated += deltaSeconds;
+            }
+            state.lastFeverCheckTime = now;
+        } else {
+            state.lastFeverCheckTime = 0;
+        }
+
         // Track state to avoid classList.contains() calls
         if (isFrenzy !== state._lastFrenzyState) {
             crowdCanvas.classList.toggle('frenzy', isFrenzy);
