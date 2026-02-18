@@ -122,6 +122,11 @@ export const state = {
     playerStats: { perfect: 0, good: 0, ok: 0, miss: 0 },
     totalBeats: 0,
 
+    // Perfect Streak (consecutive PERFECT hits only)
+    perfectStreak: 0,
+    maxPerfectStreak: 0,
+    perfectStreakBonusEarned: 0,  // Total bonus points from streak milestones
+
     // AI stats
     aiScore: 0,
     aiScorePopups: [],
@@ -195,6 +200,18 @@ export function resetGameState() {
     state.activeBeat = null;
     state.isPaused = false;
     state._pauseTime = 0;
+
+    // Reset perfect streak
+    state.perfectStreak = 0;
+    state.maxPerfectStreak = 0;
+    state.perfectStreakBonusEarned = 0;
+
+    // Hide perfect streak display
+    const streakDisplay = document.getElementById('perfect-streak-display');
+    if (streakDisplay) {
+        streakDisplay.classList.add('hidden');
+        streakDisplay.classList.remove('milestone');
+    }
 
     state.detectedBeats = [];
     state.nextBeatIndex = 0;

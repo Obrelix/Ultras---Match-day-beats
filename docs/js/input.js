@@ -2,7 +2,7 @@
 // input.js — Input handling, scoring, AI
 // ============================================
 
-import { GameState, SCORE, BEAT_RESULT_COLORS, AI_ACCURACY, AI_RUBBER_BAND, POWERUPS, AI_PERSONALITIES, CLUB_AI_PERSONALITIES, HOLD_BEAT, HOLD_SCORING, TRASH_TALK, TRASH_TALK_PERSONALITIES } from './config.js';
+import { GameState, SCORE, BEAT_RESULT_COLORS, AI_ACCURACY, AI_RUBBER_BAND, POWERUPS, AI_PERSONALITIES, CLUB_AI_PERSONALITIES, HOLD_BEAT, HOLD_SCORING, TRASH_TALK, TRASH_TALK_PERSONALITIES, PERFECT_STREAK } from './config.js';
 import { state } from './state.js';
 import { elements } from './ui.js';
 import { playSFX } from './audio.js';
@@ -170,6 +170,15 @@ export function handleInput() {
         state.playerStats.perfect++;
         state.playerCombo++;
 
+        // Perfect streak tracking
+        state.perfectStreak++;
+        if (state.perfectStreak > state.maxPerfectStreak) {
+            state.maxPerfectStreak = state.perfectStreak;
+        }
+
+        // Check for perfect streak milestones
+        checkPerfectStreakMilestone(state.perfectStreak);
+
         // Screen shake on perfect hits (combo >= 10)
         if (state.playerCombo >= 10) {
             triggerScreenShake('perfect');
@@ -177,9 +186,19 @@ export function handleInput() {
     } else if (rating === 'GOOD') {
         state.playerStats.good++;
         state.playerCombo++;
+        // Reset perfect streak on non-perfect hit
+        if (state.perfectStreak >= PERFECT_STREAK.MIN_DISPLAY) {
+            showPerfectStreakBreak(state.perfectStreak);
+        }
+        state.perfectStreak = 0;
     } else {
         state.playerStats.ok++;
         state.playerCombo++;
+        // Reset perfect streak on non-perfect hit
+        if (state.perfectStreak >= PERFECT_STREAK.MIN_DISPLAY) {
+            showPerfectStreakBreak(state.perfectStreak);
+        }
+        state.perfectStreak = 0;
     }
 
     // Reset consecutive misses on successful hit
@@ -280,11 +299,12 @@ export function handleInput() {
         }
     }
 
-    // Apply combo multiplier + modifier multiplier + powerup multiplier
+    // Apply combo multiplier + modifier multiplier + powerup multiplier + perfect streak bonus
     const comboMultiplier = getComboMultiplier();
     const modifierMultiplier = state.modifierScoreMultiplier || 1.0;
     const powerupMultiplier = state.activePowerupMultiplier || 1.0;
-    const totalMultiplier = comboMultiplier * modifierMultiplier * powerupMultiplier;
+    const perfectStreakBonus = rating === 'PERFECT' ? getPerfectStreakMultiplier() : 1.0;
+    const totalMultiplier = comboMultiplier * modifierMultiplier * powerupMultiplier * perfectStreakBonus;
     const scoreGained = Math.floor(score * totalMultiplier);
     state.playerScore += scoreGained;
 
@@ -414,6 +434,12 @@ export function registerMiss() {
     state.lastMilestoneCombo = 0;  // Reset milestone tracker
     state.powerupChargeProgress = 0;  // Reset power-up charge on miss
 
+    // Reset perfect streak on miss
+    if (state.perfectStreak >= PERFECT_STREAK.MIN_DISPLAY) {
+        showPerfectStreakBreak(state.perfectStreak);
+    }
+    state.perfectStreak = 0;
+
     // Record miss for replay
     if (_recordInput && state.isRecording) {
         const relativeTime = performance.now() - state.gameStartTime;
@@ -432,6 +458,105 @@ export function getComboMultiplier() {
     if (state.playerCombo >= 10) return 2;
     if (state.playerCombo >= 5) return 1.5;
     return 1;
+}
+
+// ============================================
+// Perfect Streak Bonus System
+// ============================================
+
+/**
+ * Get the bonus multiplier for current perfect streak
+ * @returns {number} Multiplier (1.0 to MAX_BONUS)
+ */
+function getPerfectStreakMultiplier() {
+    if (state.perfectStreak < PERFECT_STREAK.MIN_DISPLAY) return 1.0;
+    const bonus = 1 + (state.perfectStreak * PERFECT_STREAK.BONUS_PER_STREAK);
+    return Math.min(bonus, PERFECT_STREAK.MAX_BONUS);
+}
+
+/**
+ * Check for perfect streak milestones and award bonuses
+ * @param {number} streak - Current perfect streak count
+ */
+function checkPerfectStreakMilestone(streak) {
+    const milestoneBonus = PERFECT_STREAK.MILESTONE_BONUS[streak];
+    if (milestoneBonus) {
+        state.playerScore += milestoneBonus;
+        state.perfectStreakBonusEarned += milestoneBonus;
+
+        // Show milestone feedback
+        showPerfectStreakMilestone(streak, milestoneBonus);
+
+        // Trigger celebratory effects
+        triggerScreenShake('perfect');
+        triggerScreenFlash('combo10');
+
+        // Haptic feedback for milestone
+        if (navigator.vibrate) {
+            navigator.vibrate([12, 40, 12, 40, 20]);
+        }
+    } else if (streak >= PERFECT_STREAK.MIN_DISPLAY) {
+        // Show streak counter for non-milestone streaks
+        showPerfectStreakCounter(streak);
+    }
+}
+
+/**
+ * Show perfect streak milestone celebration
+ * @param {number} streak - The milestone streak number
+ * @param {number} bonus - Bonus points awarded
+ */
+function showPerfectStreakMilestone(streak, bonus) {
+    state.feedbackText = `PERFECT x${streak}! +${bonus}`;
+    state.feedbackAlpha = 1;
+    state.feedbackSpawnTime = performance.now();
+    state.feedbackColor = '#ffd700';  // Gold for milestones
+
+    // Update perfect streak display
+    updatePerfectStreakDisplay(streak, true);
+}
+
+/**
+ * Show perfect streak counter (non-milestone)
+ * @param {number} streak - Current streak count
+ */
+function showPerfectStreakCounter(streak) {
+    // Update the perfect streak display element
+    updatePerfectStreakDisplay(streak, false);
+}
+
+/**
+ * Show feedback when perfect streak is broken
+ * @param {number} brokenStreak - The streak that was broken
+ */
+function showPerfectStreakBreak(brokenStreak) {
+    // Brief visual indicator that streak was lost
+    updatePerfectStreakDisplay(0, false);
+}
+
+/**
+ * Update the perfect streak display in the UI
+ * @param {number} streak - Current streak count
+ * @param {boolean} isMilestone - Whether this is a milestone
+ */
+function updatePerfectStreakDisplay(streak, isMilestone) {
+    const display = document.getElementById('perfect-streak-display');
+    if (!display) return;
+
+    if (streak < PERFECT_STREAK.MIN_DISPLAY) {
+        display.classList.add('hidden');
+        return;
+    }
+
+    const multiplier = getPerfectStreakMultiplier();
+    display.textContent = `PERFECT x${streak} (${multiplier.toFixed(1)}x)`;
+    display.classList.remove('hidden');
+
+    if (isMilestone) {
+        display.classList.remove('milestone');
+        void display.offsetWidth;  // Force reflow
+        display.classList.add('milestone');
+    }
 }
 
 // ============================================

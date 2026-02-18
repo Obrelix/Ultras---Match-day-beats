@@ -118,6 +118,25 @@ export const SCORE = {
     MISS: 0
 };
 
+// Perfect Streak Bonus - consecutive PERFECT hits build an extra multiplier
+export const PERFECT_STREAK = {
+    // Multiplier grows by this amount per consecutive perfect
+    BONUS_PER_STREAK: 0.1,      // +10% per perfect (streak 5 = +50%)
+    // Maximum bonus multiplier cap
+    MAX_BONUS: 2.0,             // Cap at 2x (requires 20 consecutive perfects)
+    // Minimum streak to start showing bonus
+    MIN_DISPLAY: 3,             // Show "Perfect x3!" at 3+ streak
+    // Milestone thresholds for special effects
+    MILESTONES: [5, 10, 15, 20],
+    // Bonus points at milestones
+    MILESTONE_BONUS: {
+        5: 50,
+        10: 150,
+        15: 300,
+        20: 500
+    }
+};
+
 export const BEAT_DETECTION = {
     FFT_SIZE: 2048,
     HOP_SIZE: 512,
