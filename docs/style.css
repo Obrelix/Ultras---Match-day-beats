@@ -1471,9 +1471,25 @@ body {
 /* Mobile adjustments */
 @media (max-width: 600px) {
     #perfect-streak-display {
-        top: 120px;
+        top: 115px;
         font-size: 0.85rem;
         padding: 5px 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    #perfect-streak-display {
+        top: 100px;
+        font-size: 0.8rem;
+        padding: 4px 10px;
+    }
+}
+
+@media (max-width: 380px) {
+    #perfect-streak-display {
+        top: 90px;
+        font-size: 0.75rem;
+        padding: 3px 8px;
     }
 }
 
@@ -3955,6 +3971,12 @@ body {
         padding: 2px 8px;
         font-size: 0.65rem;
         gap: 4px;
+    }
+
+    #perfect-streak-display {
+        top: 75px;
+        font-size: 0.75rem;
+        padding: 3px 8px;
     }
 
     /* Tap zone - landscape */
@@ -6876,3 +6898,393 @@ body {
     }
 }
 
+/* ============================================
+   Match Day Sub-mode Selection Screen
+   ============================================ */
+
+#matchday-submode-screen {
+    padding-top: 40px;
+    padding-bottom: 30px;
+}
+
+#matchday-submode-screen h2 {
+    margin-bottom: 10px;
+    font-size: 2rem;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    background: linear-gradient(135deg, var(--text-light), var(--accent-gold));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.submode-subtitle {
+    color: var(--text-muted);
+    margin-bottom: 30px;
+    font-size: 1rem;
+}
+
+#submode-grid {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 30px;
+    padding: 10px;
+}
+
+.submode-card {
+    background: linear-gradient(145deg, rgba(30, 30, 35, 0.95), rgba(20, 20, 25, 0.98));
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    padding: 30px 25px;
+    width: 220px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-align: center;
+}
+
+.submode-card:hover {
+    transform: translateY(-5px);
+    border-color: var(--primary-color);
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4),
+                0 0 30px rgba(var(--primary-color-rgb, 0, 102, 51), 0.3);
+}
+
+.submode-card:active {
+    transform: translateY(-2px);
+}
+
+.submode-icon {
+    font-size: 3rem;
+    margin-bottom: 15px;
+}
+
+.submode-title {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--text-light);
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.submode-desc {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+/* ============================================
+   Rival Selection Screen (Match Day)
+   ============================================ */
+
+#rival-select-screen {
+    padding-top: 30px;
+    padding-bottom: 30px;
+}
+
+#rival-select-screen h2 {
+    margin-bottom: 10px;
+    font-size: 1.8rem;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    background: linear-gradient(135deg, var(--text-light), var(--text-muted));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.rival-select-subtitle {
+    color: var(--text-muted);
+    margin-bottom: 25px;
+    font-size: 0.95rem;
+}
+
+#rival-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 20px;
+    width: 100%;
+    max-width: 650px;
+    margin-bottom: 24px;
+    padding: 10px;
+}
+
+.rival-card {
+    border-color: rgba(204, 0, 0, 0.2);
+}
+
+.rival-card:hover {
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5),
+                0 0 0 2px var(--rival-color, #cc0000),
+                0 0 40px rgba(204, 0, 0, 0.3);
+}
+
+/* ============================================
+   Match Day Chant Selection Screen
+   ============================================ */
+
+#matchday-chant-select-screen {
+    justify-content: flex-start;
+    padding-top: 30px;
+    padding-bottom: 30px;
+    overflow-y: auto;
+}
+
+#matchday-chant-select-screen h2 {
+    margin-bottom: 10px;
+    font-size: 1.8rem;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    background: linear-gradient(135deg, var(--text-light), var(--text-muted));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.chant-select-subtitle {
+    color: var(--text-muted);
+    margin-bottom: 15px;
+    font-size: 0.95rem;
+}
+
+#matchday-chant-counter {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 12px 28px;
+    background: linear-gradient(145deg, rgba(30, 30, 50, 0.9), rgba(15, 15, 30, 0.95));
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-radius: 25px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+    transition: all 0.3s ease;
+}
+
+#matchday-chant-counter.has-selection {
+    border-color: rgba(var(--primary-color-rgb), 0.4);
+    color: var(--text-light);
+}
+
+#matchday-chant-counter.complete {
+    border-color: var(--perfect-color);
+    background: linear-gradient(145deg, rgba(0, 255, 136, 0.15), rgba(0, 180, 100, 0.1));
+    box-shadow: 0 0 20px rgba(0, 255, 136, 0.2);
+}
+
+#matchday-chant-counter.complete #chant-count {
+    color: var(--perfect-color);
+}
+
+#chant-count {
+    font-size: 1.5rem;
+    color: var(--primary-color);
+    transition: color 0.3s ease;
+}
+
+#matchday-chant-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    max-width: 500px;
+    max-height: 45vh;
+    overflow-y: auto;
+    padding: 12px;
+    margin-bottom: 20px;
+    background: linear-gradient(145deg, rgba(20, 20, 35, 0.6), rgba(10, 10, 20, 0.7));
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+#matchday-chant-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+#matchday-chant-list::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
+}
+
+#matchday-chant-list::-webkit-scrollbar-thumb {
+    background: var(--primary-color);
+    border-radius: 3px;
+}
+
+/* Matchday chant item with checkbox */
+.matchday-chant-item {
+    position: relative;
+}
+
+.matchday-chant-item .chant-content {
+    margin-left: 45px;
+}
+
+.matchday-chant-item .chant-checkbox {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 28px;
+    height: 28px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    z-index: 2;
+}
+
+.matchday-chant-item .checkbox-icon::before {
+    content: '';
+    display: block;
+    width: 10px;
+    height: 6px;
+    border-left: 2px solid transparent;
+    border-bottom: 2px solid transparent;
+    transform: rotate(-45deg) translateY(-1px);
+    transition: border-color 0.2s ease;
+}
+
+.matchday-chant-item.selected .chant-checkbox {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    box-shadow: 0 0 15px rgba(var(--primary-color-rgb), 0.4);
+}
+
+.matchday-chant-item.selected .checkbox-icon::before {
+    border-left-color: #fff;
+    border-bottom-color: #fff;
+}
+
+.matchday-chant-item.selected {
+    border-left-color: var(--primary-color);
+    background: linear-gradient(145deg, rgba(var(--primary-color-rgb), 0.1), rgba(20, 20, 35, 0.95));
+}
+
+.matchday-chant-item.selected .chant-accent {
+    background: var(--primary-color);
+    box-shadow: 0 0 10px rgba(var(--primary-color-rgb), 0.5);
+}
+
+/* Chant warning message */
+.chant-warning {
+    padding: 15px;
+    background: rgba(255, 170, 0, 0.15);
+    border: 1px solid var(--ok-color);
+    border-radius: 10px;
+    color: var(--ok-color);
+    text-align: center;
+    font-size: 0.9rem;
+}
+
+/* Actions row */
+#matchday-chant-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    max-width: 300px;
+}
+
+#start-match-btn {
+    width: 100%;
+    padding: 16px 30px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    transition: all 0.3s ease;
+}
+
+#start-match-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+#start-match-btn:not(:disabled) {
+    animation: startMatchPulse 2s infinite;
+}
+
+@keyframes startMatchPulse {
+    0%, 100% {
+        box-shadow: 0 4px 15px rgba(var(--primary-color-rgb), 0.3);
+    }
+    50% {
+        box-shadow: 0 4px 25px rgba(var(--primary-color-rgb), 0.5);
+    }
+}
+
+#back-to-rival-select {
+    width: 100%;
+}
+
+/* Responsive adjustments */
+@media (max-width: 600px) {
+    #rival-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+
+    #matchday-chant-list {
+        max-height: 40vh;
+    }
+
+    .matchday-chant-item .chant-content {
+        margin-left: 40px;
+    }
+
+    .matchday-chant-item .chant-checkbox {
+        width: 24px;
+        height: 24px;
+        left: 10px;
+    }
+
+    #matchday-chant-counter {
+        padding: 10px 20px;
+        font-size: 1rem;
+    }
+
+    #chant-count {
+        font-size: 1.3rem;
+    }
+
+    #matchday-chant-actions {
+        max-width: 100%;
+    }
+
+    #start-match-btn {
+        padding: 14px 25px;
+        font-size: 1rem;
+    }
+}
+
+@media (max-width: 400px) {
+    #rival-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        padding: 5px;
+    }
+
+    .rival-card .club-badge {
+        width: 60px;
+        height: 60px;
+    }
+
+    .rival-card .club-badge img {
+        width: 45px;
+        height: 45px;
+    }
+
+    .rival-card .club-name {
+        font-size: 0.9rem;
+    }
+}

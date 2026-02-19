@@ -14,6 +14,7 @@ import { initVisualizer, computeWaveformPeaks, buildWaveformCache, drawVisualize
 import { initCrowdBg, setCrowdMode, updateCrowdClub } from './crowdBg.js';
 import {
     showScreen, applyClubTheme, renderClubSelection, renderChantSelection,
+    renderRivalSelection, renderMatchdayChantSelection,
     renderMatchdayIntro, updateMatchScoreboard, updateScoreboardTeams,
     setMatchdayChantStarter, setScoreSubmitHandler, endGame, elements, screens,
     updateTitleLevelBadge, renderProfileScreen, switchProfileTab, initAnalyticsSession,
@@ -146,41 +147,79 @@ function selectClubMatchday(club) {
     resetMatchState();
     state.gameMode = 'matchday';
 
-    // Pick random rival (exclude player's team, must have >= MIN_CHANTS_FOR_MATCHDAY unique chants)
-    const eligible = Object.values(clubs).filter(c => {
-        if (c.id === club.id) return false;
-        const uniqueChants = new Set(c.chants.map(ch => ch.audio));
-        return uniqueChants.size >= MATCHDAY.MIN_CHANTS_FOR_MATCHDAY;
-    });
+    // Go to sub-mode selection screen
+    showScreen('matchdaySubmode');
+}
 
-    state.rivalClub = eligible[Math.floor(Math.random() * eligible.length)];
+function selectMatchdaySubmode(submode) {
+    if (submode === 'random') {
+        // All Random: pick random rival and random chants
+        const eligibleRivals = Object.values(clubs).filter(c =>
+            c.id !== state.selectedClub.id &&
+            c.chants.length >= MATCHDAY.MIN_CHANTS_FOR_MATCHDAY
+        );
+
+        if (eligibleRivals.length === 0) {
+            alert('No eligible rivals found!');
+            return;
+        }
+
+        // Random rival
+        const rivalClub = eligibleRivals[Math.floor(Math.random() * eligibleRivals.length)];
+        state.rivalClub = rivalClub;
+
+        // Initialize AI personality
+        const personalityId = CLUB_AI_PERSONALITIES[rivalClub.id] || 'consistent';
+        state.aiPersonality = AI_PERSONALITIES[personalityId];
+        state.aiMood = 'neutral';
+        state.aiStreakCounter = 0;
+        state.aiInStreak = false;
+
+        // Random chants from player's club
+        const availableChants = [...state.selectedClub.chants];
+        const shuffled = availableChants.sort(() => Math.random() - 0.5);
+        state.matchChants = shuffled.slice(0, MATCHDAY.CHANTS_PER_HALF * 2);
+
+        // Show AI mood indicator
+        updateAIMoodUI();
+
+        // Proceed directly to matchday intro
+        renderMatchdayIntro();
+        showScreen('matchdayIntro');
+    } else {
+        // Custom: go to rival selection
+        renderRivalSelection(state.selectedClub, MATCHDAY.MIN_CHANTS_FOR_MATCHDAY, selectRival);
+        showScreen('rivalSelect');
+    }
+}
+
+function selectRival(rivalClub) {
+    state.rivalClub = rivalClub;
 
     // Initialize AI personality based on rival club
-    const personalityId = CLUB_AI_PERSONALITIES[state.rivalClub.id] || 'consistent';
+    const personalityId = CLUB_AI_PERSONALITIES[rivalClub.id] || 'consistent';
     state.aiPersonality = AI_PERSONALITIES[personalityId];
     state.aiMood = 'neutral';
     state.aiStreakCounter = 0;
     state.aiInStreak = false;
 
+    // Go to chant selection screen
+    renderMatchdayChantSelection(
+        state.selectedClub,
+        MATCHDAY.CHANTS_PER_HALF * 2,
+        confirmMatchdayChants
+    );
+    showScreen('matchdayChantSelect');
+}
+
+function confirmMatchdayChants(selectedChants) {
+    // Store the selected chants
+    state.matchChants = selectedChants;
+
     // Show AI mood indicator
     updateAIMoodUI();
 
-    // Deduplicate player's chants by audio path, then shuffle and pick 6
-    const seen = new Set();
-    const uniqueChants = club.chants.filter(c => {
-        if (seen.has(c.audio)) return false;
-        seen.add(c.audio);
-        return true;
-    });
-
-    // Fisher-Yates shuffle
-    for (let i = uniqueChants.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [uniqueChants[i], uniqueChants[j]] = [uniqueChants[j], uniqueChants[i]];
-    }
-
-    state.matchChants = uniqueChants.slice(0, MATCHDAY.CHANTS_PER_HALF * 2);
-
+    // Proceed to matchday intro
     renderMatchdayIntro();
     showScreen('matchdayIntro');
 }
@@ -669,6 +708,31 @@ elements.backToTitle.addEventListener('click', () => {
 
 elements.backToClubs.addEventListener('click', () => {
     showScreen('clubSelect');
+});
+
+// Submode selection buttons
+elements.submodeRandom?.addEventListener('click', () => {
+    selectMatchdaySubmode('random');
+});
+
+elements.submodeCustom?.addEventListener('click', () => {
+    selectMatchdaySubmode('custom');
+});
+
+// Submode select → Back to club select
+elements.backToClubsFromSubmode?.addEventListener('click', () => {
+    showScreen('clubSelect');
+});
+
+// Rival select → Back to submode select
+elements.backToClubsFromRival?.addEventListener('click', () => {
+    showScreen('matchdaySubmode');
+});
+
+// Matchday chant select → Back to rival select
+elements.backToRivalSelect?.addEventListener('click', () => {
+    renderRivalSelection(state.selectedClub, MATCHDAY.MIN_CHANTS_FOR_MATCHDAY, selectRival);
+    showScreen('rivalSelect');
 });
 
 // Match Day intro → Kick Off

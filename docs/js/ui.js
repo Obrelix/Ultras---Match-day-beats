@@ -26,6 +26,9 @@ export const screens = {
     modeSelect: document.getElementById('mode-select-screen'),
     clubSelect: document.getElementById('club-select-screen'),
     chantSelect: document.getElementById('chant-select-screen'),
+    matchdaySubmode: document.getElementById('matchday-submode-screen'),
+    rivalSelect: document.getElementById('rival-select-screen'),
+    matchdayChantSelect: document.getElementById('matchday-chant-select-screen'),
     matchdayIntro: document.getElementById('matchday-intro-screen'),
     gameplay: document.getElementById('gameplay-screen'),
     chantResult: document.getElementById('chant-result-screen'),
@@ -75,6 +78,22 @@ export const elements = {
     // Mode select
     modePractice: document.getElementById('mode-practice'),
     modeMatchday: document.getElementById('mode-matchday'),
+
+    // Match Day sub-mode selection
+    submodeRandom: document.getElementById('submode-random'),
+    submodeCustom: document.getElementById('submode-custom'),
+    backToClubsFromSubmode: document.getElementById('back-to-clubs-from-submode'),
+
+    // Rival selection (Match Day)
+    rivalGrid: document.getElementById('rival-grid'),
+    backToClubsFromRival: document.getElementById('back-to-clubs-from-rival'),
+
+    // Match Day chant selection
+    matchdayChantList: document.getElementById('matchday-chant-list'),
+    matchdayChantCounter: document.getElementById('matchday-chant-counter'),
+    chantCount: document.getElementById('chant-count'),
+    startMatchBtn: document.getElementById('start-match-btn'),
+    backToRivalSelect: document.getElementById('back-to-rival-select'),
 
     // Match Day intro
     matchupPlayerBadge: document.getElementById('matchup-player-badge'),
@@ -350,7 +369,7 @@ export function navigateHome() {
  * Check if we're in an active Match Day flow (not Practice)
  */
 function isInActiveMatch() {
-    const matchScreens = ['matchdayIntro', 'chantResult', 'halftime'];
+    const matchScreens = ['rivalSelect', 'matchdayChantSelect', 'matchdayIntro', 'chantResult', 'halftime'];
     return state.gameMode === 'matchday' && matchScreens.includes(state.currentState);
 }
 
@@ -469,6 +488,201 @@ export function renderClubSelection(onSelectClub, minChants = 0) {
         card.addEventListener('click', () => onSelectClub(club));
         elements.clubGrid.appendChild(card);
     });
+}
+
+export function renderRivalSelection(playerClub, minChants, onSelectRival) {
+    if (!elements.rivalGrid) return;
+    elements.rivalGrid.innerHTML = '';
+
+    Object.values(clubs).forEach(club => {
+        // Exclude player's club
+        if (club.id === playerClub.id) return;
+
+        // Deduplicate chants by audio path for counting
+        const uniqueChants = new Set(club.chants.map(c => c.audio));
+        if (uniqueChants.size < minChants) return;
+
+        const card = document.createElement('div');
+        card.className = 'club-card rival-card';
+
+        // Build DOM safely to prevent XSS
+        const badgeDiv = document.createElement('div');
+        badgeDiv.className = 'club-badge';
+        badgeDiv.style.background = club.colors.primary;
+
+        const badgeImg = document.createElement('img');
+        badgeImg.src = club.badge;
+        badgeImg.alt = club.name;
+        badgeDiv.appendChild(badgeImg);
+
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'club-name';
+        nameDiv.textContent = club.name;
+
+        card.appendChild(badgeDiv);
+        card.appendChild(nameDiv);
+        card.addEventListener('click', () => onSelectRival(club));
+        elements.rivalGrid.appendChild(card);
+    });
+}
+
+// Track selected chants for Match Day
+let selectedMatchdayChants = [];
+
+export function renderMatchdayChantSelection(playerClub, requiredCount, onConfirm) {
+    if (!elements.matchdayChantList) return;
+    elements.matchdayChantList.innerHTML = '';
+    selectedMatchdayChants = [];
+
+    // Update counter
+    updateChantCounter(0, requiredCount);
+
+    // Deduplicate chants by audio path
+    const seen = new Set();
+    const uniqueChants = playerClub.chants.filter(c => {
+        if (seen.has(c.audio)) return false;
+        seen.add(c.audio);
+        return true;
+    });
+
+    // Show warning if not enough chants
+    if (uniqueChants.length < requiredCount) {
+        const warning = document.createElement('div');
+        warning.className = 'chant-warning';
+        warning.textContent = `This club only has ${uniqueChants.length} unique chants. You need ${requiredCount} for Match Day.`;
+        elements.matchdayChantList.appendChild(warning);
+    }
+
+    uniqueChants.forEach((chant, index) => {
+        const highScore = loadHighScore(playerClub.id, chant.id);
+        const item = document.createElement('div');
+        item.className = 'chant-item matchday-chant-item';
+        item.dataset.chantIndex = index;
+        item.style.cssText = 'position: relative; display: flex; align-items: center; background: rgba(30, 30, 30, 0.95); border-radius: 12px; padding: 10px 14px; cursor: pointer; border: 2px solid rgba(255,255,255,0.1); transition: all 0.2s ease; min-height: 60px;';
+
+        // Checkbox indicator
+        const checkbox = document.createElement('div');
+        checkbox.className = 'chant-checkbox';
+        checkbox.innerHTML = '<span class="checkbox-icon"></span>';
+        checkbox.style.cssText = 'position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 24px; height: 24px; border-radius: 6px; background: rgba(40, 40, 40, 0.9); border: 2px solid #555; display: flex; align-items: center; justify-content: center; z-index: 2;';
+
+        // Left accent bar
+        const accent = document.createElement('div');
+        accent.className = 'chant-accent';
+        accent.style.cssText = 'position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--primary-color); border-radius: 16px 0 0 16px; opacity: 0.5;';
+
+        // Main content wrapper
+        const content = document.createElement('div');
+        content.className = 'chant-content';
+        content.style.cssText = 'display: flex; align-items: center; flex: 1; min-width: 0; margin-left: 38px;';
+
+        // Music icon
+        const icon = document.createElement('div');
+        icon.className = 'chant-icon';
+        icon.textContent = '♫';
+        icon.style.cssText = 'display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; background: rgba(0,150,80,0.3); border-radius: 10px; margin-right: 12px; font-size: 1.2rem; color: #00ff88; flex-shrink: 0;';
+
+        // Text content wrapper
+        const textWrapper = document.createElement('div');
+        textWrapper.className = 'chant-text';
+        textWrapper.style.cssText = 'flex: 1; min-width: 0; overflow: hidden;';
+
+        // Chant name
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'chant-name';
+        nameDiv.textContent = chant.name;
+        nameDiv.style.cssText = 'color: #ffffff !important; font-size: 1rem; font-weight: 700; text-shadow: 0 1px 2px rgba(0,0,0,0.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
+
+        // Info row
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'chant-info';
+        infoDiv.style.cssText = 'color: #cccccc !important; font-size: 0.75rem; margin-top: 3px; display: flex; align-items: center; gap: 8px;';
+
+        // Duration badge
+        if (chant.duration) {
+            const durationBadge = document.createElement('span');
+            durationBadge.className = 'chant-duration-badge';
+            durationBadge.style.cssText = 'color: #aaaaaa !important; font-weight: 500;';
+            const mins = Math.floor(chant.duration / 60);
+            const secs = Math.floor(chant.duration % 60);
+            durationBadge.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+            infoDiv.appendChild(durationBadge);
+        }
+
+        // High score
+        if (highScore > 0) {
+            const scoreText = document.createElement('span');
+            scoreText.className = 'chant-high-score-text';
+            scoreText.style.cssText = 'color: #ffdd00 !important; font-weight: 600;';
+            scoreText.innerHTML = `★ ${highScore.toLocaleString()}`;
+            infoDiv.appendChild(scoreText);
+        }
+
+        textWrapper.appendChild(nameDiv);
+        textWrapper.appendChild(infoDiv);
+
+        content.appendChild(icon);
+        content.appendChild(textWrapper);
+
+        item.appendChild(checkbox);
+        item.appendChild(accent);
+        item.appendChild(content);
+
+        // Toggle selection on click
+        item.addEventListener('click', () => {
+            toggleChantSelection(item, chant, uniqueChants, requiredCount);
+        });
+
+        elements.matchdayChantList.appendChild(item);
+    });
+
+    // Set up start match button
+    if (elements.startMatchBtn) {
+        elements.startMatchBtn.disabled = true;
+        elements.startMatchBtn.onclick = () => {
+            if (selectedMatchdayChants.length === requiredCount) {
+                onConfirm(selectedMatchdayChants);
+            }
+        };
+    }
+}
+
+function toggleChantSelection(item, chant, allChants, requiredCount) {
+    const isSelected = item.classList.contains('selected');
+
+    if (isSelected) {
+        // Deselect
+        item.classList.remove('selected');
+        selectedMatchdayChants = selectedMatchdayChants.filter(c => c.id !== chant.id);
+    } else {
+        // Select (if under limit)
+        if (selectedMatchdayChants.length < requiredCount) {
+            item.classList.add('selected');
+            selectedMatchdayChants.push(chant);
+        }
+    }
+
+    // Update counter and button state
+    updateChantCounter(selectedMatchdayChants.length, requiredCount);
+
+    // Enable/disable start button
+    if (elements.startMatchBtn) {
+        elements.startMatchBtn.disabled = selectedMatchdayChants.length !== requiredCount;
+    }
+}
+
+function updateChantCounter(count, required) {
+    if (elements.chantCount) {
+        elements.chantCount.textContent = count;
+    }
+    if (elements.matchdayChantCounter) {
+        elements.matchdayChantCounter.classList.toggle('complete', count === required);
+        elements.matchdayChantCounter.classList.toggle('has-selection', count > 0);
+    }
+}
+
+export function getSelectedMatchdayChants() {
+    return [...selectedMatchdayChants];
 }
 
 export function renderChantSelection(onSelectChant) {

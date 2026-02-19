@@ -165,6 +165,47 @@
             <button id="back-to-title" class="btn-secondary">Back</button>
         </div>
 
+        <!-- Match Day Sub-mode Selection Screen -->
+        <div id="matchday-submode-screen" class="screen">
+            <h2>Match Day</h2>
+            <p class="submode-subtitle">Choose your match type</p>
+            <div id="submode-grid">
+                <div class="submode-card" id="submode-random">
+                    <div class="submode-icon">🎲</div>
+                    <div class="submode-title">All Random</div>
+                    <div class="submode-desc">Random rival and chants — jump straight into the action</div>
+                </div>
+                <div class="submode-card" id="submode-custom">
+                    <div class="submode-icon">⚙️</div>
+                    <div class="submode-title">Custom</div>
+                    <div class="submode-desc">Choose your rival and select 6 chants for the match</div>
+                </div>
+            </div>
+            <button id="back-to-clubs-from-submode" class="btn-secondary">Back</button>
+        </div>
+
+        <!-- Rival Selection Screen (Match Day) -->
+        <div id="rival-select-screen" class="screen">
+            <h2>Choose Your Rival</h2>
+            <p class="rival-select-subtitle">Select the club you want to face in this match</p>
+            <div id="rival-grid"></div>
+            <button id="back-to-clubs-from-rival" class="btn-secondary">Back</button>
+        </div>
+
+        <!-- Match Day Chant Selection Screen -->
+        <div id="matchday-chant-select-screen" class="screen">
+            <h2>Select Your Chants</h2>
+            <p class="chant-select-subtitle">Choose 6 chants for the match</p>
+            <div id="matchday-chant-counter">
+                <span id="chant-count">0</span>/6 Selected
+            </div>
+            <div id="matchday-chant-list"></div>
+            <div id="matchday-chant-actions">
+                <button id="start-match-btn" class="btn-primary" disabled>START MATCH</button>
+                <button id="back-to-rival-select" class="btn-secondary">Back</button>
+            </div>
+        </div>
+
         <!-- Chant Selection Screen -->
         <div id="chant-select-screen" class="screen">
             <h2>Select a Chant</h2>
