@@ -704,6 +704,22 @@ async function resumeGame() {
 
     state.isPaused = false;
     if (state.audioContext) await state.audioContext.resume();
+
+    // Timing validation: Verify audio and wall-clock times are still in sync
+    // Audio elapsed = audioContext.currentTime - audioStartTime (seconds)
+    // Game elapsed = (performance.now() - gameStartTime) / 1000 (seconds)
+    // These should match after a proper pause/resume
+    const audioElapsed = state.audioContext.currentTime - state.audioStartTime;
+    const gameElapsed = (performance.now() - state.gameStartTime) / 1000;
+    const drift = Math.abs(audioElapsed - gameElapsed);
+    const MAX_ALLOWED_DRIFT = 0.1; // 100ms tolerance
+
+    if (drift > MAX_ALLOWED_DRIFT) {
+        console.warn(`Timing drift detected on resume: ${(drift * 1000).toFixed(1)}ms. Correcting gameStartTime.`);
+        // Correct gameStartTime to match audio time
+        state.gameStartTime = performance.now() - (audioElapsed * 1000);
+    }
+
     elements.pauseOverlay.classList.add('hidden');
     // Close settings panel if open
     elements.settingsPanel.classList.add('hidden');

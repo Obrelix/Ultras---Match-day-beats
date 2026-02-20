@@ -133,6 +133,8 @@ export const state = {
 
     // AI stats
     aiScore: 0,
+    aiCombo: 0,           // AI consecutive hits (for trash talk triggers)
+    aiMaxCombo: 0,        // AI best combo this game
     aiScorePopups: [],
 
     // Game Modifiers (Double Time, Hidden, Mirror)
@@ -145,7 +147,7 @@ export const state = {
 
     // Power-ups
     powerups: {
-        shield: { charged: false, active: false },
+        shield: { charged: false, active: false, lastUsedTime: 0 },
         scoreBurst: { charged: false, active: false, endTime: 0 },
         slowMotion: { charged: false, active: false, endTime: 0 }
     },
@@ -274,7 +276,7 @@ export function resetGameState() {
 
     // Reset power-ups (keep modifiers as they're set before game starts)
     state.powerups = {
-        shield: { charged: false, active: false },
+        shield: { charged: false, active: false, lastUsedTime: 0 },
         scoreBurst: { charged: false, active: false, endTime: 0 },
         slowMotion: { charged: false, active: false, endTime: 0 }
     };
@@ -282,6 +284,8 @@ export function resetGameState() {
     state.activePowerupMultiplier = 1.0;
 
     // Reset AI state
+    state.aiCombo = 0;
+    state.aiMaxCombo = 0;
     state.aiMood = 'neutral';
     state.aiStreakCounter = 0;
     state.aiInStreak = false;

@@ -68,6 +68,7 @@ export const elements = {
     statOk: document.getElementById('stat-ok'),
     statMiss: document.getElementById('stat-miss'),
     statMaxCombo: document.getElementById('stat-max-combo'),
+    statFeverTime: document.getElementById('stat-fever-time'),
 
     // XP reward display (results screen)
     xpRewardDisplay: document.getElementById('xp-reward-display'),
@@ -848,6 +849,7 @@ export function endGame() {
     elements.statOk.textContent = state.playerStats.ok;
     elements.statMiss.textContent = state.playerStats.miss;
     elements.statMaxCombo.textContent = state.playerMaxCombo;
+    elements.statFeverTime.textContent = `${state.feverTimeAccumulated.toFixed(1)}s`;
 
     // Save and show high score
     if (state.selectedClub && state.selectedChant) {

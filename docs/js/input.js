@@ -2,7 +2,7 @@
 // input.js — Input handling, scoring, AI
 // ============================================
 
-import { GameState, SCORE, BEAT_RESULT_COLORS, AI_ACCURACY, AI_RUBBER_BAND, POWERUPS, AI_PERSONALITIES, CLUB_AI_PERSONALITIES, HOLD_BEAT, HOLD_SCORING, TRASH_TALK, TRASH_TALK_PERSONALITIES, PERFECT_STREAK } from './config.js';
+import { GameState, SCORE, BEAT_RESULT_COLORS, AI_ACCURACY, AI_RUBBER_BAND, POWERUPS, AI_PERSONALITIES, CLUB_AI_PERSONALITIES, HOLD_BEAT, HOLD_SCORING, TRASH_TALK, TRASH_TALK_PERSONALITIES, PERFECT_STREAK, CALIBRATION } from './config.js';
 import { state } from './state.js';
 import { elements } from './ui.js';
 import { playSFX } from './audio.js';
@@ -93,7 +93,9 @@ export function handleInput() {
     if (state.holdState.isHolding) return;
 
     // Apply input calibration offset (positive offset = player taps late, so subtract to compensate)
-    const inputOffset = state.settings?.inputOffset || 0;
+    // Clamp to valid bounds to prevent extreme values from breaking gameplay
+    const rawOffset = state.settings?.inputOffset || 0;
+    const inputOffset = Math.max(CALIBRATION.MIN_OFFSET, Math.min(CALIBRATION.MAX_OFFSET, rawOffset));
     const adjustedNow = now - inputOffset;
 
     let bestBeat = null;
@@ -122,7 +124,14 @@ export function handleInput() {
     }
 
     // Calculate effective timing windows (Slow Motion widens them)
-    const slowMotionMultiplier = state.powerups.slowMotion.active ? (1 / POWERUPS.slowMotion.speedMultiplier) : 1;
+    // When Double Time modifier is active, boost Slow Motion effect to compensate
+    // (otherwise 1.5x speed * 0.7x slow = 1.05x which barely helps)
+    let slowMotionMultiplier = 1;
+    if (state.powerups.slowMotion.active) {
+        const baseMultiplier = 1 / POWERUPS.slowMotion.speedMultiplier; // ~1.43x
+        // If Double Time is active, double the slow motion effect for meaningful impact
+        slowMotionMultiplier = state.activeModifiers.doubleTime ? baseMultiplier * 1.5 : baseMultiplier;
+    }
     const effectiveTiming = {
         PERFECT: state.activeTiming.PERFECT * slowMotionMultiplier,
         GOOD: state.activeTiming.GOOD * slowMotionMultiplier,
@@ -334,7 +343,13 @@ function updatePowerupCharge() {
     state.powerupChargeProgress = combo;
 
     // Shield auto-activates when reaching combo threshold (no manual activation needed)
-    if (!powerups.shield.active && combo >= POWERUPS.shield.chargeCombo) {
+    // Cooldown: Shield cannot reactivate within 3 seconds of being used (prevents spam)
+    const SHIELD_COOLDOWN_MS = 3000;
+    const now = performance.now();
+    const cooldownElapsed = now - (powerups.shield.lastUsedTime || 0);
+    const shieldOffCooldown = cooldownElapsed >= SHIELD_COOLDOWN_MS;
+
+    if (!powerups.shield.active && combo >= POWERUPS.shield.chargeCombo && shieldOffCooldown) {
         powerups.shield.active = true;
         if (_updatePowerupUI) _updatePowerupUI('shield', 'active');
         showPowerupReady('shield');
@@ -342,7 +357,7 @@ function updatePowerupCharge() {
         // Show activation feedback
         state.feedbackText = 'SHIELD READY!';
         state.feedbackAlpha = 1;
-        state.feedbackSpawnTime = performance.now();
+        state.feedbackSpawnTime = now;
         state.feedbackColor = POWERUPS.shield.color;
     }
 
@@ -383,6 +398,7 @@ export function registerMiss() {
     // Check if Shield is active - absorb the miss
     if (state.powerups.shield.active) {
         state.powerups.shield.active = false;
+        state.powerups.shield.lastUsedTime = performance.now();  // Track for cooldown
         if (_updatePowerupUI) _updatePowerupUI('shield', 'empty');
 
         // Visual feedback for shield absorption
@@ -766,8 +782,21 @@ export function simulateAI() {
     // Miss roll
     const rand = Math.random();
     if (rand > accuracy) {
+        // AI missed - reset combo
+        state.aiCombo = 0;
         elements.aiScore.textContent = state.aiScore;
         return;
+    }
+
+    // AI hit - increment combo
+    state.aiCombo++;
+    if (state.aiCombo > state.aiMaxCombo) {
+        state.aiMaxCombo = state.aiCombo;
+    }
+
+    // Trigger AI combo trash talk at milestones
+    if (state.aiCombo === 10 || state.aiCombo === 20 || state.aiCombo === 30) {
+        triggerTrashTalk('aiCombo', { aiCombo: state.aiCombo });
     }
 
     // Quality roll (within scoring range)
@@ -857,10 +886,16 @@ function initiateHoldBeat(beat, beatData, pressRating, now) {
     }
 
     // If this was an early hit, advance past the beat
+    // NOTE: When a player hits a hold beat early, the skipped active beat is marked
+    // as 'miss' for VISUALIZATION ONLY (grayed out in beat track). This is intentional:
+    // - The player successfully initiated a hold beat, so they got a valid hit
+    // - We don't call registerMiss() or increment miss stats - the player isn't penalized
+    // - The visual marking helps show which beat was skipped in the track display
+    // This is consistent with how early tap beat hits work (see handleInput lines 224-244)
     if (beat.isEarly) {
         if (state.activeBeat) {
             if (state.activeBeat.index !== undefined) {
-                state.beatResults[state.activeBeat.index] = 'miss';
+                state.beatResults[state.activeBeat.index] = 'miss';  // Visual only, not stats
             }
         }
         state.nextBeatIndex = beat.index + 1;
@@ -910,6 +945,13 @@ export function handleInputRelease() {
             state.playerMaxCombo = state.playerCombo;
         }
 
+        // Perfect streak tracking for hold beats
+        state.perfectStreak++;
+        if (state.perfectStreak > state.maxPerfectStreak) {
+            state.maxPerfectStreak = state.perfectStreak;
+        }
+        checkPerfectStreakMilestone(state.perfectStreak);
+
         // Screen shake on perfect holds (combo >= 10)
         if (state.playerCombo >= 10) {
             triggerScreenShake('perfect');
@@ -919,14 +961,25 @@ export function handleInputRelease() {
         checkComboMilestone(state.playerCombo);
     } else if (overallRating === 'good') {
         state.playerStats.good++;
+        // Break perfect streak on non-perfect hit
+        if (state.perfectStreak >= PERFECT_STREAK.MIN_DISPLAY) {
+            showPerfectStreakBreak(state.perfectStreak);
+        }
+        state.perfectStreak = 0;
         // Combo maintained, no bonus
     } else if (overallRating === 'ok') {
         state.playerStats.ok++;
+        // Break perfect streak on non-perfect hit
+        if (state.perfectStreak >= PERFECT_STREAK.MIN_DISPLAY) {
+            showPerfectStreakBreak(state.perfectStreak);
+        }
+        state.perfectStreak = 0;
         // Combo maintained, no bonus
     } else {
         // Check if Shield can absorb this hold beat miss
         if (state.powerups.shield.active) {
             state.powerups.shield.active = false;
+            state.powerups.shield.lastUsedTime = now;  // Track for cooldown
             if (_updatePowerupUI) _updatePowerupUI('shield', 'empty');
 
             // Visual feedback for shield absorption
@@ -947,14 +1000,20 @@ export function handleInputRelease() {
             state.playerStats.miss++;
             state.playerCombo = 0;
             state.powerupChargeProgress = 0;
+            // Break perfect streak on miss
+            if (state.perfectStreak >= PERFECT_STREAK.MIN_DISPLAY) {
+                showPerfectStreakBreak(state.perfectStreak);
+            }
+            state.perfectStreak = 0;
         }
     }
 
-    // Apply combo multiplier + modifier multiplier + powerup multiplier
+    // Apply combo multiplier + modifier multiplier + powerup multiplier + perfect streak bonus
     const comboMultiplier = getComboMultiplier();
     const modifierMultiplier = state.modifierScoreMultiplier || 1.0;
     const powerupMultiplier = state.activePowerupMultiplier || 1.0;
-    const totalMultiplier = comboMultiplier * modifierMultiplier * powerupMultiplier;
+    const perfectStreakBonus = overallRating === 'perfect' ? getPerfectStreakMultiplier() : 1.0;
+    const totalMultiplier = comboMultiplier * modifierMultiplier * powerupMultiplier * perfectStreakBonus;
     const scoreGained = Math.floor(result.totalScore * totalMultiplier);
     state.playerScore += scoreGained;
 
@@ -1030,7 +1089,9 @@ function calculateHoldScore(releaseTime) {
     const { holdState } = state;
 
     // Apply input calibration offset to release timing
-    const inputOffset = state.settings?.inputOffset || 0;
+    // Clamp to valid bounds to prevent extreme values from breaking gameplay
+    const rawOffset = state.settings?.inputOffset || 0;
+    const inputOffset = Math.max(CALIBRATION.MIN_OFFSET, Math.min(CALIBRATION.MAX_OFFSET, rawOffset));
     const adjustedReleaseTime = releaseTime - inputOffset;
 
     // Press score (based on initial press rating)
@@ -1064,7 +1125,12 @@ function calculateHoldScore(releaseTime) {
 
     // Release timing score (use adjusted time and Slow Motion multiplier)
     const releaseError = Math.abs(adjustedReleaseTime - holdState.expectedEndTime);
-    const slowMotionMultiplier = state.powerups.slowMotion.active ? (1 / POWERUPS.slowMotion.speedMultiplier) : 1;
+    // When Double Time modifier is active, boost Slow Motion effect to compensate
+    let slowMotionMultiplier = 1;
+    if (state.powerups.slowMotion.active) {
+        const baseMultiplier = 1 / POWERUPS.slowMotion.speedMultiplier; // ~1.43x
+        slowMotionMultiplier = state.activeModifiers.doubleTime ? baseMultiplier * 1.5 : baseMultiplier;
+    }
     const effectivePerfect = state.activeTiming.PERFECT * slowMotionMultiplier;
     const effectiveGood = state.activeTiming.GOOD * slowMotionMultiplier;
     const effectiveReleaseWindow = HOLD_BEAT.RELEASE_WINDOW * slowMotionMultiplier;
@@ -1209,6 +1275,7 @@ export function breakHold() {
 
 /**
  * Simulates AI hold beat behavior
+ * Uses weighted scoring aligned with player hold beat mechanics for fairness
  * @param {Object} beatData - The hold beat data
  */
 export function simulateAIHoldBeat(beatData) {
@@ -1231,32 +1298,44 @@ export function simulateAIHoldBeat(beatData) {
 
     accuracy = Math.max(0.3, Math.min(0.95, accuracy));
 
-    // Three rolls for hold beats: press, hold, release
-    const pressRoll = Math.random();
-    const holdRoll = Math.random();
-    const releaseRoll = Math.random();
-
-    let pressScore = 0;
-    if (pressRoll < accuracy) {
-        if (Math.random() < 0.4) pressScore = SCORE.PERFECT;
-        else if (Math.random() < 0.7) pressScore = SCORE.GOOD;
-        else pressScore = SCORE.OK;
+    // Overall miss roll - determines if AI completely misses the hold beat
+    const missRoll = Math.random();
+    if (missRoll > accuracy) {
+        // AI missed the hold beat entirely - reset combo
+        state.aiCombo = 0;
+        elements.aiScore.textContent = state.aiScore;
+        return;
     }
 
-    let holdScore = 0;
-    if (holdRoll < accuracy * 0.9) {  // Hold is slightly easier
-        holdScore = SCORE.PERFECT;
-    } else if (holdRoll < accuracy) {
-        holdScore = SCORE.GOOD;
+    // AI successfully executed the hold beat - track combo
+    state.aiCombo++;
+    if (state.aiCombo > state.aiMaxCombo) {
+        state.aiMaxCombo = state.aiCombo;
     }
 
-    let releaseScore = 0;
-    if (releaseRoll < accuracy * 0.8) {  // Release is harder
-        if (Math.random() < 0.35) releaseScore = SCORE.PERFECT;
-        else if (Math.random() < 0.65) releaseScore = SCORE.GOOD;
-        else releaseScore = SCORE.OK;
-    }
+    // Quality scoring using consistent distribution (aligned with player mechanics)
+    // Press quality roll (40% PERFECT, 30% GOOD, 30% OK)
+    const pressQuality = Math.random();
+    let pressScore;
+    if (pressQuality < 0.40) pressScore = SCORE.PERFECT;
+    else if (pressQuality < 0.70) pressScore = SCORE.GOOD;
+    else pressScore = SCORE.OK;
 
+    // Hold quality roll (easier - 50% PERFECT, 30% GOOD, 20% OK)
+    const holdQuality = Math.random();
+    let holdScore;
+    if (holdQuality < 0.50) holdScore = SCORE.PERFECT;
+    else if (holdQuality < 0.80) holdScore = SCORE.GOOD;
+    else holdScore = SCORE.OK;
+
+    // Release quality roll (harder - 35% PERFECT, 35% GOOD, 30% OK)
+    const releaseQuality = Math.random();
+    let releaseScore;
+    if (releaseQuality < 0.35) releaseScore = SCORE.PERFECT;
+    else if (releaseQuality < 0.70) releaseScore = SCORE.GOOD;
+    else releaseScore = SCORE.OK;
+
+    // Apply weighted scoring (same as player: 40% press, 30% hold, 30% release)
     const totalScore = Math.floor(
         pressScore * HOLD_SCORING.PRESS_WEIGHT +
         holdScore * HOLD_SCORING.HOLD_WEIGHT +
