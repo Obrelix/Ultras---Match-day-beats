@@ -121,36 +121,31 @@ export function handleInput() {
         }
     }
 
-    // No beat within reach
-    if (!bestBeat || bestDiff > state.activeTiming.OK) {
-        showFeedback('MISS');
-        playSFX('MISS');
-        if (navigator.vibrate) navigator.vibrate([40]);
-        state.playerStats.miss++;
-        state.playerCombo = 0;
-        state.powerupChargeProgress = 0;
+    // Calculate effective timing windows (Slow Motion widens them)
+    const slowMotionMultiplier = state.powerups.slowMotion.active ? (1 / POWERUPS.slowMotion.speedMultiplier) : 1;
+    const effectiveTiming = {
+        PERFECT: state.activeTiming.PERFECT * slowMotionMultiplier,
+        GOOD: state.activeTiming.GOOD * slowMotionMultiplier,
+        OK: state.activeTiming.OK * slowMotionMultiplier
+    };
 
-        // Record miss for replay (no beat associated)
-        if (_recordInput && state.isRecording) {
-            const relativeTime = now - state.gameStartTime;
-            _recordInput(relativeTime, -1, 'miss', 0);
-        }
-
-        updateComboDisplay();
+    // No beat within reach - treat as a miss (this allows Shield to absorb it)
+    if (!bestBeat || bestDiff > effectiveTiming.OK) {
+        registerMiss();
         return;
     }
 
-    // Rate the hit
+    // Rate the hit (use effective timing for Slow Motion)
     let rating, score;
 
-    if (bestDiff <= state.activeTiming.PERFECT) {
+    if (bestDiff <= effectiveTiming.PERFECT) {
         rating = 'PERFECT';
         score = SCORE.PERFECT;
-    } else if (bestDiff <= state.activeTiming.GOOD) {
+    } else if (bestDiff <= effectiveTiming.GOOD) {
         rating = 'GOOD';
         score = SCORE.GOOD;
     } else {
-        // bestDiff <= activeTiming.OK guaranteed (early return above for > OK)
+        // bestDiff <= effectiveTiming.OK guaranteed (early return above for > OK)
         rating = 'OK';
         score = SCORE.OK;
     }
@@ -338,11 +333,17 @@ function updatePowerupCharge() {
     // Track cumulative combo for charging
     state.powerupChargeProgress = combo;
 
-    // Check if we should charge each power-up (in order of charge requirement)
-    if (!powerups.shield.charged && !powerups.shield.active && combo >= POWERUPS.shield.chargeCombo) {
-        powerups.shield.charged = true;
-        if (_updatePowerupUI) _updatePowerupUI('shield', 'charged');
+    // Shield auto-activates when reaching combo threshold (no manual activation needed)
+    if (!powerups.shield.active && combo >= POWERUPS.shield.chargeCombo) {
+        powerups.shield.active = true;
+        if (_updatePowerupUI) _updatePowerupUI('shield', 'active');
         showPowerupReady('shield');
+
+        // Show activation feedback
+        state.feedbackText = 'SHIELD READY!';
+        state.feedbackAlpha = 1;
+        state.feedbackSpawnTime = performance.now();
+        state.feedbackColor = POWERUPS.shield.color;
     }
 
     if (!powerups.slowMotion.charged && !powerups.slowMotion.active && combo >= POWERUPS.slowMotion.chargeCombo) {
@@ -358,8 +359,9 @@ function updatePowerupCharge() {
     }
 
     // Update charge bar for uncharged power-ups
-    if (!powerups.shield.charged && !powerups.shield.active && _updatePowerupUI) {
-        _updatePowerupUI('shield', 'empty');
+    // Shield shows charge progress until it auto-activates
+    if (!powerups.shield.active && _updatePowerupUI) {
+        _updatePowerupUI('shield', 'charging');
     }
     if (!powerups.slowMotion.charged && !powerups.slowMotion.active && _updatePowerupUI) {
         _updatePowerupUI('slowMotion', 'empty');
@@ -392,15 +394,20 @@ export function registerMiss() {
         // Mark beat as OK instead of miss (shield saved it)
         if (state.activeBeat && state.activeBeat.index !== undefined) {
             state.beatResults[state.activeBeat.index] = 'ok';
-
-            // Record shielded hit as OK for replay
-            if (_recordInput && state.isRecording) {
-                const relativeTime = performance.now() - state.gameStartTime;
-                _recordInput(relativeTime, state.activeBeat.index, 'ok', 0);
-            }
         }
 
-        // Don't break combo
+        // Record shielded event for replay (works with or without active beat)
+        if (_recordInput && state.isRecording) {
+            const relativeTime = performance.now() - state.gameStartTime;
+            const beatIndex = state.activeBeat?.index ?? -1;
+            _recordInput(relativeTime, beatIndex, 'shielded', 0);
+        }
+
+        // Audio and haptic feedback for shield use
+        playSFX('OK');  // Distinct sound for shield activation
+        if (navigator.vibrate) navigator.vibrate([15, 30, 15]);
+
+        // Don't break combo OR perfect streak - shield protects both
         return;
     }
 
@@ -781,6 +788,15 @@ export function simulateAI() {
     state.aiScore += scoreGained;
     elements.aiScore.textContent = state.aiScore;
 
+    // Track comeback potential (for Comeback King achievement)
+    const deficit = state.aiScore - state.playerScore;
+    if (deficit > state.maxDeficit) {
+        state.maxDeficit = deficit;
+    }
+    if (deficit >= 500) {
+        state.wasEverBehind500 = true;
+    }
+
     // Periodic score check for winning/losing trash talk
     if (Math.random() < 0.05) {
         triggerTrashTalk('scoreCheck');
@@ -885,7 +901,7 @@ export function handleInputRelease() {
 
     // Update stats based on overall result
     // Note: Combo was already incremented during the hold, so we only add a bonus on release
-    const overallRating = result.overallRating;
+    let overallRating = result.overallRating;
     if (overallRating === 'perfect') {
         state.playerStats.perfect++;
         // Bonus combo for perfect release
@@ -908,9 +924,30 @@ export function handleInputRelease() {
         state.playerStats.ok++;
         // Combo maintained, no bonus
     } else {
-        state.playerStats.miss++;
-        state.playerCombo = 0;
-        state.powerupChargeProgress = 0;
+        // Check if Shield can absorb this hold beat miss
+        if (state.powerups.shield.active) {
+            state.powerups.shield.active = false;
+            if (_updatePowerupUI) _updatePowerupUI('shield', 'empty');
+
+            // Visual feedback for shield absorption
+            state.feedbackText = 'SHIELDED!';
+            state.feedbackAlpha = 1;
+            state.feedbackSpawnTime = now;
+            state.feedbackColor = POWERUPS.shield.color;
+
+            // Audio and haptic feedback
+            playSFX('OK');
+            if (navigator.vibrate) navigator.vibrate([15, 30, 15]);
+
+            // Upgrade rating to OK (shield saved it)
+            overallRating = 'ok';
+            state.playerStats.ok++;
+            // Combo and perfect streak preserved
+        } else {
+            state.playerStats.miss++;
+            state.playerCombo = 0;
+            state.powerupChargeProgress = 0;
+        }
     }
 
     // Apply combo multiplier + modifier multiplier + powerup multiplier
@@ -1025,18 +1062,23 @@ function calculateHoldScore(releaseTime) {
         holdScore = 0;
     }
 
-    // Release timing score (use adjusted time)
+    // Release timing score (use adjusted time and Slow Motion multiplier)
     const releaseError = Math.abs(adjustedReleaseTime - holdState.expectedEndTime);
+    const slowMotionMultiplier = state.powerups.slowMotion.active ? (1 / POWERUPS.slowMotion.speedMultiplier) : 1;
+    const effectivePerfect = state.activeTiming.PERFECT * slowMotionMultiplier;
+    const effectiveGood = state.activeTiming.GOOD * slowMotionMultiplier;
+    const effectiveReleaseWindow = HOLD_BEAT.RELEASE_WINDOW * slowMotionMultiplier;
+
     let releaseScore = 0;
     let releaseRating = 'miss';
 
-    if (releaseError <= state.activeTiming.PERFECT) {
+    if (releaseError <= effectivePerfect) {
         releaseScore = SCORE.PERFECT;
         releaseRating = 'perfect';
-    } else if (releaseError <= state.activeTiming.GOOD) {
+    } else if (releaseError <= effectiveGood) {
         releaseScore = SCORE.GOOD;
         releaseRating = 'good';
-    } else if (releaseError <= HOLD_BEAT.RELEASE_WINDOW) {
+    } else if (releaseError <= effectiveReleaseWindow) {
         releaseScore = SCORE.OK;
         releaseRating = 'ok';
     } else {

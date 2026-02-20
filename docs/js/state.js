@@ -127,6 +127,10 @@ export const state = {
     maxPerfectStreak: 0,
     perfectStreakBonusEarned: 0,  // Total bonus points from streak milestones
 
+    // Comeback tracking (for Comeback King achievement)
+    wasEverBehind500: false,      // True if player was ever 500+ points behind
+    maxDeficit: 0,                // Track largest point deficit during game
+
     // AI stats
     aiScore: 0,
     aiScorePopups: [],
@@ -205,6 +209,10 @@ export function resetGameState() {
     state.perfectStreak = 0;
     state.maxPerfectStreak = 0;
     state.perfectStreakBonusEarned = 0;
+
+    // Reset comeback tracking
+    state.wasEverBehind500 = false;
+    state.maxDeficit = 0;
 
     // Hide perfect streak display
     const streakDisplay = document.getElementById('perfect-streak-display');

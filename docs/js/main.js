@@ -659,9 +659,9 @@ function quitToMenu() {
     if (countdownEl) countdownEl.remove();
     elements.pauseOverlay.classList.add('hidden');
     elements.settingsPanel.classList.add('hidden');
-    // Clean up frenzy CSS classes
+    // Clean up frenzy and powerup CSS classes
     if (state.crowdBgCanvas) {
-        state.crowdBgCanvas.classList.remove('frenzy', 'frenzy-intense');
+        state.crowdBgCanvas.classList.remove('frenzy', 'frenzy-intense', 'slow-motion', 'score-burst');
     }
     // Hide gameplay UI elements
     elements.activeModifiers?.classList.add('hidden');
@@ -1137,21 +1137,18 @@ document.addEventListener('keydown', (e) => {
 function activateNextPowerup() {
     const { powerups } = state;
 
-    // Priority: Shield > Slow Motion > Score Burst
-    if (powerups.shield.charged && !powerups.shield.active) {
-        powerups.shield.charged = false;
-        powerups.shield.active = true;
-        updatePowerupUI('shield', 'active');
-        showPowerupActivation('shield');
-        return;
-    }
-
+    // Shield auto-activates at 25 combo, so only Slow Motion and Score Burst need manual activation
+    // Priority: Slow Motion > Score Burst
     if (powerups.slowMotion.charged && !powerups.slowMotion.active) {
         powerups.slowMotion.charged = false;
         powerups.slowMotion.active = true;
         powerups.slowMotion.endTime = performance.now() + POWERUPS.slowMotion.duration;
         updatePowerupUI('slowMotion', 'active');
         showPowerupActivation('slowMotion');
+        // Add visual effect for slow motion
+        if (state.crowdBgCanvas) {
+            state.crowdBgCanvas.classList.add('slow-motion');
+        }
         return;
     }
 
@@ -1162,6 +1159,10 @@ function activateNextPowerup() {
         state.activePowerupMultiplier = POWERUPS.scoreBurst.multiplier;
         updatePowerupUI('scoreBurst', 'active');
         showPowerupActivation('scoreBurst');
+        // Add visual effect for score burst
+        if (state.crowdBgCanvas) {
+            state.crowdBgCanvas.classList.add('score-burst');
+        }
         return;
     }
 }
@@ -1170,11 +1171,13 @@ function updatePowerupUI(powerupId, status) {
     const slot = document.getElementById(`powerup-${powerupId}`);
     if (!slot) return;
 
-    slot.classList.remove('charged', 'active', 'empty');
+    slot.classList.remove('charged', 'active', 'empty', 'charging');
     if (status === 'charged') {
         slot.classList.add('charged');
     } else if (status === 'active') {
         slot.classList.add('active');
+    } else if (status === 'charging') {
+        slot.classList.add('charging');
     } else {
         slot.classList.add('empty');
     }
@@ -1183,10 +1186,14 @@ function updatePowerupUI(powerupId, status) {
     const chargeBar = slot.querySelector('.powerup-charge');
     if (chargeBar) {
         const config = POWERUPS[powerupId];
-        if (config && status === 'empty') {
+        if (config && (status === 'empty' || status === 'charging')) {
+            // Show progress toward charging
             const progress = Math.min(1, state.powerupChargeProgress / config.chargeCombo);
             chargeBar.style.width = `${progress * 100}%`;
         } else if (status === 'charged') {
+            chargeBar.style.width = '100%';
+        } else if (status === 'active') {
+            // Keep full bar while active
             chargeBar.style.width = '100%';
         } else {
             chargeBar.style.width = '0%';
@@ -1303,12 +1310,20 @@ function checkPowerupExpiration() {
         powerups.scoreBurst.active = false;
         state.activePowerupMultiplier = 1.0;
         updatePowerupUI('scoreBurst', 'empty');
+        // Remove visual effect
+        if (state.crowdBgCanvas) {
+            state.crowdBgCanvas.classList.remove('score-burst');
+        }
     }
 
     // Check Slow Motion expiration
     if (powerups.slowMotion.active && now >= powerups.slowMotion.endTime) {
         powerups.slowMotion.active = false;
         updatePowerupUI('slowMotion', 'empty');
+        // Remove visual effect
+        if (state.crowdBgCanvas) {
+            state.crowdBgCanvas.classList.remove('slow-motion');
+        }
     }
 }
 

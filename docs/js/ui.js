@@ -1603,6 +1603,9 @@ function processEndGameProgression(isWin, isMatchday = false, matchdayResult = n
         ? Math.round((totalHits / state.totalBeats) * 100)
         : 0;
 
+    // Determine if this was a comeback victory (was behind 500+ points and won)
+    const wasComeback = isWin && state.wasEverBehind500;
+
     const gameResult = {
         clubId: state.selectedClub?.id,
         chantId: state.selectedChant?.id,
@@ -1615,7 +1618,8 @@ function processEndGameProgression(isWin, isMatchday = false, matchdayResult = n
         isMatchday,
         matchdayResult,
         rivalClubId: state.rivalClub?.id,
-        feverTime: state.feverTimeAccumulated || 0
+        feverTime: state.feverTimeAccumulated || 0,
+        wasComeback  // For Comeback King achievement
     };
 
     // Save to game history for analytics
