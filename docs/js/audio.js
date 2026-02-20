@@ -58,7 +58,12 @@ export async function loadAudio(url) {
     }
 }
 
-export function playAudio(onEnded) {
+/**
+ * Play audio from buffer
+ * @param {Function} onEnded - Callback when audio finishes
+ * @param {number} [startTime=0] - Start position in seconds (for seeking)
+ */
+export function playAudio(onEnded, startTime = 0) {
     if (state.audioSource) {
         try { state.audioSource.stop(); } catch (e) {}
         try { state.audioSource.disconnect(); } catch (e) {}
@@ -71,7 +76,9 @@ export function playAudio(onEnded) {
     state.audioSource.connect(state.analyser);
     state.analyser.connect(state.masterGain);
 
-    state.audioSource.start(0);
+    // Start from specified position (clamped to valid range)
+    const safeStartTime = Math.max(0, Math.min(startTime, state.audioBuffer.duration - 0.01));
+    state.audioSource.start(0, safeStartTime);
 
     state.audioSource.onended = () => {
         if (state.currentState === GameState.PLAYING) {

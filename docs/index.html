@@ -341,6 +341,15 @@
                 <span id="current-chant-name"></span>
             </div>
 
+            <!-- Song Progress Bar -->
+            <div id="game-progress">
+                <span id="game-time">0:00</span>
+                <div id="game-progress-bar">
+                    <div id="game-progress-fill"></div>
+                </div>
+                <span id="game-duration">0:00</span>
+            </div>
+
             <!-- Perfect Streak Display -->
             <div id="perfect-streak-display" class="hidden"></div>
 
@@ -551,35 +560,57 @@
 
         <!-- Replay Screen -->
         <div id="replay-screen" class="screen">
-            <h2>REPLAY</h2>
-            <div id="replay-info">
-                <div id="replay-chant-name"></div>
-                <div id="replay-modifiers"></div>
-            </div>
-            <div id="replay-progress">
-                <span id="replay-time">0:00</span>
-                <div id="replay-progress-bar">
-                    <div id="replay-progress-fill"></div>
+            <div id="replay-content">
+                <div id="replay-header">
+                    <span id="replay-indicator">REPLAY</span>
+                    <div id="replay-info">
+                        <div id="replay-chant-name"></div>
+                        <div id="replay-modifiers"></div>
+                    </div>
                 </div>
-                <span id="replay-duration">0:00</span>
-            </div>
-            <div id="replay-stats-live">
-                <div class="replay-stat">
-                    <span class="replay-stat-label">Score</span>
-                    <span id="replay-score" class="replay-stat-value">0</span>
+                <div id="replay-progress">
+                    <span id="replay-time">0:00</span>
+                    <div id="replay-progress-bar">
+                        <div id="replay-progress-fill"></div>
+                    </div>
+                    <span id="replay-duration">0:00</span>
                 </div>
-                <div class="replay-stat">
-                    <span class="replay-stat-label">Combo</span>
-                    <span id="replay-combo" class="replay-stat-value">0</span>
+                <div id="replay-stats-live">
+                    <div class="replay-stat replay-stat-main">
+                        <span class="replay-stat-label">Score</span>
+                        <span id="replay-score" class="replay-stat-value">0</span>
+                    </div>
+                    <div class="replay-stat replay-stat-main">
+                        <span class="replay-stat-label">Combo</span>
+                        <span id="replay-combo" class="replay-stat-value">0</span>
+                    </div>
                 </div>
+                <canvas id="replay-canvas"></canvas>
+                <div id="replay-hit-breakdown">
+                    <div class="hit-count hit-perfect">
+                        <span class="hit-label">PERFECT</span>
+                        <span id="replay-perfect-count" class="hit-value">0</span>
+                    </div>
+                    <div class="hit-count hit-good">
+                        <span class="hit-label">GOOD</span>
+                        <span id="replay-good-count" class="hit-value">0</span>
+                    </div>
+                    <div class="hit-count hit-ok">
+                        <span class="hit-label">OK</span>
+                        <span id="replay-ok-count" class="hit-value">0</span>
+                    </div>
+                    <div class="hit-count hit-miss">
+                        <span class="hit-label">MISS</span>
+                        <span id="replay-miss-count" class="hit-value">0</span>
+                    </div>
+                </div>
+                <div id="replay-controls">
+                    <button id="replay-play-pause-btn" class="btn-primary">Pause</button>
+                    <button id="replay-speed-btn" class="btn-secondary">1x</button>
+                    <button id="replay-restart-btn" class="btn-secondary">Restart</button>
+                </div>
+                <button id="replay-back-btn" class="btn-secondary">Back to Results</button>
             </div>
-            <canvas id="replay-canvas"></canvas>
-            <div id="replay-controls">
-                <button id="replay-play-pause-btn" class="btn-primary">Pause</button>
-                <button id="replay-speed-btn" class="btn-secondary">1x</button>
-                <button id="replay-restart-btn" class="btn-secondary">Restart</button>
-            </div>
-            <button id="replay-back-btn" class="btn-secondary">Back to Results</button>
         </div>
 
         <!-- Replay Share Modal -->

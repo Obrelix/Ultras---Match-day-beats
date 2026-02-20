@@ -27,7 +27,7 @@ export function createReplayData() {
             mirror: false
         },
         beats: [],           // Array of beat times from detection
-        inputs: [],          // Array of { time: ms, beatIndex: number, result: string, score: number }
+        inputs: [],          // Array of input events with timing data
         finalStats: null,    // Final game stats
         duration: 0          // Total replay duration in ms
     };
@@ -55,7 +55,7 @@ export function startRecording() {
  * Records an input event during gameplay
  * @param {number} time - Timestamp relative to game start (ms)
  * @param {number} beatIndex - Index of the beat that was hit (-1 for miss with no beat)
- * @param {string} result - Hit result: 'perfect', 'good', 'ok', 'miss', 'hold_start'
+ * @param {string} result - Hit result: 'perfect', 'good', 'ok', 'miss', 'hold_start', 'shielded'
  * @param {number} score - Score gained from this input
  * @param {string} [type='tap'] - Input type: 'tap' or 'hold'
  * @param {number} [holdDuration=0] - Duration of hold in ms (for hold beats)
@@ -63,11 +63,20 @@ export function startRecording() {
 export function recordInput(time, beatIndex, result, score, type = 'tap', holdDuration = 0) {
     if (!state.isRecording || !state.replayData) return;
 
+    // Calculate timing deviation from perfect if we have a beat index
+    let deviation = 0;
+    if (beatIndex >= 0 && beatIndex < state.detectedBeats.length) {
+        const beat = state.detectedBeats[beatIndex];
+        const beatTime = typeof beat === 'object' ? beat.time * 1000 : beat * 1000;
+        deviation = Math.round(time - beatTime);
+    }
+
     const input = {
         t: Math.round(time),      // Time in ms (rounded to save space)
         b: beatIndex,             // Beat index
-        r: result.charAt(0),      // First char of result (p/g/o/m/h for hold_start)
-        s: score                  // Score
+        r: compressResult(result), // Compressed result code
+        s: score,                 // Score
+        d: deviation              // Timing deviation from beat (ms, negative = early, positive = late)
     };
 
     // Add hold-specific data
@@ -79,6 +88,24 @@ export function recordInput(time, beatIndex, result, score, type = 'tap', holdDu
 }
 
 /**
+ * Compresses result string to single character
+ * @param {string} result - Full result string
+ * @returns {string} Single character code
+ */
+function compressResult(result) {
+    const resultStr = result.toLowerCase();
+    switch (resultStr) {
+        case 'perfect': return 'p';
+        case 'good': return 'g';
+        case 'ok': return 'o';
+        case 'miss': return 'm';
+        case 'hold_start': return 'h';
+        case 'shielded': return 's';
+        default: return resultStr.charAt(0);
+    }
+}
+
+/**
  * Stops recording and finalizes the replay
  */
 export function stopRecording() {
@@ -86,13 +113,23 @@ export function stopRecording() {
 
     state.replayData.beats = [...state.detectedBeats];
     state.replayData.duration = performance.now() - state.gameStartTime;
+
+    // Calculate accuracy percentage
+    const totalHits = state.playerStats.perfect + state.playerStats.good + state.playerStats.ok + state.playerStats.miss;
+    const successfulHits = state.playerStats.perfect + state.playerStats.good + state.playerStats.ok;
+    const accuracy = totalHits > 0 ? Math.round((successfulHits / totalHits) * 100) : 0;
+
     state.replayData.finalStats = {
         score: state.playerScore,
         perfect: state.playerStats.perfect,
         good: state.playerStats.good,
         ok: state.playerStats.ok,
         miss: state.playerStats.miss,
-        maxCombo: state.playerMaxCombo
+        maxCombo: state.playerMaxCombo,
+        maxPerfectStreak: state.maxPerfectStreak,
+        accuracy: accuracy,
+        aiScore: state.aiScore,
+        totalBeats: state.totalBeats
     };
 
     state.isRecording = false;
@@ -111,33 +148,77 @@ export function getReplayData() {
 // ============================================
 
 /**
- * Compresses a string using simple RLE-like compression
- * @param {string} str - String to compress
- * @returns {string} Compressed string
+ * Compresses inputs using delta encoding for timestamps
+ * @param {Array} inputs - Array of input objects
+ * @returns {Array} Compressed inputs with delta times
  */
-function compress(str) {
-    if (!REPLAY.COMPRESSION_ENABLED) return str;
+function compressInputs(inputs) {
+    if (!inputs || inputs.length === 0) return [];
 
-    // Use built-in compression if available (modern browsers)
-    try {
-        const encoder = new TextEncoder();
-        const data = encoder.encode(str);
+    const compressed = [];
+    let lastTime = 0;
 
-        // Simple delta encoding for the time values to reduce size
-        return str;  // For now, just return as-is (compression can be added later)
-    } catch (e) {
-        return str;
+    for (const input of inputs) {
+        const deltaTime = input.t - lastTime;
+        lastTime = input.t;
+
+        // Create compressed input with delta time
+        const comp = {
+            dt: deltaTime,  // Delta time instead of absolute
+            b: input.b,
+            r: input.r,
+            s: input.s
+        };
+
+        // Only include deviation if non-zero
+        if (input.d && input.d !== 0) {
+            comp.d = input.d;
+        }
+
+        // Include hold duration if present
+        if (input.h !== undefined) {
+            comp.h = input.h;
+        }
+
+        compressed.push(comp);
     }
+
+    return compressed;
 }
 
 /**
- * Decompresses a string
- * @param {string} str - Compressed string
- * @returns {string} Decompressed string
+ * Decompresses inputs from delta encoding
+ * @param {Array} compressed - Compressed inputs with delta times
+ * @returns {Array} Decompressed inputs with absolute times
  */
-function decompress(str) {
-    if (!REPLAY.COMPRESSION_ENABLED) return str;
-    return str;  // Match compress for now
+function decompressInputs(compressed) {
+    if (!compressed || compressed.length === 0) return [];
+
+    const inputs = [];
+    let currentTime = 0;
+
+    for (const comp of compressed) {
+        currentTime += comp.dt || comp.t || 0;  // Handle both delta and absolute times
+
+        const input = {
+            t: currentTime,
+            b: comp.b,
+            r: comp.r,
+            s: comp.s
+        };
+
+        if (comp.d !== undefined) {
+            input.d = comp.d;
+        }
+
+        if (comp.h !== undefined) {
+            input.h = comp.h;
+        }
+
+        inputs.push(input);
+    }
+
+    return inputs;
 }
 
 /**
@@ -149,7 +230,7 @@ export function encodeReplay(replayData) {
     if (!replayData) return null;
 
     try {
-        // Create a minimal version for sharing
+        // Create a minimal version for sharing with compressed inputs
         const minimal = {
             v: replayData.version,
             c: replayData.clubId,
@@ -160,18 +241,17 @@ export function encodeReplay(replayData) {
                 replayData.modifiers.hidden ? 1 : 0,
                 replayData.modifiers.mirror ? 1 : 0
             ],
-            i: replayData.inputs,
+            i: compressInputs(replayData.inputs),
             s: replayData.finalStats
         };
 
         const json = JSON.stringify(minimal);
-        const compressed = compress(json);
 
         // Encode to base64
-        const base64 = btoa(unescape(encodeURIComponent(compressed)));
+        const base64 = btoa(unescape(encodeURIComponent(json)));
 
-        // Add prefix for identification
-        return 'UMB1_' + base64;
+        // Add prefix for identification (version 2 with compression)
+        return 'UMB2_' + base64;
     } catch (e) {
         console.error('Failed to encode replay:', e);
         return null;
@@ -187,21 +267,29 @@ export function decodeReplay(code) {
     if (!code || typeof code !== 'string') return null;
 
     try {
-        // Check prefix
-        if (!code.startsWith('UMB1_')) {
+        // Check prefix (support both old and new formats)
+        let base64, useCompression = false;
+        if (code.startsWith('UMB2_')) {
+            base64 = code.slice(5);
+            useCompression = true;
+        } else if (code.startsWith('UMB1_')) {
+            base64 = code.slice(5);
+            useCompression = false;
+        } else {
             console.error('Invalid replay code format');
             return null;
         }
 
-        const base64 = code.slice(5);  // Remove prefix
-        const compressed = decodeURIComponent(escape(atob(base64)));
-        const json = decompress(compressed);
+        const json = decodeURIComponent(escape(atob(base64)));
         const minimal = JSON.parse(json);
 
         // Validate version
         if (minimal.v !== REPLAY.VERSION) {
             console.warn('Replay version mismatch');
         }
+
+        // Decompress inputs if needed
+        const inputs = useCompression ? decompressInputs(minimal.i) : minimal.i;
 
         // Reconstruct full replay data
         return {
@@ -217,7 +305,7 @@ export function decodeReplay(code) {
                 mirror: minimal.m[2] === 1
             },
             beats: [],  // Will be regenerated from audio
-            inputs: minimal.i,
+            inputs: inputs,
             finalStats: minimal.s,
             duration: 0
         };
@@ -235,7 +323,7 @@ export function decodeReplay(code) {
 export function validateReplayCode(code) {
     if (!code || typeof code !== 'string') return false;
     if (code.length > REPLAY.MAX_CODE_LENGTH) return false;
-    if (!code.startsWith('UMB1_')) return false;
+    if (!code.startsWith('UMB1_') && !code.startsWith('UMB2_')) return false;
 
     // Try to decode it
     const decoded = decodeReplay(code);
@@ -275,7 +363,8 @@ export function getNextReplayInput(currentTime) {
             time: nextInput.t,
             beatIndex: nextInput.b,
             result: expandResult(nextInput.r),
-            score: nextInput.s
+            score: nextInput.s,
+            deviation: nextInput.d || 0
         };
 
         // Include hold-specific data if present
@@ -293,6 +382,24 @@ export function getNextReplayInput(currentTime) {
 }
 
 /**
+ * Gets all inputs for a specific beat
+ * @param {number} beatIndex - Beat index to find inputs for
+ * @returns {Array} Array of inputs for this beat
+ */
+export function getInputsForBeat(beatIndex) {
+    if (!state.replayData || !state.replayData.inputs) return [];
+
+    return state.replayData.inputs
+        .filter(input => input.b === beatIndex)
+        .map(input => ({
+            time: input.t,
+            result: expandResult(input.r),
+            score: input.s,
+            deviation: input.d || 0
+        }));
+}
+
+/**
  * Expands single-char result back to full string
  * @param {string} char - Single character result
  * @returns {string} Full result string
@@ -303,7 +410,8 @@ function expandResult(char) {
         case 'g': return 'good';
         case 'o': return 'ok';
         case 'm': return 'miss';
-        case 'h': return 'hold_start';  // Hold beat initiation
+        case 'h': return 'hold_start';
+        case 's': return 'shielded';
         default: return 'miss';
     }
 }
@@ -323,6 +431,39 @@ export function isReplayFinished() {
 export function stopPlayback() {
     state.isReplaying = false;
     state.replayInputIndex = 0;
+}
+
+/**
+ * Seeks to a specific time in the replay
+ * @param {number} targetTime - Time to seek to (ms)
+ */
+export function seekToTime(targetTime) {
+    if (!state.replayData || !state.replayData.inputs) return;
+
+    // Find the index of the first input after targetTime
+    let newIndex = 0;
+    for (let i = 0; i < state.replayData.inputs.length; i++) {
+        if (state.replayData.inputs[i].t > targetTime) {
+            break;
+        }
+        newIndex = i + 1;
+    }
+
+    state.replayInputIndex = newIndex;
+}
+
+/**
+ * Gets replay progress info
+ * @returns {Object} Progress info with current index and total inputs
+ */
+export function getReplayProgress() {
+    if (!state.replayData) return { current: 0, total: 0, percentage: 0 };
+
+    const total = state.replayData.inputs.length;
+    const current = state.replayInputIndex;
+    const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
+
+    return { current, total, percentage };
 }
 
 // ============================================
@@ -350,4 +491,40 @@ export function formatReplayDuration(durationMs) {
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Calculates timing accuracy statistics from replay
+ * @returns {Object} Timing stats including avg deviation, early/late counts
+ */
+export function getTimingStats() {
+    if (!state.replayData || !state.replayData.inputs) {
+        return { avgDeviation: 0, earlyCount: 0, lateCount: 0, perfectTimingCount: 0 };
+    }
+
+    const inputs = state.replayData.inputs.filter(i => i.b >= 0 && i.r !== 'm');
+    if (inputs.length === 0) {
+        return { avgDeviation: 0, earlyCount: 0, lateCount: 0, perfectTimingCount: 0 };
+    }
+
+    let totalDeviation = 0;
+    let earlyCount = 0;
+    let lateCount = 0;
+    let perfectTimingCount = 0;
+
+    for (const input of inputs) {
+        const dev = input.d || 0;
+        totalDeviation += Math.abs(dev);
+
+        if (dev < -50) earlyCount++;
+        else if (dev > 50) lateCount++;
+        else perfectTimingCount++;
+    }
+
+    return {
+        avgDeviation: Math.round(totalDeviation / inputs.length),
+        earlyCount,
+        lateCount,
+        perfectTimingCount
+    };
 }

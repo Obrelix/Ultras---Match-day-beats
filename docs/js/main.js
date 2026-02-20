@@ -29,7 +29,7 @@ import {
     startRecording, stopRecording, recordInput, getReplayData,
     encodeReplay, decodeReplay, validateReplayCode,
     preparePlayback, getNextReplayInput, isReplayFinished, stopPlayback,
-    formatReplayDuration
+    formatReplayDuration, seekToTime, getTimingStats
 } from './replay.js';
 
 // ============================================
@@ -322,6 +322,9 @@ async function startMatchdayChant() {
         state.audioStartTime = state.audioContext.currentTime;
         state.gameStartTime = performance.now();
 
+        // Initialize game progress bar
+        initGameProgress();
+
         // Trigger game start trash talk
         setTimeout(() => triggerTrashTalk('gameStart'), 500);
 
@@ -432,6 +435,9 @@ async function startGame() {
         state.audioStartTime = state.audioContext.currentTime;
         state.gameStartTime = performance.now();
 
+        // Initialize game progress bar
+        initGameProgress();
+
         // Trigger game start trash talk
         setTimeout(() => triggerTrashTalk('gameStart'), 500);
 
@@ -488,6 +494,59 @@ async function countdown() {
             }
         }, 800);
     });
+}
+
+// Game progress bar elements (cached for performance)
+const gameProgressElements = {
+    time: null,
+    duration: null,
+    fill: null
+};
+
+/**
+ * Format seconds as MM:SS
+ */
+function formatGameTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Initialize game progress bar with duration
+ */
+function initGameProgress() {
+    // Cache element references
+    gameProgressElements.time = document.getElementById('game-time');
+    gameProgressElements.duration = document.getElementById('game-duration');
+    gameProgressElements.fill = document.getElementById('game-progress-fill');
+
+    if (state.audioBuffer && gameProgressElements.duration) {
+        gameProgressElements.duration.textContent = formatGameTime(state.audioBuffer.duration);
+    }
+    if (gameProgressElements.time) {
+        gameProgressElements.time.textContent = '0:00';
+    }
+    if (gameProgressElements.fill) {
+        gameProgressElements.fill.style.width = '0%';
+    }
+}
+
+/**
+ * Update game progress bar during gameplay
+ */
+function updateGameProgress(audioElapsed) {
+    if (!state.audioBuffer) return;
+
+    const duration = state.audioBuffer.duration;
+    const progress = Math.min(1, audioElapsed / duration);
+
+    if (gameProgressElements.fill) {
+        gameProgressElements.fill.style.width = `${progress * 100}%`;
+    }
+    if (gameProgressElements.time) {
+        gameProgressElements.time.textContent = formatGameTime(audioElapsed);
+    }
 }
 
 function gameLoop() {
@@ -555,6 +614,9 @@ function gameLoop() {
             state._lastIntenseState = isIntense;
         }
     }
+
+    // Update game progress bar
+    updateGameProgress(audioElapsed);
 
     // Draw audio visualizer (crowd is drawn by persistent crowdBg loop)
     drawVisualizer();
@@ -1528,9 +1590,104 @@ elements.replayBackBtn?.addEventListener('click', () => {
     showScreen('results');
 });
 
+// Seekable progress bar
+const progressBar = document.getElementById('replay-progress-bar');
+progressBar?.addEventListener('click', (e) => {
+    const replayData = getReplayData();
+    if (!replayData || !replayData.duration) return;
+
+    const rect = progressBar.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const progress = Math.max(0, Math.min(1, clickX / rect.width));
+    const targetTime = progress * replayData.duration;
+
+    // Seek in replay
+    seekToTime(targetTime);
+
+    // Reset stats for recalculation
+    resetGameState();
+    preparePlayback(replayData);
+
+    // Reprocess all inputs up to the target time
+    for (const input of replayData.inputs) {
+        if (input.t > targetTime) break;
+        const expandedInput = {
+            time: input.t,
+            beatIndex: input.b,
+            result: expandResultChar(input.r),
+            score: input.s,
+            deviation: input.d || 0
+        };
+        processReplayInput(expandedInput, input.t);
+    }
+
+    // Seek audio (recreate source at new position)
+    if (state.audioContext && state.audioBuffer) {
+        const wasPlaying = !replayPaused;
+        stopAudio();
+        playAudio(() => {
+            stopReplayPlayback();
+            showScreen('results');
+        }, targetTime / 1000);
+        state.audioStartTime = state.audioContext.currentTime - (targetTime / 1000);
+
+        if (!wasPlaying) {
+            state.audioContext.suspend();
+        }
+    }
+
+    // Update progress display
+    elements.replayProgressFill.style.width = `${progress * 100}%`;
+    elements.replayTime.textContent = formatReplayDuration(targetTime);
+});
+
+// Helper to expand result character (matches replay.js expandResult)
+function expandResultChar(char) {
+    switch (char) {
+        case 'p': return 'perfect';
+        case 'g': return 'good';
+        case 'o': return 'ok';
+        case 'm': return 'miss';
+        case 'h': return 'hold_start';
+        case 's': return 'shielded';
+        default: return 'miss';
+    }
+}
+
 // ============================================
 // Replay Playback Functions
 // ============================================
+
+// Replay visualization state
+let replayInputMarkers = [];  // Store input markers for visualization
+let replayLastFeedback = { text: '', alpha: 0, color: '#fff', time: 0 };
+let replayCanvasDpr = 1;  // Store DPR for drawing calculations
+
+/**
+ * Initialize or reinitialize the replay canvas with proper dimensions
+ * Must be called after the replay screen is visible
+ */
+function initReplayCanvas() {
+    const canvas = elements.replayCanvas;
+    if (!canvas) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    replayCanvasDpr = dpr;
+
+    // Get actual rendered dimensions
+    const rect = canvas.getBoundingClientRect();
+
+    // Only initialize if we have valid dimensions
+    if (rect.width > 0 && rect.height > 0) {
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(1, 0, 0, 1, 0, 0);  // Reset any previous transform
+        ctx.scale(dpr, dpr);
+        ctx.fillStyle = '#1a1a2e';
+        ctx.fillRect(0, 0, rect.width, rect.height);
+    }
+}
 
 async function startReplayPlayback(replayData) {
     // Reset game state for fresh replay
@@ -1540,14 +1697,22 @@ async function startReplayPlayback(replayData) {
     // Reset playback state
     replaySpeed = 1;
     replayPaused = false;
+    replayInputMarkers = [];
+    replayLastFeedback = { text: '', alpha: 0, color: '#fff', time: 0 };
     elements.replaySpeedBtn.textContent = '1x';
     elements.replayPlayPauseBtn.textContent = 'Pause';
 
     // Update UI
     elements.replayChantName.textContent = replayData.chantName || 'Unknown Chant';
 
+    // Show difficulty badge
+    const diffBadge = document.createElement('span');
+    diffBadge.className = 'modifier-badge difficulty-badge';
+    diffBadge.textContent = replayData.difficulty?.toUpperCase() || 'NORMAL';
+
     // Show modifiers
     elements.replayModifiers.innerHTML = '';
+    elements.replayModifiers.appendChild(diffBadge);
     for (const [modId, active] of Object.entries(replayData.modifiers)) {
         if (!active) continue;
         const config = MODIFIERS[modId];
@@ -1558,18 +1723,17 @@ async function startReplayPlayback(replayData) {
         elements.replayModifiers.appendChild(badge);
     }
 
-    // Initialize canvas
-    const canvas = elements.replayCanvas;
-    if (canvas) {
-        const ctx = canvas.getContext('2d');
-        canvas.width = canvas.offsetWidth;
-        canvas.height = canvas.offsetHeight;
-        ctx.fillStyle = '#1a1a2e';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
+    // Reset live stats display
+    updateReplayLiveStats();
 
+    // Show screen FIRST so canvas has dimensions
     showScreen('replay');
     setCrowdMode('gameplay');
+
+    // Initialize canvas with proper DPI scaling (must be after showScreen)
+    // Use requestAnimationFrame to ensure layout is complete
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    initReplayCanvas();
 
     // Load audio
     elements.loadingOverlay.classList.remove('hidden');
@@ -1633,8 +1797,13 @@ function replayLoop() {
         // Process inputs from replay
         let input;
         while ((input = getNextReplayInput(audioElapsed)) !== null) {
-            // Simulate the hit
-            processReplayInput(input);
+            processReplayInput(input, audioElapsed);
+        }
+
+        // Update feedback fade
+        if (replayLastFeedback.alpha > 0) {
+            const feedbackAge = now - replayLastFeedback.time;
+            replayLastFeedback.alpha = Math.max(0, 1 - feedbackAge / 500);
         }
 
         // Draw visualization
@@ -1644,22 +1813,27 @@ function replayLoop() {
     replayLoopId = requestAnimationFrame(replayLoop);
 }
 
-function processReplayInput(input) {
-    // Update stats based on replay input
+function processReplayInput(input, currentTime) {
     const result = input.result;
 
-    if (result === 'perfect') {
+    // Handle shielded as ok for stat purposes
+    const effectiveResult = result === 'shielded' ? 'ok' : result;
+
+    if (effectiveResult === 'perfect') {
         state.playerStats.perfect++;
         state.playerCombo++;
-    } else if (result === 'good') {
+    } else if (effectiveResult === 'good') {
         state.playerStats.good++;
         state.playerCombo++;
-    } else if (result === 'ok') {
+    } else if (effectiveResult === 'ok') {
         state.playerStats.ok++;
         state.playerCombo++;
-    } else {
-        state.playerStats.miss++;
-        state.playerCombo = 0;
+    } else if (effectiveResult === 'miss' || effectiveResult === 'hold_start') {
+        if (effectiveResult === 'miss') {
+            state.playerStats.miss++;
+            state.playerCombo = 0;
+        }
+        // hold_start doesn't count as a stat, just marks the beginning
     }
 
     state.playerScore += input.score;
@@ -1670,6 +1844,31 @@ function processReplayInput(input) {
     // Update UI
     elements.replayScore.textContent = state.playerScore;
     elements.replayCombo.textContent = state.playerCombo;
+    updateReplayLiveStats();
+
+    // Add input marker for visualization
+    if (result !== 'hold_start') {
+        replayInputMarkers.push({
+            time: currentTime,
+            beatIndex: input.beatIndex,
+            result: result,
+            deviation: input.deviation || 0,
+            spawnTime: performance.now()
+        });
+
+        // Keep only recent markers (last 3 seconds)
+        const cutoff = performance.now() - 3000;
+        replayInputMarkers = replayInputMarkers.filter(m => m.spawnTime > cutoff);
+
+        // Update feedback text
+        const feedbackText = result === 'shielded' ? 'SHIELDED!' : result.toUpperCase();
+        replayLastFeedback = {
+            text: feedbackText,
+            alpha: 1,
+            color: getResultColor(result),
+            time: performance.now()
+        };
+    }
 
     // Mark beat result for visualization
     if (input.beatIndex >= 0) {
@@ -1677,56 +1876,255 @@ function processReplayInput(input) {
     }
 }
 
+function getResultColor(result) {
+    switch (result) {
+        case 'perfect': return '#00ff88';
+        case 'good': return '#88ff00';
+        case 'ok': return '#ffaa00';
+        case 'miss': return '#ff4444';
+        case 'shielded': return '#44aaff';
+        default: return '#ffffff';
+    }
+}
+
+function updateReplayLiveStats() {
+    // Update hit breakdown if elements exist
+    const perfectEl = document.getElementById('replay-perfect-count');
+    const goodEl = document.getElementById('replay-good-count');
+    const okEl = document.getElementById('replay-ok-count');
+    const missEl = document.getElementById('replay-miss-count');
+
+    if (perfectEl) perfectEl.textContent = state.playerStats.perfect;
+    if (goodEl) goodEl.textContent = state.playerStats.good;
+    if (okEl) okEl.textContent = state.playerStats.ok;
+    if (missEl) missEl.textContent = state.playerStats.miss;
+}
+
 function drawReplayVisualization(currentTime) {
     const canvas = elements.replayCanvas;
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
-    const w = canvas.width;
-    const h = canvas.height;
-    const midY = h / 2;
+    const dpr = replayCanvasDpr || window.devicePixelRatio || 1;
 
-    // Clear
-    ctx.fillStyle = '#1a1a2e';
+    // Check if canvas needs reinitialization (was 0 when first created)
+    if (canvas.width === 0 || canvas.height === 0) {
+        initReplayCanvas();
+        if (canvas.width === 0 || canvas.height === 0) return;  // Still no dimensions, skip drawing
+    }
+
+    const w = canvas.width / dpr;
+    const h = canvas.height / dpr;
+    const now = performance.now();
+
+    // Clear with gradient background
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+    bgGrad.addColorStop(0, '#0d0d1a');
+    bgGrad.addColorStop(0.5, '#1a1a2e');
+    bgGrad.addColorStop(1, '#0d0d1a');
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, w, h);
 
     const beats = state.detectedBeats;
     if (!beats || beats.length === 0) return;
 
-    const duration = getReplayData()?.duration || (state.audioBuffer?.duration * 1000) || 1;
+    const replayData = getReplayData();
+    const duration = replayData?.duration || (state.audioBuffer?.duration * 1000) || 1;
+    const durationSec = duration / 1000;
     const currentTimeSec = currentTime / 1000;
 
-    // Draw beat markers
-    const primary = state.selectedClub?.colors?.primary || '#006633';
+    // Calculate visible window (show ~8 seconds around playhead)
+    const windowSize = 8;  // seconds
+    const windowStart = Math.max(0, currentTimeSec - windowSize * 0.3);
+    const windowEnd = Math.min(durationSec, currentTimeSec + windowSize * 0.7);
 
+    // Draw timing zones
+    const hitLineX = w * 0.3;  // Hit line at 30% from left
+    const zonePadding = 10;
+
+    // Draw timing zone background
+    ctx.fillStyle = 'rgba(0, 100, 50, 0.1)';
+    ctx.fillRect(hitLineX - 60, 0, 120, h);
+
+    // Draw hit line
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(hitLineX, 10);
+    ctx.lineTo(hitLineX, h - 10);
+    ctx.stroke();
+
+    // Draw beat track line
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, h / 2);
+    ctx.lineTo(w, h / 2);
+    ctx.stroke();
+
+    // Calculate x position for a given time
+    const timeToX = (time) => {
+        const relativeTime = time - currentTimeSec;
+        const normalizedPos = (relativeTime + windowSize * 0.3) / windowSize;
+        return normalizedPos * w;
+    };
+
+    // Draw beats
     for (let i = 0; i < beats.length; i++) {
         const beat = beats[i];
         const beatTime = typeof beat === 'object' ? beat.time : beat;
-        const x = (beatTime / (duration / 1000)) * w;
+        const isHold = typeof beat === 'object' && beat.type === 'hold';
 
-        // Determine color based on result
-        let color = '#444444';  // Default: unplayed
+        // Skip beats outside visible window
+        if (beatTime < windowStart - 0.5 || beatTime > windowEnd + 0.5) continue;
+
+        const x = timeToX(beatTime);
         const result = state.beatResults[i];
-        if (result === 'perfect') color = '#00ff88';
-        else if (result === 'good') color = '#88ff00';
-        else if (result === 'ok') color = '#ffaa00';
-        else if (result === 'miss') color = '#ff4444';
-        else if (beatTime < currentTimeSec) color = '#666666';  // Passed but not recorded
 
+        // Get color based on result
+        let color = '#555555';  // Default: unplayed
+        let alpha = 1;
+
+        if (result) {
+            color = getResultColor(result);
+        } else if (beatTime < currentTimeSec) {
+            color = '#333333';  // Passed but not hit
+            alpha = 0.5;
+        }
+
+        ctx.globalAlpha = alpha;
+
+        if (isHold) {
+            // Draw hold beat bar
+            const endX = timeToX(beat.endTime);
+            const barHeight = 20;
+
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            roundedRectReplay(ctx, Math.min(x, endX), h / 2 - barHeight / 2, Math.abs(endX - x), barHeight, 10);
+            ctx.fill();
+
+            // Draw end cap
+            ctx.beginPath();
+            ctx.arc(endX, h / 2, 8, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Draw beat marker (circle)
+        const markerSize = result ? 12 : 10;
         ctx.fillStyle = color;
         ctx.beginPath();
-        ctx.arc(x, midY, 5, 0, Math.PI * 2);
+        ctx.arc(x, h / 2, markerSize, 0, Math.PI * 2);
         ctx.fill();
+
+        // Add glow for hit beats
+        if (result && result !== 'miss') {
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.arc(x, h / 2, markerSize - 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+
+        // Draw beat index number below
+        ctx.globalAlpha = 0.5;
+        ctx.fillStyle = '#888';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(i + 1, x, h / 2 + 25);
     }
 
-    // Draw playhead
-    const playheadX = (currentTimeSec / (duration / 1000)) * w;
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2;
+    ctx.globalAlpha = 1;
+
+    // Draw input markers (ghost inputs showing when player pressed)
+    for (const marker of replayInputMarkers) {
+        const age = now - marker.spawnTime;
+        const alpha = Math.max(0, 1 - age / 2000);
+
+        if (alpha <= 0) continue;
+
+        // Draw deviation indicator
+        if (marker.beatIndex >= 0 && marker.beatIndex < beats.length) {
+            const beat = beats[marker.beatIndex];
+            const beatTime = typeof beat === 'object' ? beat.time : beat;
+            const x = timeToX(beatTime);
+
+            // Draw timing deviation line
+            const devOffset = marker.deviation / 50;  // Scale deviation
+            const devX = x + devOffset * 30;
+
+            ctx.globalAlpha = alpha * 0.8;
+            ctx.strokeStyle = getResultColor(marker.result);
+            ctx.lineWidth = 2;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(x, h / 2 - 20);
+            ctx.lineTo(devX, h / 2 - 35);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw timing text
+            if (Math.abs(marker.deviation) > 10) {
+                ctx.fillStyle = getResultColor(marker.result);
+                ctx.font = 'bold 11px monospace';
+                ctx.textAlign = 'center';
+                const devText = marker.deviation > 0 ? `+${marker.deviation}ms` : `${marker.deviation}ms`;
+                ctx.fillText(devText, devX, h / 2 - 40);
+            }
+        }
+    }
+
+    ctx.globalAlpha = 1;
+
+    // Draw feedback text
+    if (replayLastFeedback.alpha > 0) {
+        ctx.globalAlpha = replayLastFeedback.alpha;
+        ctx.fillStyle = replayLastFeedback.color;
+        ctx.font = 'bold 28px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Add text shadow
+        ctx.shadowColor = replayLastFeedback.color;
+        ctx.shadowBlur = 15;
+        ctx.fillText(replayLastFeedback.text, hitLineX, h / 2 - 50);
+        ctx.shadowBlur = 0;
+    }
+
+    ctx.globalAlpha = 1;
+
+    // Draw playhead indicator
+    ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.moveTo(playheadX, 0);
-    ctx.lineTo(playheadX, h);
-    ctx.stroke();
+    ctx.moveTo(hitLineX, 5);
+    ctx.lineTo(hitLineX - 8, 0);
+    ctx.lineTo(hitLineX + 8, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(hitLineX, h - 5);
+    ctx.lineTo(hitLineX - 8, h);
+    ctx.lineTo(hitLineX + 8, h);
+    ctx.closePath();
+    ctx.fill();
+}
+
+// Helper function for rounded rectangles in replay
+function roundedRectReplay(ctx, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.arcTo(x + w, y, x + w, y + r, r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+    ctx.lineTo(x + r, y + h);
+    ctx.arcTo(x, y + h, x, y + h - r, r);
+    ctx.lineTo(x, y + r);
+    ctx.arcTo(x, y, x + r, y, r);
+    ctx.closePath();
 }
 
 function stopReplayPlayback() {
@@ -1736,6 +2134,7 @@ function stopReplayPlayback() {
         cancelAnimationFrame(replayLoopId);
         replayLoopId = null;
     }
+    replayInputMarkers = [];
     setCrowdMode('idle');
 }
 
@@ -1898,6 +2297,9 @@ async function startCustomChantGame(chantId) {
         playAudio(endGame);
         state.audioStartTime = state.audioContext.currentTime;
         state.gameStartTime = performance.now();
+
+        // Initialize game progress bar
+        initGameProgress();
 
         gameLoop();
     } catch (error) {
