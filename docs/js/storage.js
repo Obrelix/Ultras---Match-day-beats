@@ -2,6 +2,9 @@
 // storage.js — localStorage persistence layer
 // ============================================
 
+import { createLogger } from './config.js';
+
+const log = createLogger('Storage');
 const STORAGE_KEY = 'ultras_matchday_beats';
 
 function getStore() {
@@ -9,7 +12,7 @@ function getStore() {
         const raw = localStorage.getItem(STORAGE_KEY);
         return raw ? JSON.parse(raw) : {};
     } catch (e) {
-        console.warn('Failed to read from localStorage:', e.message);
+        log.warn('Failed to read from localStorage', e.message);
         return {};
     }
 }
@@ -18,7 +21,7 @@ function setStore(data) {
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch (e) {
-        console.warn('Failed to write to localStorage:', e.message);
+        log.warn('Failed to write to localStorage', e.message);
     }
 }
 

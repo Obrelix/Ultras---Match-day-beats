@@ -6,6 +6,9 @@ import { state } from './state.js';
 import { elements } from './ui.js';
 import { getComboMultiplier } from './input.js';
 import { isChoreoUnlocked, isDebugMode } from './progression.js';
+import { RENDER_CONFIG, COMBO_VISUALS, DEFAULT_COLORS, createLogger } from './config.js';
+
+const log = createLogger('Crowd');
 
 // ============================================
 // Performance Optimization: Gradient & Color Cache
@@ -59,7 +62,7 @@ function advanceGradientFrame() {
     _gradientCache.frameId++;
     // Clear old gradients less frequently (every ~30 seconds at 60fps)
     // This preserves cache benefits while preventing unbounded memory growth
-    if (_gradientCache.frameId % 1800 === 0) {
+    if (_gradientCache.frameId % RENDER_CONFIG.GRADIENT_CACHE_RESET_FRAMES === 0) {
         _gradientCache.gradients.clear();
     }
 }
@@ -71,7 +74,7 @@ function advanceGradientFrame() {
 
 const _frameCache = {
     reducedEffects: false,
-    primaryColor: '#006633',
+    primaryColor: DEFAULT_COLORS.PRIMARY,
     secondaryColor: '#FFFFFF',
     crowdEmotion: 'neutral',
     isFrenzy: false,
@@ -90,7 +93,7 @@ function updateFrameCache(now) {
     _frameCache.reducedEffects = state.settings?.reducedEffects === true;  // Guard against undefined settings
     // Safely access colors with fallbacks
     const colors = state.cachedColors || (state.selectedClub?.colors) || null;
-    _frameCache.primaryColor = colors?.primary || '#006633';
+    _frameCache.primaryColor = colors?.primary || DEFAULT_COLORS.PRIMARY;
     _frameCache.secondaryColor = colors?.secondary || '#FFFFFF';
     _frameCache.crowdEmotion = state.crowdEmotion || 'neutral';
     _frameCache.isFrenzy = (state.playerCombo || 0) > 5 || state.crowdEmotion === 'celebrate';
@@ -175,19 +178,30 @@ function drawScreenFlash(ctx, w, h, now) {
 
 // Get combo color tint for continuous ambient effect at high combos
 function getComboColorTint(combo, now) {
-    if (combo < 10) return null;
+    const tintConfig = COMBO_VISUALS.TINT_THRESHOLDS;
+    if (combo < COMBO_VISUALS.SCREEN_SHAKE_COMBO_THRESHOLD) return null;
+
+    // Determine which threshold we're at
+    let config;
+    if (combo >= 100) {
+        config = tintConfig[100];
+    } else if (combo >= 50) {
+        config = tintConfig[50];
+    } else if (combo >= 25) {
+        config = tintConfig[25];
+    } else {
+        config = tintConfig[10];
+    }
 
     // Pulsing intensity
-    const pulseSpeed = combo >= 50 ? 150 : combo >= 25 ? 200 : 300;
-    const baseAlpha = combo >= 50 ? 0.08 : combo >= 25 ? 0.05 : 0.03;
     const pulseRange = combo >= 50 ? 0.04 : 0.02;
-    const alpha = baseAlpha + Math.sin(now / pulseSpeed) * pulseRange;
+    const alpha = config.alpha + Math.sin(now / config.pulseMs) * pulseRange;
 
     // Color based on combo level
     let color;
-    if (combo >= 100) {
+    if (config.rainbow) {
         // Rainbow cycling at 100+
-        const hue = (now / 20) % 360;
+        const hue = (now / config.hueDiv) % 360;
         color = `hsla(${hue}, 100%, 60%, ${alpha})`;
     } else if (combo >= 50) {
         color = `rgba(255, 68, 0, ${alpha})`; // Deep orange/red
@@ -1157,7 +1171,7 @@ export function generateTifoMap(badgePath, canvasWidth, canvasHeight) {
             try {
                 intermediateCtx.drawImage(img, offsetX, offsetY, drawW, drawH);
             } catch (e) {
-                console.warn('Tifo: Failed to draw image to canvas', e);
+                log.warn('Tifo: Failed to draw image to canvas', e);
                 state.tifoReady = false;
                 resolve(null);
                 return;
@@ -1167,7 +1181,7 @@ export function generateTifoMap(badgePath, canvasWidth, canvasHeight) {
             try {
                 imageData = intermediateCtx.getImageData(0, 0, canvasW, canvasH);
             } catch (e) {
-                console.warn('Tifo: getImageData failed (CORS?)', e);
+                log.warn('Tifo: getImageData failed (CORS?)', e);
                 state.tifoReady = false;
                 resolve(null);
                 return;
@@ -1233,7 +1247,7 @@ export function generateTifoMap(badgePath, canvasWidth, canvasHeight) {
         };
 
         img.onerror = (e) => {
-            console.warn('Tifo: Failed to load badge', badgePath, e);
+            log.warn(`Tifo: Failed to load badge ${badgePath}`, e);
             state.tifoReady = false;
             resolve(null);
         };

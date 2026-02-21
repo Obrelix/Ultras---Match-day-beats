@@ -2,7 +2,9 @@
 // leaderboard.js — Firebase leaderboard service
 // ============================================
 
-import { LEADERBOARD } from './config.js';
+import { LEADERBOARD, createLogger } from './config.js';
+
+const log = createLogger('Leaderboard');
 import {
     loadPlayerProfile, savePlayerProfile,
     loadOfflineQueue, saveOfflineQueue,
@@ -26,7 +28,7 @@ export async function initLeaderboard() {
 
     // Check if Firebase config is placeholder
     if (LEADERBOARD.FIREBASE.apiKey === 'YOUR_API_KEY') {
-        console.warn('Leaderboard: Firebase not configured. Using offline mode.');
+        log.warn('Firebase not configured - using offline mode');
         return false;
     }
 
@@ -57,9 +59,9 @@ export async function initLeaderboard() {
         // Handle common auth errors gracefully
         if (error.code === 'auth/requests-from-referer-are-blocked' ||
             (error.message && error.message.includes('requests-from-referer'))) {
-            console.warn('Leaderboard: Domain not authorized in Firebase. Add this domain to Firebase Auth settings.');
+            log.warn('Domain not authorized in Firebase - add this domain to Firebase Auth settings');
         } else {
-            console.error('Leaderboard: Failed to initialize Firebase:', error);
+            log.error('Failed to initialize Firebase', error);
         }
         return false;
     }
@@ -158,10 +160,10 @@ export async function submitScore(scoreData) {
     } catch (error) {
         // Check for permission denied
         if (error.message && error.message.includes('PERMISSION_DENIED')) {
-            console.warn('Leaderboard: Database write permission denied. Check Firebase rules.');
+            log.warn('Database write permission denied - check Firebase rules');
             permissionDenied = true;
         } else {
-            console.error('Leaderboard: Failed to submit score:', error);
+            log.error('Failed to submit score', error);
         }
         queueOfflineSubmission(entry);
         return { success: true, offline: true };
@@ -238,7 +240,7 @@ export async function fetchLeaderboard(clubId, chantId, difficulty) {
 
         return { entries, fromCache: false };
     } catch (error) {
-        console.error('Leaderboard: Failed to fetch:', error);
+        log.error('Failed to fetch leaderboard', error);
         if (cache[cacheKey]) {
             return { entries: cache[cacheKey].entries, fromCache: true, stale: true };
         }
@@ -301,13 +303,13 @@ async function flushOfflineQueue() {
         } catch (error) {
             // Check for permission denied - stop retrying if database rules block writes
             if (error.message && error.message.includes('PERMISSION_DENIED')) {
-                console.warn('Leaderboard: Database write permission denied. Check Firebase rules.');
+                log.warn('Database write permission denied - check Firebase rules');
                 permissionDenied = true;
                 // Keep entries in queue for when permissions are fixed
                 saveOfflineQueue(queue);
                 return;
             }
-            console.error('Leaderboard: Failed to flush entry:', error);
+            log.error('Failed to flush offline queue entry', error);
             remaining.push(entry);
         }
     }

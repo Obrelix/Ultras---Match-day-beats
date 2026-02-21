@@ -2,12 +2,46 @@
 // renderer.js — Beat track visualizer (top canvas)
 // ============================================
 
-import { SCROLL_VIS, BEAT_RESULT_COLORS, MODIFIERS } from './config.js';
+import { SCROLL_VIS, BEAT_RESULT_COLORS, MODIFIERS, ANIMATION_TIMINGS, PARTICLE_CONFIG, RENDER_CONFIG, SCREEN_EFFECTS, HOLD_BEAT, UI_LAYOUT, DEFAULT_COLORS } from './config.js';
 import { state } from './state.js';
 import { elements } from './ui.js';
 import { getComboMultiplier, releaseParticle } from './input.js';
 
 let _resizeHandler = null;
+
+// ============================================
+// Color Manipulation Utilities
+// ============================================
+
+/**
+ * Lighten a hex color by a percentage
+ * @param {string} hex - Hex color (e.g., '#ff0000')
+ * @param {number} percent - Percentage to lighten (0-100)
+ * @returns {string} RGB color string
+ */
+function lightenColor(hex, percent) {
+    const num = parseInt(hex.replace('#', ''), 16);
+    const amt = Math.round(2.55 * percent);
+    const R = Math.min(255, (num >> 16) + amt);
+    const G = Math.min(255, ((num >> 8) & 0x00FF) + amt);
+    const B = Math.min(255, (num & 0x0000FF) + amt);
+    return `rgb(${R},${G},${B})`;
+}
+
+/**
+ * Darken a hex color by a percentage
+ * @param {string} hex - Hex color (e.g., '#ff0000')
+ * @param {number} percent - Percentage to darken (0-100)
+ * @returns {string} RGB color string
+ */
+function darkenColor(hex, percent) {
+    const num = parseInt(hex.replace('#', ''), 16);
+    const amt = Math.round(2.55 * percent);
+    const R = Math.max(0, (num >> 16) - amt);
+    const G = Math.max(0, ((num >> 8) & 0x00FF) - amt);
+    const B = Math.max(0, (num & 0x0000FF) - amt);
+    return `rgb(${R},${G},${B})`;
+}
 
 /**
  * Draws a hold beat with enhanced visuals
@@ -22,8 +56,8 @@ let _resizeHandler = null;
  * @param {boolean} wasBroken - Whether the hold was broken
  */
 function drawHoldBeat(ctx, startX, endX, y, height, progress, color, alpha, wasBroken) {
-    const halfHeight = height * 1.2;  // Slightly taller for visibility
-    const minWidth = height * 3;
+    const halfHeight = height * RENDER_CONFIG.HOLD_BEAT.HEIGHT_MULTIPLIER;  // Slightly taller for visibility
+    const minWidth = height * RENDER_CONFIG.HOLD_BEAT.MIN_WIDTH_MULTIPLIER;
     const now = performance.now();
 
     // Handle cases where start is off-screen to the left
@@ -35,7 +69,7 @@ function drawHoldBeat(ctx, startX, endX, y, height, progress, color, alpha, wasB
 
     // === Outer glow (when active) ===
     if (progress > 0 && !wasBroken) {
-        const glowPulse = 0.3 + Math.sin(now / 150) * 0.15;
+        const glowPulse = 0.3 + Math.sin(now / ANIMATION_TIMINGS.HOLD_GLOW_PULSE) * 0.15;
         ctx.shadowColor = color;
         ctx.shadowBlur = 15 + glowPulse * 10;
         ctx.fillStyle = 'rgba(0,0,0,0)';
@@ -48,14 +82,14 @@ function drawHoldBeat(ctx, startX, endX, y, height, progress, color, alpha, wasB
     // === Background track with gradient ===
     const trackGrad = ctx.createLinearGradient(left, y - halfHeight, left, y + halfHeight);
     if (wasBroken) {
-        trackGrad.addColorStop(0, '#661111');
-        trackGrad.addColorStop(0.5, '#aa2222');
-        trackGrad.addColorStop(1, '#661111');
+        trackGrad.addColorStop(0, HOLD_BEAT.COLORS.BROKEN_START);
+        trackGrad.addColorStop(0.5, HOLD_BEAT.COLORS.BROKEN_END);
+        trackGrad.addColorStop(1, HOLD_BEAT.COLORS.BROKEN_START);
     } else {
-        trackGrad.addColorStop(0, '#1a1a2e');
+        trackGrad.addColorStop(0, HOLD_BEAT.COLORS.NORMAL_END);
         trackGrad.addColorStop(0.3, '#2a2a4e');
         trackGrad.addColorStop(0.7, '#2a2a4e');
-        trackGrad.addColorStop(1, '#1a1a2e');
+        trackGrad.addColorStop(1, HOLD_BEAT.COLORS.NORMAL_END);
     }
     ctx.fillStyle = trackGrad;
     ctx.beginPath();
@@ -77,7 +111,8 @@ function drawHoldBeat(ctx, startX, endX, y, height, progress, color, alpha, wasB
         const fillWidth = width * progress;
 
         // Animated color shift based on progress
-        const hue = progress < 0.5 ? 200 : (200 - (progress - 0.5) * 100);  // Blue to cyan/green
+        const colorShiftThreshold = HOLD_BEAT.COLOR_SHIFT_THRESHOLD;
+        const hue = progress < colorShiftThreshold ? 200 : (200 - (progress - colorShiftThreshold) * 100);  // Blue to cyan/green
         const progressColor = wasBroken ? '#ff4444' : `hsl(${hue}, 80%, 55%)`;
         const progressColorLight = wasBroken ? '#ff6666' : `hsl(${hue}, 90%, 70%)`;
 
@@ -139,7 +174,7 @@ function drawHoldBeat(ctx, startX, endX, y, height, progress, color, alpha, wasB
     // === Start marker (diamond shape) ===
     if (startX > -halfHeight) {
         const startSize = halfHeight * 0.9;
-        const startPulse = progress > 0 ? 1 + Math.sin(now / 100) * 0.1 : 1;
+        const startPulse = progress > 0 ? 1 + Math.sin(now / ANIMATION_TIMINGS.HOLD_START_PULSE) * 0.1 : 1;
 
         // Glow behind start marker
         if (progress === 0) {
@@ -172,8 +207,8 @@ function drawHoldBeat(ctx, startX, endX, y, height, progress, color, alpha, wasB
 
     // === End marker (target circle) ===
     const endSize = halfHeight * 0.8;
-    const nearEnd = progress >= 0.85;
-    const endPulse = nearEnd ? 1 + Math.sin(now / 80) * 0.15 : 1;
+    const nearEnd = progress >= HOLD_BEAT.NEAR_END_THRESHOLD;
+    const endPulse = nearEnd ? 1 + Math.sin(now / ANIMATION_TIMINGS.HOLD_END_PULSE) * 0.15 : 1;
 
     // Outer ring
     ctx.strokeStyle = nearEnd ? '#00ff88' : 'rgba(255,255,255,0.5)';
@@ -214,12 +249,12 @@ function drawHoldBeat(ctx, startX, endX, y, height, progress, color, alpha, wasB
 
     // === Connector dots along the track ===
     if (progress === 0 && alpha > 0.3 && !state.settings.reducedEffects) {
-        const dotSpacing = 20;
+        const dotSpacing = UI_LAYOUT.HOLD_BEAT_DOT_SPACING;
         const dotCount = Math.floor((width - halfHeight * 2) / dotSpacing);
         ctx.fillStyle = 'rgba(255,255,255,0.2)';
         for (let i = 1; i < dotCount; i++) {
             const dotX = left + halfHeight + i * dotSpacing;
-            const dotPulse = Math.sin(now / 300 + i * 0.5) * 0.5 + 0.5;
+            const dotPulse = Math.sin(now / ANIMATION_TIMINGS.DOT_PULSE + i * 0.5) * 0.5 + 0.5;
             ctx.beginPath();
             ctx.arc(dotX, y, 2 + dotPulse, 0, Math.PI * 2);
             ctx.fill();
@@ -227,7 +262,7 @@ function drawHoldBeat(ctx, startX, endX, y, height, progress, color, alpha, wasB
     }
 
     // === "HOLD" label with better styling ===
-    if (progress === 0 && alpha > 0.5 && startX > 0 && width > 80) {
+    if (progress === 0 && alpha > 0.5 && startX > 0 && width > UI_LAYOUT.HOLD_BEAT_LABEL_MIN_WIDTH) {
         const labelX = (startX + endX) / 2;
 
         // Text shadow/glow
@@ -267,11 +302,11 @@ function drawHoldBeat(ctx, startX, endX, y, height, progress, color, alpha, wasB
         const comboY = y - halfHeight - 12;
 
         // Combo bubble background
-        const bubbleWidth = combo >= 100 ? 36 : combo >= 10 ? 28 : 22;
+        const bubbleWidth = combo >= 100 ? HOLD_BEAT.BUBBLE_WIDTHS.large : combo >= 10 ? HOLD_BEAT.BUBBLE_WIDTHS.default : HOLD_BEAT.BUBBLE_WIDTHS.small;
         const bubbleHeight = 16;
 
         // Pulsing effect on combo
-        const pulse = 1 + Math.sin(now / 100) * 0.08;
+        const pulse = 1 + Math.sin(now / ANIMATION_TIMINGS.HOLD_START_PULSE) * 0.08;
 
         ctx.save();
         ctx.translate(comboX, comboY);
@@ -312,7 +347,7 @@ function drawHoldBeat(ctx, startX, endX, y, height, progress, color, alpha, wasB
 
             for (let i = 0; i < tickCount; i++) {
                 const tickX = tickStartX + i * tickSpacing;
-                const tickPulse = i === tickCount - 1 ? (1 + Math.sin(now / 80) * 0.3) : 1;
+                const tickPulse = i === tickCount - 1 ? (1 + Math.sin(now / ANIMATION_TIMINGS.HOLD_END_PULSE) * 0.3) : 1;
 
                 ctx.fillStyle = i === tickCount - 1 ? '#00ffaa' : '#00aa77';
                 ctx.beginPath();
@@ -408,7 +443,7 @@ export function computeWaveformPeaks() {
 export function buildWaveformCache() {
     if (!state.waveformPeaks || !state.audioBuffer) return;
 
-    const primary = state.selectedClub ? state.selectedClub.colors.primary : '#006633';
+    const primary = state.selectedClub ? state.selectedClub.colors.primary : DEFAULT_COLORS.PRIMARY;
     const peaksPerSec = SCROLL_VIS.PEAKS_PER_SEC;
     const totalPeaks = state.waveformPeaks.length;
 
@@ -477,35 +512,14 @@ function shadeColor(color, percent) {
     return '#' + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
 }
 
-export function drawVisualizer() {
-    if (!state.canvasCtx) return;
+// ============================================
+// Visualizer Helper Functions (extracted for maintainability)
+// ============================================
 
-    const canvas = elements.gameCanvas;
-    const w = canvas.width;
-    const h = canvas.height;
-    const primary = state.selectedClub ? state.selectedClub.colors.primary : '#006633';
-    const midY = h / 2;
-    const ctx = state.canvasCtx;
-
-    // Current audio time
-    const audioElapsed = state.audioContext ? state.audioContext.currentTime - state.audioStartTime : 0;
-
-    // Scrolling time window (apply Double Time modifier if active)
-    const isDoubleTime = state.activeModifiers?.doubleTime || false;
-    const speedMult = isDoubleTime ? MODIFIERS.doubleTime.speedMultiplier : 1.0;
-    const leadTime = SCROLL_VIS.LEAD_TIME / speedMult;
-    const trailTime = SCROLL_VIS.TRAIL_TIME / speedMult;
-    const totalWindow = leadTime + trailTime;
-    const timeStart = audioElapsed - trailTime;
-    const timeEnd = audioElapsed + leadTime;
-    const hitLineX = (trailTime / totalWindow) * w;
-    const pxPerSec = w / totalWindow;
-
-    function timeToX(t) {
-        return ((t - timeStart) / totalWindow) * w;
-    }
-
-    // --- Background with gradient ---
+/**
+ * Draw background gradient, scan lines, and center glow
+ */
+function drawVisualizerBackground(ctx, w, h, midY) {
     ctx.clearRect(0, 0, w, h);
 
     // Base gradient
@@ -533,78 +547,12 @@ export function drawVisualizer() {
     centerGlow.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.fillStyle = centerGlow;
     ctx.fillRect(0, midY - 15, w, 30);
+}
 
-    // --- Scrolling waveform (cached blit) ---
-    if (state.waveformCacheReady && state.waveformCache) {
-        const peaksPerSec = SCROLL_VIS.PEAKS_PER_SEC;
-        const srcX = Math.max(0, Math.floor(timeStart * peaksPerSec));
-        const srcEnd = Math.min(state.waveformCache.width, Math.ceil(timeEnd * peaksPerSec));
-        const srcW = srcEnd - srcX;
-        if (srcW > 0) {
-            ctx.drawImage(state.waveformCache, srcX, 0, srcW, state.waveformCache.height, 0, 0, w, h);
-        }
-    } else if (state.waveformPeaks) {
-        // Fallback: draw waveform directly (reduced quality for performance)
-        // Sample every 2 pixels to reduce lineTo calls by 50%
-        const peaksPerSec = SCROLL_VIS.PEAKS_PER_SEC;
-        const amp = midY * 0.7;
-        const step = 2;  // Sample every 2 pixels
-
-        ctx.fillStyle = primary;
-        ctx.globalAlpha = 0.25;
-        ctx.beginPath();
-        ctx.moveTo(0, midY);
-
-        // Cache peak indices to avoid redundant calculations
-        const peakIndices = new Int32Array(Math.ceil(w / step) + 1);
-        for (let i = 0, col = 0; col < w; col += step, i++) {
-            const t = timeStart + (col / w) * totalWindow;
-            peakIndices[i] = Math.floor(t * peaksPerSec);
-        }
-
-        // Draw upper edge
-        for (let i = 0, col = 0; col < w; col += step, i++) {
-            const peakIdx = peakIndices[i];
-            if (peakIdx >= 0 && peakIdx < state.waveformPeaks.length) {
-                ctx.lineTo(col, midY - state.waveformPeaks[peakIdx].max * amp);
-            } else {
-                ctx.lineTo(col, midY);
-            }
-        }
-        // Draw lower edge (reverse, reusing cached indices)
-        for (let i = peakIndices.length - 1, col = w - 1; col >= 0; col -= step, i--) {
-            const peakIdx = peakIndices[Math.max(0, i)];
-            if (peakIdx >= 0 && peakIdx < state.waveformPeaks.length) {
-                ctx.lineTo(col, midY - state.waveformPeaks[peakIdx].min * amp);
-            } else {
-                ctx.lineTo(col, midY);
-            }
-        }
-        ctx.closePath();
-        ctx.fill();
-        ctx.globalAlpha = 1;
-    }
-
-    // --- Timeline ticks (every 0.5s along bottom edge) ---
-    {
-        const tickStart = Math.ceil(timeStart * 2) / 2;
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-        ctx.lineWidth = 1;
-        for (let t = tickStart; t <= timeEnd; t += 0.5) {
-            const tx = timeToX(t);
-            if (tx < 0 || tx > w) continue;
-            const isWhole = Math.abs(t - Math.round(t)) < 0.01;
-            const tickH = isWhole ? 8 : 4;
-            ctx.globalAlpha = isWhole ? 0.18 : 0.08;
-            ctx.beginPath();
-            ctx.moveTo(tx, h);
-            ctx.lineTo(tx, h - tickH);
-            ctx.stroke();
-        }
-        ctx.globalAlpha = 1;
-    }
-
-    // --- Timing zone bands around hit line (gradient-edged) ---
+/**
+ * Draw timing zone bands around hit line (OK/GOOD/PERFECT gradients)
+ */
+function drawVisualizerTimingZones(ctx, w, h, hitLineX, pxPerSec) {
     const okHalfW = (state.activeTiming.OK / 1000) * pxPerSec;
     const goodHalfW = (state.activeTiming.GOOD / 1000) * pxPerSec;
     const perfectHalfW = (state.activeTiming.PERFECT / 1000) * pxPerSec;
@@ -666,6 +614,499 @@ export function drawVisualizer() {
         ctx.stroke();
     }
 
+    return { okHalfW, goodHalfW, perfectHalfW };
+}
+
+/**
+ * Draw beat hit effects (expanding rings)
+ */
+function drawVisualizerHitEffects(ctx, midY, timeToX, beatR, w) {
+    const now = performance.now();
+    for (let i = state.beatHitEffects.length - 1; i >= 0; i--) {
+        const fx = state.beatHitEffects[i];
+        const elapsed = now - fx.spawnTime;
+        if (elapsed > PARTICLE_CONFIG.HIT_EFFECT_DURATION_MS) {
+            state.beatHitEffects[i] = state.beatHitEffects[state.beatHitEffects.length - 1];
+            state.beatHitEffects.pop();
+            continue;
+        }
+        const progress = elapsed / PARTICLE_CONFIG.HIT_EFFECT_DURATION_MS;
+        const easeOut = 1 - Math.pow(1 - progress, 3);
+        const bx = timeToX(fx.beatTime);
+        if (bx < -50 || bx > w + 50) continue;
+
+        // Inner bright ring
+        const ringR1 = beatR * (1 + easeOut * 1.8);
+        ctx.beginPath();
+        ctx.arc(bx, midY, ringR1, 0, Math.PI * 2);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 4 * (1 - progress);
+        ctx.globalAlpha = (1 - progress) * 0.7;
+        ctx.stroke();
+
+        // Colored expanding ring
+        const ringR2 = beatR * (1.2 + easeOut * 2.2);
+        ctx.beginPath();
+        ctx.arc(bx, midY, ringR2, 0, Math.PI * 2);
+        ctx.strokeStyle = fx.color;
+        ctx.lineWidth = 3 * (1 - progress);
+        ctx.globalAlpha = (1 - progress) * 0.5;
+        ctx.stroke();
+
+        // Outer glow ring
+        const ringR3 = beatR * (1.5 + easeOut * 2.8);
+        ctx.beginPath();
+        ctx.arc(bx, midY, ringR3, 0, Math.PI * 2);
+        ctx.lineWidth = 6 * (1 - progress);
+        ctx.globalAlpha = (1 - progress) * 0.15;
+        ctx.stroke();
+
+        // Central flash (quick fade)
+        if (progress < 0.3) {
+            const flashAlpha = (1 - progress / 0.3) * 0.4;
+            const flashGrad = ctx.createRadialGradient(bx, midY, 0, bx, midY, beatR * 1.5);
+            flashGrad.addColorStop(0, fx.color);
+            flashGrad.addColorStop(0.5, fx.color);
+            flashGrad.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.globalAlpha = flashAlpha;
+            ctx.fillStyle = flashGrad;
+            ctx.beginPath();
+            ctx.arc(bx, midY, beatR * 1.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Starburst lines for PERFECT hits
+        if (fx.color === '#00ff88' && !state.settings.reducedEffects) {
+            const lineCount = 8;
+            const lineLength = beatR * (0.5 + easeOut * 2);
+            ctx.strokeStyle = fx.color;
+            ctx.lineWidth = 2 * (1 - progress);
+            ctx.globalAlpha = (1 - progress) * 0.4;
+            for (let l = 0; l < lineCount; l++) {
+                const angle = (l / lineCount) * Math.PI * 2 + progress * 0.5;
+                const startR = beatR * 0.8;
+                ctx.beginPath();
+                ctx.moveTo(bx + Math.cos(angle) * startR, midY + Math.sin(angle) * startR);
+                ctx.lineTo(bx + Math.cos(angle) * (startR + lineLength), midY + Math.sin(angle) * (startR + lineLength));
+                ctx.stroke();
+            }
+        }
+    }
+    ctx.globalAlpha = 1;
+}
+
+/**
+ * Draw PERFECT hit particles (confetti and sparkles)
+ */
+function drawVisualizerParticles(ctx, midY, timeToX) {
+    const now = performance.now();
+    for (let i = state.hitParticles.length - 1; i >= 0; i--) {
+        const p = state.hitParticles[i];
+        const elapsed = now - p.spawnTime;
+        if (elapsed > PARTICLE_CONFIG.EFFECT_DURATION_MS) {
+            releaseParticle(p);
+            state.hitParticles[i] = state.hitParticles[state.hitParticles.length - 1];
+            state.hitParticles.pop();
+            continue;
+        }
+        const progress = elapsed / PARTICLE_CONFIG.EFFECT_DURATION_MS;
+        const easeOut = 1 - Math.pow(1 - progress, 2);
+        const px = timeToX(p.beatTime) + p.vx * elapsed * 0.18;
+        const py = midY + p.vy * elapsed * 0.18 + 0.0004 * elapsed * elapsed;
+
+        if (p.isConfetti) {
+            // Confetti particles are larger and rotate
+            const size = 5 * (1 - progress * 0.4);
+            const rotation = elapsed * 0.008 + (p.vx * 10);
+
+            ctx.save();
+            ctx.translate(px, py);
+            ctx.rotate(rotation);
+            ctx.globalAlpha = (1 - easeOut) * 0.9;
+
+            // Diamond shape for confetti
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.moveTo(0, -size);
+            ctx.lineTo(size * 0.6, 0);
+            ctx.lineTo(0, size);
+            ctx.lineTo(-size * 0.6, 0);
+            ctx.closePath();
+            ctx.fill();
+
+            // Shine highlight
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.beginPath();
+            ctx.moveTo(0, -size * 0.5);
+            ctx.lineTo(size * 0.3, 0);
+            ctx.lineTo(0, size * 0.3);
+            ctx.lineTo(-size * 0.3, 0);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.restore();
+        } else {
+            // Regular sparkle particles
+            const size = 4 * (1 - progress * 0.5);
+
+            // Glow behind particle
+            ctx.globalAlpha = (1 - progress) * 0.3;
+            ctx.beginPath();
+            ctx.arc(px, py, size * 1.5, 0, Math.PI * 2);
+            ctx.fillStyle = p.color;
+            ctx.fill();
+
+            // Main particle (circle)
+            ctx.globalAlpha = (1 - progress) * 0.9;
+            ctx.beginPath();
+            ctx.arc(px, py, size, 0, Math.PI * 2);
+            ctx.fillStyle = p.color;
+            ctx.fill();
+
+            // Bright center
+            ctx.globalAlpha = (1 - progress) * 0.7;
+            ctx.beginPath();
+            ctx.arc(px, py, size * 0.4, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+        }
+    }
+    ctx.globalAlpha = 1;
+}
+
+/**
+ * Draw the hit line with multi-layer glow and diamond markers
+ */
+function drawVisualizerHitLine(ctx, w, h, hitLineX, primary) {
+    const comboMult = getComboMultiplier();
+    let hitLineColor = primary;
+    let hitLineGlow = primary;
+    let hitLineIntensity = 1;
+
+    // Dynamic hit line color based on combo multiplier
+    if (comboMult >= 3) {
+        hitLineColor = '#ff3300';
+        hitLineGlow = '#ff6600';
+        hitLineIntensity = 1.5;
+    } else if (comboMult >= 2.5) {
+        hitLineColor = '#ff6600';
+        hitLineGlow = '#ff8800';
+        hitLineIntensity = 1.35;
+    } else if (comboMult >= 2) {
+        hitLineColor = '#ffaa00';
+        hitLineGlow = '#ffcc00';
+        hitLineIntensity = 1.2;
+    } else if (comboMult >= 1.5) {
+        hitLineColor = '#ffcc00';
+        hitLineGlow = '#ffdd44';
+        hitLineIntensity = 1.1;
+    }
+
+    // Animated pulse for high combos
+    const hitLinePulse = comboMult >= 1.5 ? (1 + Math.sin(performance.now() / ANIMATION_TIMINGS.HIT_LINE_PULSE) * 0.15 * (comboMult - 1)) : 1;
+
+    // Outer glow (widest, most transparent)
+    ctx.strokeStyle = hitLineGlow;
+    ctx.lineWidth = 14 * hitLinePulse;
+    ctx.globalAlpha = 0.08 * hitLineIntensity;
+    ctx.beginPath();
+    ctx.moveTo(hitLineX, 0);
+    ctx.lineTo(hitLineX, h);
+    ctx.stroke();
+
+    // Middle glow
+    ctx.lineWidth = 8 * hitLinePulse;
+    ctx.globalAlpha = 0.15 * hitLineIntensity;
+    ctx.beginPath();
+    ctx.moveTo(hitLineX, 0);
+    ctx.lineTo(hitLineX, h);
+    ctx.stroke();
+
+    // Inner colored glow
+    ctx.strokeStyle = hitLineColor;
+    ctx.lineWidth = 4;
+    ctx.globalAlpha = 0.4 * hitLineIntensity;
+    ctx.beginPath();
+    ctx.moveTo(hitLineX, 0);
+    ctx.lineTo(hitLineX, h);
+    ctx.stroke();
+
+    // Core white line
+    const coreGrad = ctx.createLinearGradient(0, 0, 0, h);
+    coreGrad.addColorStop(0, 'rgba(255,255,255,1)');
+    coreGrad.addColorStop(0.15, 'rgba(255,255,255,0.6)');
+    coreGrad.addColorStop(0.5, 'rgba(255,255,255,0.85)');
+    coreGrad.addColorStop(0.85, 'rgba(255,255,255,0.6)');
+    coreGrad.addColorStop(1, 'rgba(255,255,255,1)');
+    ctx.strokeStyle = coreGrad;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.moveTo(hitLineX, 0);
+    ctx.lineTo(hitLineX, h);
+    ctx.stroke();
+
+    // Diamond markers with glow
+    const dSize = 6;
+    ctx.shadowColor = hitLineColor;
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = 0.95;
+
+    // Top diamond
+    ctx.beginPath();
+    ctx.moveTo(hitLineX, 0);
+    ctx.lineTo(hitLineX + dSize, dSize);
+    ctx.lineTo(hitLineX, dSize * 2);
+    ctx.lineTo(hitLineX - dSize, dSize);
+    ctx.closePath();
+    ctx.fill();
+
+    // Bottom diamond
+    ctx.beginPath();
+    ctx.moveTo(hitLineX, h);
+    ctx.lineTo(hitLineX + dSize, h - dSize);
+    ctx.lineTo(hitLineX, h - dSize * 2);
+    ctx.lineTo(hitLineX - dSize, h - dSize);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Inner diamond highlight
+    ctx.fillStyle = hitLineColor;
+    ctx.globalAlpha = 0.6;
+    const innerD = dSize * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(hitLineX, dSize * 0.5);
+    ctx.lineTo(hitLineX + innerD, dSize);
+    ctx.lineTo(hitLineX, dSize * 1.5);
+    ctx.lineTo(hitLineX - innerD, dSize);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(hitLineX, h - dSize * 0.5);
+    ctx.lineTo(hitLineX + innerD, h - dSize);
+    ctx.lineTo(hitLineX, h - dSize * 1.5);
+    ctx.lineTo(hitLineX - innerD, h - dSize);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Beat flash effect on hit line
+    if (state.beatFlashIntensity > 0) {
+        ctx.strokeStyle = primary;
+        ctx.lineWidth = 16;
+        ctx.globalAlpha = state.beatFlashIntensity * 0.4;
+        ctx.beginPath();
+        ctx.moveTo(hitLineX, 0);
+        ctx.lineTo(hitLineX, h);
+        ctx.stroke();
+
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 6;
+        ctx.globalAlpha = state.beatFlashIntensity * 0.8;
+        ctx.beginPath();
+        ctx.moveTo(hitLineX, 0);
+        ctx.lineTo(hitLineX, h);
+        ctx.stroke();
+
+        ctx.globalAlpha = 1;
+        state.beatFlashIntensity *= 0.88;
+        if (state.beatFlashIntensity < 0.01) state.beatFlashIntensity = 0;
+    }
+}
+
+/**
+ * Draw edge vignette and modifier visual overlays
+ */
+function drawVisualizerOverlays(ctx, w, h, midY, modifiers) {
+    const { isSuddenDeath, isNoFail, isFlash } = modifiers;
+    const now = performance.now();
+
+    // Edge vignette effect
+    if (!state.settings.reducedEffects) {
+        const vignetteW = SCREEN_EFFECTS.VIGNETTE_WIDTH;
+        const vignetteL = ctx.createLinearGradient(0, 0, vignetteW, 0);
+        vignetteL.addColorStop(0, 'rgba(0,0,0,0.5)');
+        vignetteL.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = vignetteL;
+        ctx.fillRect(0, 0, vignetteW, h);
+
+        const vignetteR = ctx.createLinearGradient(w - vignetteW, 0, w, 0);
+        vignetteR.addColorStop(0, 'rgba(0,0,0,0)');
+        vignetteR.addColorStop(1, 'rgba(0,0,0,0.5)');
+        ctx.fillStyle = vignetteR;
+        ctx.fillRect(w - vignetteW, 0, vignetteW, h);
+
+        // Sudden Death: Subtle red vignette with heartbeat pulse
+        if (isSuddenDeath) {
+            const pulse = 0.5 + Math.sin(now / ANIMATION_TIMINGS.SUDDEN_DEATH_PULSE) * 0.15;
+            const redIntensity = 0.12 * pulse;
+
+            const topVignette = ctx.createLinearGradient(0, 0, 0, 25);
+            topVignette.addColorStop(0, `rgba(180, 0, 0, ${redIntensity})`);
+            topVignette.addColorStop(1, 'rgba(180, 0, 0, 0)');
+            ctx.fillStyle = topVignette;
+            ctx.fillRect(0, 0, w, 25);
+
+            const bottomVignette = ctx.createLinearGradient(0, h - 25, 0, h);
+            bottomVignette.addColorStop(0, 'rgba(180, 0, 0, 0)');
+            bottomVignette.addColorStop(1, `rgba(180, 0, 0, ${redIntensity})`);
+            ctx.fillStyle = bottomVignette;
+            ctx.fillRect(0, h - 25, w, 25);
+
+            ctx.fillStyle = `rgba(255, 0, 0, ${0.15 * pulse})`;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(20, 0);
+            ctx.lineTo(0, 20);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(w, 0);
+            ctx.lineTo(w - 20, 0);
+            ctx.lineTo(w, 20);
+            ctx.fill();
+        }
+
+        // No Fail: Soft green/safe glow
+        if (isNoFail) {
+            const greenIntensity = 0.06;
+            const topGreen = ctx.createLinearGradient(0, 0, 0, 15);
+            topGreen.addColorStop(0, `rgba(0, 200, 100, ${greenIntensity})`);
+            topGreen.addColorStop(1, 'rgba(0, 200, 100, 0)');
+            ctx.fillStyle = topGreen;
+            ctx.fillRect(0, 0, w, 15);
+
+            const bottomGreen = ctx.createLinearGradient(0, h - 15, 0, h);
+            bottomGreen.addColorStop(0, 'rgba(0, 200, 100, 0)');
+            bottomGreen.addColorStop(1, `rgba(0, 200, 100, ${greenIntensity})`);
+            ctx.fillStyle = bottomGreen;
+            ctx.fillRect(0, h - 15, w, 15);
+        }
+
+        // Flash modifier: Lightning spark effect
+        if (isFlash && Math.random() < 0.03) {
+            const sparkX = w - 50 + Math.random() * 40;
+            const sparkY = midY + (Math.random() - 0.5) * h * 0.6;
+            ctx.fillStyle = 'rgba(255, 255, 100, 0.6)';
+            ctx.beginPath();
+            ctx.arc(sparkX, sparkY, 2 + Math.random() * 3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+}
+
+export function drawVisualizer() {
+    if (!state.canvasCtx) return;
+
+    const canvas = elements.gameCanvas;
+    const w = canvas.width;
+    const h = canvas.height;
+    const primary = state.selectedClub ? state.selectedClub.colors.primary : DEFAULT_COLORS.PRIMARY;
+    const midY = h / 2;
+    const ctx = state.canvasCtx;
+
+    // Current audio time
+    const audioElapsed = state.audioContext ? state.audioContext.currentTime - state.audioStartTime : 0;
+
+    // Scrolling time window (apply speed modifiers)
+    const isDoubleTime = state.activeModifiers?.doubleTime || false;
+    const isFlash = state.activeModifiers?.flash || false;
+
+    // Calculate speed multiplier (Double Time speeds up, Flash makes beats appear late)
+    let speedMult = 1.0;
+    if (isDoubleTime) speedMult *= MODIFIERS.doubleTime.speedMultiplier;
+    if (isFlash) speedMult /= MODIFIERS.flash.approachMultiplier; // Flash = much shorter approach time
+
+    const leadTime = SCROLL_VIS.LEAD_TIME / speedMult;
+    const trailTime = SCROLL_VIS.TRAIL_TIME / speedMult;
+    const totalWindow = leadTime + trailTime;
+    const timeStart = audioElapsed - trailTime;
+    const timeEnd = audioElapsed + leadTime;
+    const hitLineX = (trailTime / totalWindow) * w;
+    const pxPerSec = w / totalWindow;
+
+    function timeToX(t) {
+        return ((t - timeStart) / totalWindow) * w;
+    }
+
+    // --- Background with gradient, scan lines, center glow ---
+    drawVisualizerBackground(ctx, w, h, midY);
+
+    // --- Scrolling waveform (cached blit) ---
+    if (state.waveformCacheReady && state.waveformCache) {
+        const peaksPerSec = SCROLL_VIS.PEAKS_PER_SEC;
+        const srcX = Math.max(0, Math.floor(timeStart * peaksPerSec));
+        const srcEnd = Math.min(state.waveformCache.width, Math.ceil(timeEnd * peaksPerSec));
+        const srcW = srcEnd - srcX;
+        if (srcW > 0) {
+            ctx.drawImage(state.waveformCache, srcX, 0, srcW, state.waveformCache.height, 0, 0, w, h);
+        }
+    } else if (state.waveformPeaks) {
+        // Fallback: draw waveform directly (reduced quality for performance)
+        // Sample every N pixels to reduce lineTo calls
+        const peaksPerSec = SCROLL_VIS.PEAKS_PER_SEC;
+        const amp = midY * 0.7;
+        const step = RENDER_CONFIG.WAVEFORM_SAMPLE_STEP;  // Sample interval for performance
+
+        ctx.fillStyle = primary;
+        ctx.globalAlpha = 0.25;
+        ctx.beginPath();
+        ctx.moveTo(0, midY);
+
+        // Cache peak indices to avoid redundant calculations
+        const peakIndices = new Int32Array(Math.ceil(w / step) + 1);
+        for (let i = 0, col = 0; col < w; col += step, i++) {
+            const t = timeStart + (col / w) * totalWindow;
+            peakIndices[i] = Math.floor(t * peaksPerSec);
+        }
+
+        // Draw upper edge
+        for (let i = 0, col = 0; col < w; col += step, i++) {
+            const peakIdx = peakIndices[i];
+            if (peakIdx >= 0 && peakIdx < state.waveformPeaks.length) {
+                ctx.lineTo(col, midY - state.waveformPeaks[peakIdx].max * amp);
+            } else {
+                ctx.lineTo(col, midY);
+            }
+        }
+        // Draw lower edge (reverse, reusing cached indices)
+        for (let i = peakIndices.length - 1, col = w - 1; col >= 0; col -= step, i--) {
+            const peakIdx = peakIndices[Math.max(0, i)];
+            if (peakIdx >= 0 && peakIdx < state.waveformPeaks.length) {
+                ctx.lineTo(col, midY - state.waveformPeaks[peakIdx].min * amp);
+            } else {
+                ctx.lineTo(col, midY);
+            }
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = 1;
+    }
+
+    // --- Timeline ticks (every configured interval along bottom edge) ---
+    {
+        const tickInterval = RENDER_CONFIG.TIMELINE_TICK_INTERVAL;
+        const tickStart = Math.ceil(timeStart / tickInterval) * tickInterval;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.lineWidth = 1;
+        for (let t = tickStart; t <= timeEnd; t += tickInterval) {
+            const tx = timeToX(t);
+            if (tx < 0 || tx > w) continue;
+            const isWhole = Math.abs(t - Math.round(t)) < 0.01;
+            const tickH = isWhole ? 8 : 4;
+            ctx.globalAlpha = isWhole ? 0.18 : 0.08;
+            ctx.beginPath();
+            ctx.moveTo(tx, h);
+            ctx.lineTo(tx, h - tickH);
+            ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+    }
+
+    // --- Timing zone bands around hit line ---
+    const { okHalfW, goodHalfW, perfectHalfW } = drawVisualizerTimingZones(ctx, w, h, hitLineX, pxPerSec);
+
     // --- Beat markers ---
     const beatR = SCROLL_VIS.BEAT_RADIUS;
     const leadPx = leadTime * pxPerSec;
@@ -674,8 +1115,14 @@ export function drawVisualizer() {
     // Modifier flags
     const isMirror = state.activeModifiers?.mirror || false;
     const isHidden = state.activeModifiers?.hidden || false;
+    const isRandom = state.activeModifiers?.random || false;
+    const isSuddenDeath = state.activeModifiers?.suddenDeath || false;
+    const isNoFail = state.activeModifiers?.noFail || false;
     const hiddenFadeStart = MODIFIERS.hidden.fadeStartPercent;
     const hiddenFadeEnd = MODIFIERS.hidden.fadeEndPercent;
+    const randomWobble = isRandom ? MODIFIERS.random.wobbleAmount : 0;
+    const randomSpeed = isRandom ? MODIFIERS.random.wobbleSpeed : 0;
+    const now = performance.now();
 
     // Helper function for mirror mode - transforms X coordinate
     function applyMirror(x) {
@@ -738,6 +1185,15 @@ export function drawVisualizer() {
         const isPast = i < state.nextBeatIndex;
         let color, alpha, radius;
 
+        // Random modifier: calculate wobble offset for this beat
+        let beatY = midY;
+        if (isRandom && !isPast) {
+            // Use beat index and time for deterministic but varied wobble
+            const wobbleSeed = i * 1.7 + now * 0.001 * randomSpeed;
+            const wobbleOffset = Math.sin(wobbleSeed) * randomWobble;
+            beatY = midY + wobbleOffset;
+        }
+
         // Draw hold beats differently
         if (isHoldBeat) {
             const endTime = beatData.endTime;
@@ -747,7 +1203,7 @@ export function drawVisualizer() {
                 // Currently being held - always show with full visibility
                 // Clamp startX to screen edge if it scrolled past
                 const clampedX = Math.max(-beatR * 2, x);
-                drawHoldBeat(ctx, clampedX, endX, midY, beatR, state.holdState.holdProgress, '#00aaff', 1, state.holdState.wasBroken);
+                drawHoldBeat(ctx, clampedX, endX, beatY, beatR, state.holdState.holdProgress, '#00aaff', 1, state.holdState.wasBroken);
                 continue;
             } else if (isPast) {
                 const result = state.beatResults[i];
@@ -758,7 +1214,7 @@ export function drawVisualizer() {
                 const fadeRef = Math.max(x, endX);
                 alpha = Math.max(0, fadeRef / trailPx);
                 alpha = alpha * alpha;
-                drawHoldBeat(ctx, x, endX, midY, beatR * 0.8, 0, color, alpha, false);
+                drawHoldBeat(ctx, x, endX, midY, beatR * 0.8, 0, color, alpha, false);  // Past beats don't wobble
                 continue;
             } else {
                 // Upcoming hold beat
@@ -778,7 +1234,7 @@ export function drawVisualizer() {
                     alpha = 1;
                 }
 
-                drawHoldBeat(ctx, x, endX, midY, beatR, 0, color, alpha, false);
+                drawHoldBeat(ctx, x, endX, beatY, beatR, 0, color, alpha, false);
                 continue;
             }
         }
@@ -822,20 +1278,20 @@ export function drawVisualizer() {
 
                     ctx.globalAlpha = trailAlpha;
                     ctx.beginPath();
-                    ctx.arc(trailX, midY, trailRadius, 0, Math.PI * 2);
+                    ctx.arc(trailX, beatY, trailRadius, 0, Math.PI * 2);
                     ctx.fillStyle = color;
                     ctx.fill();
                 }
 
                 // Comet tail glow for high combos
                 if (comboMult >= 1.5) {
-                    const glowGrad = ctx.createLinearGradient(x, midY, x + 50, midY);
+                    const glowGrad = ctx.createLinearGradient(x, beatY, x + 50, beatY);
                     glowGrad.addColorStop(0, color);
                     glowGrad.addColorStop(1, 'rgba(255,204,0,0)');
                     ctx.globalAlpha = alpha * 0.15 * comboMult;
                     ctx.fillStyle = glowGrad;
                     ctx.beginPath();
-                    ctx.ellipse(x + 20, midY, 30, radius * 0.6, 0, 0, Math.PI * 2);
+                    ctx.ellipse(x + 20, beatY, 30, radius * 0.6, 0, 0, Math.PI * 2);
                     ctx.fill();
                 }
             }
@@ -879,7 +1335,7 @@ export function drawVisualizer() {
             if (glowIntensity > 0) {
                 ctx.globalAlpha = 0.12 * glowIntensity;
                 ctx.beginPath();
-                ctx.arc(x, midY, radius + 6, 0, Math.PI * 2);
+                ctx.arc(x, beatY, radius + 6, 0, Math.PI * 2);
                 ctx.fillStyle = glowColor;
                 ctx.fill();
             }
@@ -903,7 +1359,7 @@ export function drawVisualizer() {
 
             // Background track ring with gradient
             ctx.beginPath();
-            ctx.arc(x, midY, ringRadius, 0, Math.PI * 2);
+            ctx.arc(x, beatY, ringRadius, 0, Math.PI * 2);
             ctx.strokeStyle = 'rgba(255,255,255,0.1)';
             ctx.lineWidth = 4;
             ctx.globalAlpha = alpha * queueFade;
@@ -922,7 +1378,7 @@ export function drawVisualizer() {
             }
 
             ctx.beginPath();
-            ctx.arc(x, midY, ringRadius, -Math.PI / 2, -Math.PI / 2 + sweepAngle, false);
+            ctx.arc(x, beatY, ringRadius, -Math.PI / 2, -Math.PI / 2 + sweepAngle, false);
             ctx.strokeStyle = arcColor;
             ctx.lineWidth = arcWidth;
             ctx.globalAlpha = alpha * (0.5 + 0.5 * fill) * queueFade;
@@ -936,7 +1392,7 @@ export function drawVisualizer() {
 
                 // Pulsing ring
                 ctx.beginPath();
-                ctx.arc(x, midY, radius + 4 + urgency * 6, 0, Math.PI * 2);
+                ctx.arc(x, beatY, radius + 4 + urgency * 6, 0, Math.PI * 2);
                 ctx.strokeStyle = '#00ff88';
                 ctx.lineWidth = 2 + urgency;
                 ctx.globalAlpha = alpha * urgency * 0.6;
@@ -946,7 +1402,7 @@ export function drawVisualizer() {
                 if (urgency > 0.5) {
                     ctx.globalAlpha = (urgency - 0.5) * 0.3;
                     ctx.beginPath();
-                    ctx.arc(x, midY, radius + 2, 0, Math.PI * 2);
+                    ctx.arc(x, beatY, radius + 2, 0, Math.PI * 2);
                     ctx.fillStyle = '#00ff88';
                     ctx.fill();
                 }
@@ -958,20 +1414,20 @@ export function drawVisualizer() {
         // === Main beat circle ===
 
         // Simple gradient fill
-        const beatGrad = ctx.createRadialGradient(x - radius * 0.2, midY - radius * 0.2, 0, x, midY, radius);
+        const beatGrad = ctx.createRadialGradient(x - radius * 0.2, beatY - radius * 0.2, 0, x, beatY, radius);
         beatGrad.addColorStop(0, lightenColor(color, 30));
         beatGrad.addColorStop(0.6, color);
         beatGrad.addColorStop(1, darkenColor(color, 20));
 
         ctx.globalAlpha = alpha;
         ctx.beginPath();
-        ctx.arc(x, midY, radius, 0, Math.PI * 2);
+        ctx.arc(x, beatY, radius, 0, Math.PI * 2);
         ctx.fillStyle = beatGrad;
         ctx.fill();
 
         // Outer stroke
         ctx.beginPath();
-        ctx.arc(x, midY, radius, 0, Math.PI * 2);
+        ctx.arc(x, beatY, radius, 0, Math.PI * 2);
         ctx.strokeStyle = strokeColor;
         ctx.lineWidth = strokeWidth;
         ctx.stroke();
@@ -979,330 +1435,15 @@ export function drawVisualizer() {
         ctx.globalAlpha = 1;
     }
 
-    // Helper functions for color manipulation
-    function lightenColor(hex, percent) {
-        const num = parseInt(hex.replace('#', ''), 16);
-        const amt = Math.round(2.55 * percent);
-        const R = Math.min(255, (num >> 16) + amt);
-        const G = Math.min(255, ((num >> 8) & 0x00FF) + amt);
-        const B = Math.min(255, (num & 0x0000FF) + amt);
-        return `rgb(${R},${G},${B})`;
-    }
-
-    function darkenColor(hex, percent) {
-        const num = parseInt(hex.replace('#', ''), 16);
-        const amt = Math.round(2.55 * percent);
-        const R = Math.max(0, (num >> 16) - amt);
-        const G = Math.max(0, ((num >> 8) & 0x00FF) - amt);
-        const B = Math.max(0, (num & 0x0000FF) - amt);
-        return `rgb(${R},${G},${B})`;
-    }
-
     // --- Beat hit effects (expanding rings with enhanced visuals) ---
-    {
-        const now = performance.now();
-        for (let i = state.beatHitEffects.length - 1; i >= 0; i--) {
-            const fx = state.beatHitEffects[i];
-            const elapsed = now - fx.spawnTime;
-            if (elapsed > 500) {
-                state.beatHitEffects[i] = state.beatHitEffects[state.beatHitEffects.length - 1];
-                state.beatHitEffects.pop();
-                continue;
-            }
-            const progress = elapsed / 500;
-            const easeOut = 1 - Math.pow(1 - progress, 3);  // Cubic ease out
-            const bx = timeToX(fx.beatTime);
-            if (bx < -50 || bx > w + 50) continue;
-
-            // Inner bright ring
-            const ringR1 = beatR * (1 + easeOut * 1.8);
-            ctx.beginPath();
-            ctx.arc(bx, midY, ringR1, 0, Math.PI * 2);
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 4 * (1 - progress);
-            ctx.globalAlpha = (1 - progress) * 0.7;
-            ctx.stroke();
-
-            // Colored expanding ring
-            const ringR2 = beatR * (1.2 + easeOut * 2.2);
-            ctx.beginPath();
-            ctx.arc(bx, midY, ringR2, 0, Math.PI * 2);
-            ctx.strokeStyle = fx.color;
-            ctx.lineWidth = 3 * (1 - progress);
-            ctx.globalAlpha = (1 - progress) * 0.5;
-            ctx.stroke();
-
-            // Outer glow ring
-            const ringR3 = beatR * (1.5 + easeOut * 2.8);
-            ctx.beginPath();
-            ctx.arc(bx, midY, ringR3, 0, Math.PI * 2);
-            ctx.lineWidth = 6 * (1 - progress);
-            ctx.globalAlpha = (1 - progress) * 0.15;
-            ctx.stroke();
-
-            // Central flash (quick fade)
-            if (progress < 0.3) {
-                const flashAlpha = (1 - progress / 0.3) * 0.4;
-                const flashGrad = ctx.createRadialGradient(bx, midY, 0, bx, midY, beatR * 1.5);
-                flashGrad.addColorStop(0, fx.color);
-                flashGrad.addColorStop(0.5, fx.color);
-                flashGrad.addColorStop(1, 'rgba(255,255,255,0)');
-                ctx.globalAlpha = flashAlpha;
-                ctx.fillStyle = flashGrad;
-                ctx.beginPath();
-                ctx.arc(bx, midY, beatR * 1.5, 0, Math.PI * 2);
-                ctx.fill();
-            }
-
-            // Starburst lines for PERFECT hits
-            if (fx.color === '#00ff88' && !state.settings.reducedEffects) {
-                const lineCount = 8;
-                const lineLength = beatR * (0.5 + easeOut * 2);
-                ctx.strokeStyle = fx.color;
-                ctx.lineWidth = 2 * (1 - progress);
-                ctx.globalAlpha = (1 - progress) * 0.4;
-                for (let l = 0; l < lineCount; l++) {
-                    const angle = (l / lineCount) * Math.PI * 2 + progress * 0.5;
-                    const startR = beatR * 0.8;
-                    ctx.beginPath();
-                    ctx.moveTo(bx + Math.cos(angle) * startR, midY + Math.sin(angle) * startR);
-                    ctx.lineTo(bx + Math.cos(angle) * (startR + lineLength), midY + Math.sin(angle) * (startR + lineLength));
-                    ctx.stroke();
-                }
-            }
-        }
-        ctx.globalAlpha = 1;
-    }
+    drawVisualizerHitEffects(ctx, midY, timeToX, beatR, w);
 
     // --- PERFECT hit particles (using object pool) with enhanced visuals ---
-    {
-        const now = performance.now();
-        for (let i = state.hitParticles.length - 1; i >= 0; i--) {
-            const p = state.hitParticles[i];
-            const elapsed = now - p.spawnTime;
-            if (elapsed > 450) {
-                releaseParticle(p);
-                state.hitParticles[i] = state.hitParticles[state.hitParticles.length - 1];
-                state.hitParticles.pop();
-                continue;
-            }
-            const progress = elapsed / 450;
-            const easeOut = 1 - Math.pow(1 - progress, 2);
-            const px = timeToX(p.beatTime) + p.vx * elapsed * 0.18;
-            const py = midY + p.vy * elapsed * 0.18 + 0.0004 * elapsed * elapsed;
+    drawVisualizerParticles(ctx, midY, timeToX);
 
-            // Confetti particles are larger and rotate
-            if (p.isConfetti) {
-                const size = 5 * (1 - progress * 0.4);
-                const rotation = elapsed * 0.008 + (p.vx * 10);
+    // --- Hit line (multi-layer glow with dynamic color) ---
+    drawVisualizerHitLine(ctx, w, h, hitLineX, primary);
 
-                ctx.save();
-                ctx.translate(px, py);
-                ctx.rotate(rotation);
-                ctx.globalAlpha = (1 - easeOut) * 0.9;
-
-                // Diamond shape for confetti
-                ctx.fillStyle = p.color;
-                ctx.beginPath();
-                ctx.moveTo(0, -size);
-                ctx.lineTo(size * 0.6, 0);
-                ctx.lineTo(0, size);
-                ctx.lineTo(-size * 0.6, 0);
-                ctx.closePath();
-                ctx.fill();
-
-                // Shine highlight
-                ctx.fillStyle = 'rgba(255,255,255,0.5)';
-                ctx.beginPath();
-                ctx.moveTo(0, -size * 0.5);
-                ctx.lineTo(size * 0.3, 0);
-                ctx.lineTo(0, size * 0.3);
-                ctx.lineTo(-size * 0.3, 0);
-                ctx.closePath();
-                ctx.fill();
-
-                ctx.restore();
-            } else {
-                // Regular sparkle particles
-                const size = 4 * (1 - progress * 0.5);
-
-                // Glow behind particle
-                ctx.globalAlpha = (1 - progress) * 0.3;
-                ctx.beginPath();
-                ctx.arc(px, py, size * 1.5, 0, Math.PI * 2);
-                ctx.fillStyle = p.color;
-                ctx.fill();
-
-                // Main particle (circle)
-                ctx.globalAlpha = (1 - progress) * 0.9;
-                ctx.beginPath();
-                ctx.arc(px, py, size, 0, Math.PI * 2);
-                ctx.fillStyle = p.color;
-                ctx.fill();
-
-                // Bright center
-                ctx.globalAlpha = (1 - progress) * 0.7;
-                ctx.beginPath();
-                ctx.arc(px, py, size * 0.4, 0, Math.PI * 2);
-                ctx.fillStyle = '#ffffff';
-                ctx.fill();
-            }
-        }
-        ctx.globalAlpha = 1;
-    }
-
-    // --- Hit line (multi-layer glow) with dynamic color (#4) ---
-    const comboMult = getComboMultiplier();
-    let hitLineColor = primary;
-    let hitLineGlow = primary;
-    let hitLineIntensity = 1;
-
-    // Dynamic hit line color based on combo multiplier
-    if (comboMult >= 3) {
-        hitLineColor = '#ff3300';  // Red-orange at max combo
-        hitLineGlow = '#ff6600';
-        hitLineIntensity = 1.5;
-    } else if (comboMult >= 2.5) {
-        hitLineColor = '#ff6600';  // Orange
-        hitLineGlow = '#ff8800';
-        hitLineIntensity = 1.35;
-    } else if (comboMult >= 2) {
-        hitLineColor = '#ffaa00';  // Gold
-        hitLineGlow = '#ffcc00';
-        hitLineIntensity = 1.2;
-    } else if (comboMult >= 1.5) {
-        hitLineColor = '#ffcc00';  // Yellow
-        hitLineGlow = '#ffdd44';
-        hitLineIntensity = 1.1;
-    }
-
-    // Animated pulse for high combos
-    const hitLinePulse = comboMult >= 1.5 ? (1 + Math.sin(performance.now() / 150) * 0.15 * (comboMult - 1)) : 1;
-
-    // Outer glow (widest, most transparent)
-    ctx.strokeStyle = hitLineGlow;
-    ctx.lineWidth = 14 * hitLinePulse;
-    ctx.globalAlpha = 0.08 * hitLineIntensity;
-    ctx.beginPath();
-    ctx.moveTo(hitLineX, 0);
-    ctx.lineTo(hitLineX, h);
-    ctx.stroke();
-
-    // Middle glow
-    ctx.lineWidth = 8 * hitLinePulse;
-    ctx.globalAlpha = 0.15 * hitLineIntensity;
-    ctx.beginPath();
-    ctx.moveTo(hitLineX, 0);
-    ctx.lineTo(hitLineX, h);
-    ctx.stroke();
-
-    // Inner colored glow
-    ctx.strokeStyle = hitLineColor;
-    ctx.lineWidth = 4;
-    ctx.globalAlpha = 0.4 * hitLineIntensity;
-    ctx.beginPath();
-    ctx.moveTo(hitLineX, 0);
-    ctx.lineTo(hitLineX, h);
-    ctx.stroke();
-
-    // Core white line
-    const coreGrad = ctx.createLinearGradient(0, 0, 0, h);
-    coreGrad.addColorStop(0, 'rgba(255,255,255,1)');
-    coreGrad.addColorStop(0.15, 'rgba(255,255,255,0.6)');
-    coreGrad.addColorStop(0.5, 'rgba(255,255,255,0.85)');
-    coreGrad.addColorStop(0.85, 'rgba(255,255,255,0.6)');
-    coreGrad.addColorStop(1, 'rgba(255,255,255,1)');
-    ctx.strokeStyle = coreGrad;
-    ctx.lineWidth = 2;
-    ctx.globalAlpha = 1;
-    ctx.beginPath();
-    ctx.moveTo(hitLineX, 0);
-    ctx.lineTo(hitLineX, h);
-    ctx.stroke();
-
-    // Diamond markers with glow
-    const dSize = 6;
-
-    // Top diamond glow
-    ctx.shadowColor = hitLineColor;
-    ctx.shadowBlur = 8;
-    ctx.fillStyle = '#ffffff';
-    ctx.globalAlpha = 0.95;
-    ctx.beginPath();
-    ctx.moveTo(hitLineX, 0);
-    ctx.lineTo(hitLineX + dSize, dSize);
-    ctx.lineTo(hitLineX, dSize * 2);
-    ctx.lineTo(hitLineX - dSize, dSize);
-    ctx.closePath();
-    ctx.fill();
-
-    // Bottom diamond
-    ctx.beginPath();
-    ctx.moveTo(hitLineX, h);
-    ctx.lineTo(hitLineX + dSize, h - dSize);
-    ctx.lineTo(hitLineX, h - dSize * 2);
-    ctx.lineTo(hitLineX - dSize, h - dSize);
-    ctx.closePath();
-    ctx.fill();
-    ctx.shadowBlur = 0;
-
-    // Inner diamond highlight
-    ctx.fillStyle = hitLineColor;
-    ctx.globalAlpha = 0.6;
-    const innerD = dSize * 0.5;
-    ctx.beginPath();
-    ctx.moveTo(hitLineX, dSize * 0.5);
-    ctx.lineTo(hitLineX + innerD, dSize);
-    ctx.lineTo(hitLineX, dSize * 1.5);
-    ctx.lineTo(hitLineX - innerD, dSize);
-    ctx.closePath();
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(hitLineX, h - dSize * 0.5);
-    ctx.lineTo(hitLineX + innerD, h - dSize);
-    ctx.lineTo(hitLineX, h - dSize * 1.5);
-    ctx.lineTo(hitLineX - innerD, h - dSize);
-    ctx.closePath();
-    ctx.fill();
-    ctx.globalAlpha = 1;
-
-    // Beat flash effect on hit line
-    if (state.beatFlashIntensity > 0) {
-        // Wide flash
-        ctx.strokeStyle = primary;
-        ctx.lineWidth = 16;
-        ctx.globalAlpha = state.beatFlashIntensity * 0.4;
-        ctx.beginPath();
-        ctx.moveTo(hitLineX, 0);
-        ctx.lineTo(hitLineX, h);
-        ctx.stroke();
-
-        // Intense core flash
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 6;
-        ctx.globalAlpha = state.beatFlashIntensity * 0.8;
-        ctx.beginPath();
-        ctx.moveTo(hitLineX, 0);
-        ctx.lineTo(hitLineX, h);
-        ctx.stroke();
-
-        ctx.globalAlpha = 1;
-        state.beatFlashIntensity *= 0.88;
-        if (state.beatFlashIntensity < 0.01) state.beatFlashIntensity = 0;
-    }
-
-    // --- Edge vignette effect ---
-    if (!state.settings.reducedEffects) {
-        const vignetteL = ctx.createLinearGradient(0, 0, 40, 0);
-        vignetteL.addColorStop(0, 'rgba(0,0,0,0.5)');
-        vignetteL.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = vignetteL;
-        ctx.fillRect(0, 0, 40, h);
-
-        const vignetteR = ctx.createLinearGradient(w - 40, 0, w, 0);
-        vignetteR.addColorStop(0, 'rgba(0,0,0,0)');
-        vignetteR.addColorStop(1, 'rgba(0,0,0,0.5)');
-        ctx.fillStyle = vignetteR;
-        ctx.fillRect(w - 40, 0, 40, h);
-    }
+    // --- Edge vignette and modifier visual overlays ---
+    drawVisualizerOverlays(ctx, w, h, midY, { isSuddenDeath, isNoFail, isFlash });
 }

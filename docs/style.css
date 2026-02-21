@@ -16,6 +16,102 @@
     --rival-color: #cc0000;
 }
 
+/* ============================================
+   Accessibility: Screen Reader Only
+   ============================================ */
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ============================================
+   Accessibility: Focus Indicators
+   ============================================ */
+
+/* Default focus indicator for all interactive elements */
+:focus-visible {
+    outline: 3px solid var(--primary-color);
+    outline-offset: 3px;
+}
+
+/* Buttons get white focus for contrast */
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible {
+    outline: 3px solid #ffffff;
+    outline-offset: 2px;
+    box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.3);
+}
+
+/* Cards get primary color focus with subtle scale */
+.mode-card:focus-visible,
+.club-card:focus-visible,
+.submode-card:focus-visible {
+    outline: 3px solid var(--primary-color);
+    outline-offset: 2px;
+    transform: scale(1.02);
+}
+
+/* Chant items get accent focus */
+.chant-item:focus-visible {
+    outline: 3px solid var(--perfect-color);
+    outline-offset: 2px;
+    border-color: var(--perfect-color);
+}
+
+/* Icon buttons */
+.icon-btn:focus-visible,
+.nav-btn:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 50%;
+}
+
+/* Difficulty and modifier buttons */
+.difficulty-btn:focus-visible,
+.modifier-btn:focus-visible {
+    outline: 2px solid #ffffff;
+    outline-offset: 2px;
+}
+
+/* Form controls */
+input[type="range"]:focus-visible,
+input[type="checkbox"]:focus-visible,
+input[type="text"]:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+/* Profile tabs */
+.profile-tab:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+/* Leaderboard filter buttons */
+.leaderboard-filter-btn:focus-visible {
+    outline: 2px solid #ffffff;
+    outline-offset: 2px;
+}
+
+/* Replay controls */
+#replay-controls button:focus-visible {
+    outline: 2px solid #ffffff;
+    outline-offset: 2px;
+}
+
+/* Remove outline on mouse focus (keep for keyboard) */
+:focus:not(:focus-visible) {
+    outline: none;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -4754,10 +4850,29 @@ body {
 }
 
 #modifier-options {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-    justify-content: center;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    max-width: 520px;
+    margin: 0 auto;
+}
+
+/* Second row has 3 items, center them */
+@media (min-width: 600px) {
+    #modifier-options {
+        grid-template-columns: repeat(4, minmax(100px, 1fr));
+    }
+
+    /* Last 3 items span centered */
+    #modifier-options .modifier-btn:nth-child(5) {
+        grid-column: 1 / 2;
+    }
+    #modifier-options .modifier-btn:nth-child(6) {
+        grid-column: 2 / 3;
+    }
+    #modifier-options .modifier-btn:nth-child(7) {
+        grid-column: 3 / 4;
+    }
 }
 
 .modifier-btn {
@@ -4890,6 +5005,149 @@ body {
 #modifier-bonus:not(:empty) {
     opacity: 1;
     transform: translateY(0);
+}
+
+#modifier-bonus.bonus {
+    color: #00cc66;
+    background: rgba(0, 204, 102, 0.12);
+    border-color: rgba(0, 204, 102, 0.3);
+}
+
+#modifier-bonus.penalty {
+    color: #ff6666;
+    background: rgba(255, 102, 102, 0.12);
+    border-color: rgba(255, 102, 102, 0.3);
+}
+
+/* --- Modifier Category Colors --- */
+
+/* Challenge modifiers (Yellow) */
+.modifier-btn.modifier-challenge {
+    --mod-color: #ffaa00;
+    --mod-color-rgb: 255, 170, 0;
+}
+
+.modifier-btn.modifier-challenge::before {
+    background: linear-gradient(90deg, transparent, rgba(255, 170, 0, 0.3), transparent);
+}
+
+.modifier-btn.modifier-challenge.active {
+    background: linear-gradient(145deg, rgba(255, 170, 0, 0.2), rgba(180, 120, 0, 0.25));
+    border-color: #ffaa00;
+    box-shadow: 0 0 20px rgba(255, 170, 0, 0.3), inset 0 0 30px rgba(255, 170, 0, 0.1);
+}
+
+/* Extreme modifiers (Red) */
+.modifier-btn.modifier-extreme {
+    --mod-color: #ff4444;
+    --mod-color-rgb: 255, 68, 68;
+}
+
+.modifier-btn.modifier-extreme::before {
+    background: linear-gradient(90deg, transparent, rgba(255, 68, 68, 0.3), transparent);
+}
+
+.modifier-btn.modifier-extreme.active {
+    background: linear-gradient(145deg, rgba(255, 68, 68, 0.2), rgba(180, 40, 40, 0.25));
+    border-color: #ff4444;
+    box-shadow: 0 0 20px rgba(255, 68, 68, 0.3), inset 0 0 30px rgba(255, 68, 68, 0.1);
+}
+
+.modifier-btn.modifier-extreme .modifier-icon {
+    filter: drop-shadow(0 2px 4px rgba(255, 68, 68, 0.3));
+}
+
+/* Training modifiers (Green) */
+.modifier-btn.modifier-training {
+    --mod-color: #00cc66;
+    --mod-color-rgb: 0, 204, 102;
+}
+
+.modifier-btn.modifier-training::before {
+    background: linear-gradient(90deg, transparent, rgba(0, 204, 102, 0.3), transparent);
+}
+
+.modifier-btn.modifier-training.active {
+    background: linear-gradient(145deg, rgba(0, 204, 102, 0.2), rgba(0, 140, 70, 0.25));
+    border-color: #00cc66;
+    box-shadow: 0 0 20px rgba(0, 204, 102, 0.3), inset 0 0 30px rgba(0, 204, 102, 0.1);
+}
+
+/* --- Active Modifier Badges (during gameplay) --- */
+
+#active-modifiers {
+    position: fixed;
+    top: 130px;
+    left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 100;
+}
+
+.modifier-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    animation: modifierBadgeIn 0.3s ease;
+}
+
+.modifier-badge-icon {
+    font-size: 1rem;
+}
+
+.modifier-badge.modifier-challenge {
+    border-color: rgba(255, 170, 0, 0.4);
+    background: rgba(255, 170, 0, 0.15);
+}
+
+.modifier-badge.modifier-extreme {
+    border-color: rgba(255, 68, 68, 0.4);
+    background: rgba(255, 68, 68, 0.15);
+    animation: modifierBadgeIn 0.3s ease, extremePulse 2s ease-in-out infinite;
+}
+
+.modifier-badge.modifier-training {
+    border-color: rgba(0, 204, 102, 0.4);
+    background: rgba(0, 204, 102, 0.15);
+}
+
+@keyframes modifierBadgeIn {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes extremePulse {
+    0%, 100% { box-shadow: 0 0 5px rgba(255, 68, 68, 0.3); }
+    50% { box-shadow: 0 0 15px rgba(255, 68, 68, 0.5); }
+}
+
+/* --- Sudden Death End Animation --- */
+
+.sudden-death-end {
+    animation: suddenDeathEnd 0.5s ease;
+}
+
+@keyframes suddenDeathEnd {
+    0% { filter: none; }
+    30% { filter: saturate(0) brightness(1.5); }
+    60% { filter: saturate(0.5) brightness(0.8) contrast(1.2); }
+    100% { filter: saturate(0.3) brightness(0.6); }
 }
 
 /* ============================================

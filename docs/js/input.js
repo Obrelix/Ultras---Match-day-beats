@@ -2,10 +2,17 @@
 // input.js — Input handling, scoring, AI
 // ============================================
 
-import { GameState, SCORE, BEAT_RESULT_COLORS, AI_ACCURACY, AI_RUBBER_BAND, POWERUPS, AI_PERSONALITIES, CLUB_AI_PERSONALITIES, HOLD_BEAT, HOLD_SCORING, TRASH_TALK, TRASH_TALK_PERSONALITIES, PERFECT_STREAK, CALIBRATION } from './config.js';
+import { GameState, SCORE, BEAT_RESULT_COLORS, AI_ACCURACY, AI_RUBBER_BAND, POWERUPS, AI_PERSONALITIES, CLUB_AI_PERSONALITIES, HOLD_BEAT, HOLD_SCORING, TRASH_TALK, TRASH_TALK_PERSONALITIES, PERFECT_STREAK, CALIBRATION, MODIFIERS, INPUT_CONFIG, PARTICLE_CONFIG, COMBO_VISUALS, ANIMATION_TIMINGS, SCREEN_EFFECTS, AI_THRESHOLDS, UI_TIMINGS, DEFAULT_COLORS } from './config.js';
 import { state } from './state.js';
-import { elements } from './ui.js';
+import { elements, powerupSlots, announce } from './ui.js';
 import { playSFX } from './audio.js';
+
+// Callback for sudden death game end (set by main.js to avoid circular import)
+let _onSuddenDeathEnd = null;
+
+export function setSuddenDeathCallback(callback) {
+    _onSuddenDeathEnd = callback;
+}
 
 // Import functions from main.js for power-up UI updates and replay recording
 // Note: We'll call these via callbacks to avoid circular imports
@@ -19,7 +26,6 @@ export function setMainCallbacks(updatePowerupUI, updateAIMoodUI, recordInput) {
     _recordInput = recordInput;
 }
 
-const INPUT_COOLDOWN_MS = 50;
 let lastInputTime = 0;
 
 // Confetti colors (club primary + celebratory colors)
@@ -31,14 +37,13 @@ const CONFETTI_COLORS = ['#ffcc00', '#ff6600', '#00ff88', '#ff4488', '#44aaff', 
 // ============================================
 
 const _particlePool = [];
-const MAX_POOL_SIZE = 100;
 
 function getParticle() {
     return _particlePool.length > 0 ? _particlePool.pop() : {};
 }
 
 function releaseParticle(p) {
-    if (_particlePool.length < MAX_POOL_SIZE) {
+    if (_particlePool.length < PARTICLE_CONFIG.MAX_POOL_SIZE) {
         // Clear old properties to prevent stale data from previous use
         p.beatTime = 0;
         p.vx = 0;
@@ -75,29 +80,20 @@ function spawnConfetti(beatTime, count, now) {
     // Trigger CSS milestone effect on crowd canvas
     if (state.crowdBgCanvas) {
         state.crowdBgCanvas.classList.add('milestone');
-        setTimeout(() => state.crowdBgCanvas.classList.remove('milestone'), 400);
+        setTimeout(() => state.crowdBgCanvas.classList.remove('milestone'), ANIMATION_TIMINGS.MILESTONE_ANIMATION_MS);
     }
 }
 
-export function handleInput() {
-    if (state.currentState !== GameState.PLAYING) return;
-    if (state.isPaused) return;
+// ============================================
+// Input Helper Functions (extracted for maintainability)
+// ============================================
 
-    const now = performance.now();
-
-    // Prevent duplicate hits from touch + click firing on the same tap
-    if (now - lastInputTime < INPUT_COOLDOWN_MS) return;
-    lastInputTime = now;
-
-    // If already holding, ignore new press (release handles scoring)
-    if (state.holdState.isHolding) return;
-
-    // Apply input calibration offset (positive offset = player taps late, so subtract to compensate)
-    // Clamp to valid bounds to prevent extreme values from breaking gameplay
-    const rawOffset = state.settings?.inputOffset || 0;
-    const inputOffset = Math.max(CALIBRATION.MIN_OFFSET, Math.min(CALIBRATION.MAX_OFFSET, rawOffset));
-    const adjustedNow = now - inputOffset;
-
+/**
+ * Find the best matching beat for current input timing
+ * @param {number} adjustedNow - Calibration-adjusted current time
+ * @returns {{ beat: object|null, diff: number }} Best beat and timing difference
+ */
+function findBestMatchingBeat(adjustedNow) {
     let bestBeat = null;
     let bestDiff = Infinity;
 
@@ -113,7 +109,6 @@ export function handleInput() {
     // Check next upcoming beat (early hit)
     if (state.nextBeatIndex < state.detectedBeats.length) {
         const beat = state.detectedBeats[state.nextBeatIndex];
-        // Handle both normalized beat objects and raw numbers (backwards compatibility)
         const beatTime = typeof beat === 'object' ? beat.time : beat;
         const upcomingWallTime = state.gameStartTime + beatTime * 1000;
         const diff = Math.abs(adjustedNow - upcomingWallTime);
@@ -123,74 +118,61 @@ export function handleInput() {
         }
     }
 
-    // Calculate effective timing windows (Slow Motion widens them)
-    // When Double Time modifier is active, boost Slow Motion effect to compensate
-    // (otherwise 1.5x speed * 0.7x slow = 1.05x which barely helps)
+    return { beat: bestBeat, diff: bestDiff };
+}
+
+/**
+ * Calculate effective timing windows (considering Slow Motion powerup)
+ * @returns {{ PERFECT: number, GOOD: number, OK: number }} Timing windows in ms
+ */
+function calculateEffectiveTiming() {
     let slowMotionMultiplier = 1;
     if (state.powerups.slowMotion.active) {
-        const baseMultiplier = 1 / POWERUPS.slowMotion.speedMultiplier; // ~1.43x
-        // If Double Time is active, double the slow motion effect for meaningful impact
+        const baseMultiplier = 1 / POWERUPS.slowMotion.speedMultiplier;
         slowMotionMultiplier = state.activeModifiers.doubleTime ? baseMultiplier * 1.5 : baseMultiplier;
     }
-    const effectiveTiming = {
+    return {
         PERFECT: state.activeTiming.PERFECT * slowMotionMultiplier,
         GOOD: state.activeTiming.GOOD * slowMotionMultiplier,
         OK: state.activeTiming.OK * slowMotionMultiplier
     };
+}
 
-    // No beat within reach - treat as a miss (this allows Shield to absorb it)
-    if (!bestBeat || bestDiff > effectiveTiming.OK) {
-        registerMiss();
-        return;
-    }
-
-    // Rate the hit (use effective timing for Slow Motion)
-    let rating, score;
-
-    if (bestDiff <= effectiveTiming.PERFECT) {
-        rating = 'PERFECT';
-        score = SCORE.PERFECT;
-    } else if (bestDiff <= effectiveTiming.GOOD) {
-        rating = 'GOOD';
-        score = SCORE.GOOD;
+/**
+ * Rate a hit based on timing difference
+ * @param {number} diff - Timing difference in ms
+ * @param {object} timing - Effective timing windows
+ * @returns {{ rating: string, score: number }} Rating and score value
+ */
+function rateHitTiming(diff, timing) {
+    if (diff <= timing.PERFECT) {
+        return { rating: 'PERFECT', score: SCORE.PERFECT };
+    } else if (diff <= timing.GOOD) {
+        return { rating: 'GOOD', score: SCORE.GOOD };
     } else {
-        // bestDiff <= effectiveTiming.OK guaranteed (early return above for > OK)
-        rating = 'OK';
-        score = SCORE.OK;
+        return { rating: 'OK', score: SCORE.OK };
     }
+}
 
-    // Check if this is a hold beat
-    const beatData = bestBeat.beatData || state.activeBeat?.beatData || null;
-    const isHoldBeat = beatData && typeof beatData === 'object' && beatData.type === 'hold';
-
-    if (isHoldBeat) {
-        // Initiate hold beat - scoring happens on release
-        initiateHoldBeat(bestBeat, beatData, rating, now);
-        return;
-    }
-
-    // Standard tap beat scoring
+/**
+ * Process tap beat rating - update stats, combo, and perfect streak
+ * @param {string} rating - PERFECT, GOOD, or OK
+ */
+function processTapBeatRating(rating) {
     if (rating === 'PERFECT') {
         state.playerStats.perfect++;
         state.playerCombo++;
-
-        // Perfect streak tracking
         state.perfectStreak++;
         if (state.perfectStreak > state.maxPerfectStreak) {
             state.maxPerfectStreak = state.perfectStreak;
         }
-
-        // Check for perfect streak milestones
         checkPerfectStreakMilestone(state.perfectStreak);
-
-        // Screen shake on perfect hits (combo >= 10)
         if (state.playerCombo >= 10) {
             triggerScreenShake('perfect');
         }
     } else if (rating === 'GOOD') {
         state.playerStats.good++;
         state.playerCombo++;
-        // Reset perfect streak on non-perfect hit
         if (state.perfectStreak >= PERFECT_STREAK.MIN_DISPLAY) {
             showPerfectStreakBreak(state.perfectStreak);
         }
@@ -198,12 +180,144 @@ export function handleInput() {
     } else {
         state.playerStats.ok++;
         state.playerCombo++;
-        // Reset perfect streak on non-perfect hit
         if (state.perfectStreak >= PERFECT_STREAK.MIN_DISPLAY) {
             showPerfectStreakBreak(state.perfectStreak);
         }
         state.perfectStreak = 0;
     }
+}
+
+/**
+ * Process early hit side-effects (when player hits upcoming beat before active beat)
+ * @param {object} bestBeat - The beat that was hit early
+ * @param {number} now - Current timestamp
+ */
+function processEarlyHit(bestBeat, now) {
+    if (state.activeBeat) {
+        // Mark skipped active beat as missed for visualization only
+        if (state.activeBeat.index !== undefined) {
+            state.beatResults[state.activeBeat.index] = 'miss';
+        }
+    }
+    state.nextBeatIndex = bestBeat.index + 1;
+    state.activeBeat = null;
+
+    // Trigger side-effects that triggerBeat() would have
+    state.totalBeats++;
+    state.crowdBeatTime = now;
+    state.beatFlashIntensity = 1;
+    elements.gameCanvas.classList.remove('beat-pulse');
+    void elements.gameCanvas.offsetWidth;
+    elements.gameCanvas.classList.add('beat-pulse');
+    simulateAI();
+}
+
+/**
+ * Spawn visual effects for a successful hit
+ * @param {object} bestBeat - The beat that was hit
+ * @param {string} rating - PERFECT, GOOD, or OK
+ * @param {number} now - Current timestamp
+ */
+function spawnHitVisuals(bestBeat, rating, now) {
+    if (rating === 'MISS' || bestBeat.index === undefined) return;
+
+    const beatData = state.detectedBeats[bestBeat.index];
+    const beatTime = typeof beatData === 'object' ? beatData.time : beatData;
+    const hitColor = BEAT_RESULT_COLORS[rating.toLowerCase()] || '#ffffff';
+
+    // Beat hit effect (expanding ring)
+    state.beatHitEffects.push({
+        beatTime: beatTime,
+        color: hitColor,
+        spawnTime: now
+    });
+
+    // PERFECT particles: 8 radiating particles
+    if (rating === 'PERFECT') {
+        for (let i = 0; i < 8; i++) {
+            const angle = (i / 8) * Math.PI * 2;
+            const particle = getParticle();
+            particle.beatTime = beatTime;
+            particle.vx = Math.cos(angle) * (2 + Math.random());
+            particle.vy = Math.sin(angle) * (2 + Math.random()) - 1;
+            particle.color = hitColor;
+            particle.spawnTime = now;
+            particle.isConfetti = false;
+            state.hitParticles.push(particle);
+        }
+    }
+
+    // Confetti burst on combo milestones
+    const combo = state.playerCombo;
+    if (combo === 50 || combo === 100 || combo % 100 === 0) {
+        spawnConfetti(beatTime, combo >= 100 ? COMBO_VISUALS.CONFETTI.LARGE : COMBO_VISUALS.CONFETTI.MEDIUM, now);
+        if (navigator.vibrate) navigator.vibrate(COMBO_VISUALS.HAPTIC_PATTERNS.COMBO_100);
+    } else if (combo === 25 || combo === 75) {
+        spawnConfetti(beatTime, COMBO_VISUALS.CONFETTI.SMALL, now);
+        if (navigator.vibrate) navigator.vibrate(COMBO_VISUALS.HAPTIC_PATTERNS.COMBO_50);
+    } else if (combo === 10 || combo === 15 || combo === 20) {
+        if (navigator.vibrate) navigator.vibrate(COMBO_VISUALS.HAPTIC_PATTERNS.COMBO_SMALL);
+    }
+}
+
+/**
+ * Apply haptic feedback for hit rating
+ * @param {string} rating - PERFECT, GOOD, OK, or MISS
+ */
+function applyHitHaptics(rating) {
+    if (!navigator.vibrate) return;
+    switch (rating) {
+        case 'PERFECT': navigator.vibrate([8, 30, 8, 30, 12]); break;
+        case 'GOOD': navigator.vibrate([10, 25, 15]); break;
+        case 'OK': navigator.vibrate([8]); break;
+        case 'MISS': navigator.vibrate([50, 30, 30]); break;
+    }
+}
+
+export function handleInput() {
+    if (state.currentState !== GameState.PLAYING) return;
+    if (state.isPaused) return;
+
+    const now = performance.now();
+
+    // Prevent duplicate hits from touch + click firing on the same tap
+    if (now - lastInputTime < INPUT_CONFIG.COOLDOWN_MS) return;
+    lastInputTime = now;
+
+    // If already holding, ignore new press (release handles scoring)
+    if (state.holdState.isHolding) return;
+
+    // Apply input calibration offset
+    const rawOffset = state.settings?.inputOffset || 0;
+    const inputOffset = Math.max(CALIBRATION.MIN_OFFSET, Math.min(CALIBRATION.MAX_OFFSET, rawOffset));
+    const adjustedNow = now - inputOffset;
+
+    // Find best matching beat
+    const { beat: bestBeat, diff: bestDiff } = findBestMatchingBeat(adjustedNow);
+
+    // Calculate effective timing windows (Slow Motion widens them)
+    const effectiveTiming = calculateEffectiveTiming();
+
+    // No beat within reach - treat as a miss
+    if (!bestBeat || bestDiff > effectiveTiming.OK) {
+        registerMiss();
+        return;
+    }
+
+    // Rate the hit
+    const { rating, score } = rateHitTiming(bestDiff, effectiveTiming);
+
+    // Check if this is a hold beat
+    const beatData = bestBeat.beatData || state.activeBeat?.beatData || null;
+    const isHoldBeat = beatData && typeof beatData === 'object' && beatData.type === 'hold';
+
+    if (isHoldBeat) {
+        initiateHoldBeat(bestBeat, beatData, rating, now);
+        return;
+    }
+
+    // Process tap beat scoring (stats, combo, streak)
+    processTapBeatRating(rating);
 
     // Reset consecutive misses on successful hit
     triggerTrashTalk('playerHit');
@@ -216,94 +330,21 @@ export function handleInput() {
         state.beatResults[bestBeat.index] = rating.toLowerCase();
     }
 
-    // Haptic feedback - distinctive patterns for each rating
-    if (navigator.vibrate) {
-        switch (rating) {
-            case 'PERFECT': navigator.vibrate([8, 30, 8, 30, 12]); break; // Celebratory triple pulse
-            case 'GOOD': navigator.vibrate([10, 25, 15]); break; // Double tap
-            case 'OK': navigator.vibrate([8]); break; // Light tap
-            case 'MISS': navigator.vibrate([50, 30, 30]); break; // Heavy buzz with aftershock
-        }
-    }
-
-    // Audio SFX
+    // Haptic and audio feedback
+    applyHitHaptics(rating);
     playSFX(rating);
 
-    // If this was an early hit on an upcoming beat, advance past it
+    // Handle early hit on upcoming beat
     if (bestBeat.isEarly && rating !== 'MISS') {
-        if (state.activeBeat) {
-            // Silently mark the skipped active beat as missed (no SFX/feedback — player already got hit feedback)
-            // NOTE: Don't increment miss stats here - the player successfully hit a beat, they just
-            // hit the next one early. The skipped beat is marked for visualization only.
-            if (state.activeBeat.index !== undefined) {
-                state.beatResults[state.activeBeat.index] = 'miss';
-            }
-            // Don't count this as a miss in stats - player got a hit
-        }
-        state.nextBeatIndex = bestBeat.index + 1;
-        state.activeBeat = null;
-
-        // Trigger the same side-effects that triggerBeat() would have
-        state.totalBeats++;
-        state.crowdBeatTime = now;
-        state.beatFlashIntensity = 1;
-        elements.gameCanvas.classList.remove('beat-pulse');
-        void elements.gameCanvas.offsetWidth;
-        elements.gameCanvas.classList.add('beat-pulse');
-        simulateAI();
+        processEarlyHit(bestBeat, now);
     } else {
         state.activeBeat = null;
     }
 
-    // Spawn beat hit visual effects (not for misses)
-    if (rating !== 'MISS' && bestBeat.index !== undefined) {
-        const beatData = state.detectedBeats[bestBeat.index];
-        const beatTime = typeof beatData === 'object' ? beatData.time : beatData;
-        const hitColor = BEAT_RESULT_COLORS[rating.toLowerCase()] || '#ffffff';
-        state.beatHitEffects.push({
-            beatTime: beatTime,
-            color: hitColor,
-            spawnTime: now
-        });
+    // Spawn visual effects
+    spawnHitVisuals(bestBeat, rating, now);
 
-        // PERFECT particles: 8 radiating particles (using object pool)
-        if (rating === 'PERFECT') {
-            for (let i = 0; i < 8; i++) {
-                const angle = (i / 8) * Math.PI * 2;
-                const particle = getParticle();
-                particle.beatTime = beatTime;
-                particle.vx = Math.cos(angle) * (2 + Math.random());
-                particle.vy = Math.sin(angle) * (2 + Math.random()) - 1;
-                particle.color = hitColor;
-                particle.spawnTime = now;
-                particle.isConfetti = false;
-                state.hitParticles.push(particle);
-            }
-        }
-
-        // Confetti burst on combo milestones (#6)
-        const combo = state.playerCombo;
-        if (combo === 50 || combo === 100 || combo % 100 === 0) {
-            spawnConfetti(beatTime, combo >= 100 ? 30 : 20, now);
-            // Big combo haptic celebration
-            if (navigator.vibrate) {
-                navigator.vibrate([15, 40, 15, 40, 15, 40, 25]);
-            }
-        } else if (combo === 25 || combo === 75) {
-            spawnConfetti(beatTime, 12, now);
-            // Medium combo haptic
-            if (navigator.vibrate) {
-                navigator.vibrate([10, 30, 10, 30, 15]);
-            }
-        } else if (combo === 10 || combo === 15 || combo === 20) {
-            // Small milestone haptic
-            if (navigator.vibrate) {
-                navigator.vibrate([8, 25, 12]);
-            }
-        }
-    }
-
-    // Apply combo multiplier + modifier multiplier + powerup multiplier + perfect streak bonus
+    // Calculate final score with all multipliers
     const comboMultiplier = getComboMultiplier();
     const modifierMultiplier = state.modifierScoreMultiplier || 1.0;
     const powerupMultiplier = state.activePowerupMultiplier || 1.0;
@@ -325,6 +366,7 @@ export function handleInput() {
     // Update power-up charge progress
     updatePowerupCharge();
 
+    // Update UI
     elements.playerScore.textContent = state.playerScore;
     showFeedback(rating);
     updateComboDisplay();
@@ -343,11 +385,10 @@ function updatePowerupCharge() {
     state.powerupChargeProgress = combo;
 
     // Shield auto-activates when reaching combo threshold (no manual activation needed)
-    // Cooldown: Shield cannot reactivate within 3 seconds of being used (prevents spam)
-    const SHIELD_COOLDOWN_MS = 3000;
+    // Cooldown: Shield cannot reactivate within configured time of being used (prevents spam)
     const now = performance.now();
     const cooldownElapsed = now - (powerups.shield.lastUsedTime || 0);
-    const shieldOffCooldown = cooldownElapsed >= SHIELD_COOLDOWN_MS;
+    const shieldOffCooldown = cooldownElapsed >= INPUT_CONFIG.SHIELD_COOLDOWN_MS;
 
     if (!powerups.shield.active && combo >= POWERUPS.shield.chargeCombo && shieldOffCooldown) {
         powerups.shield.active = true;
@@ -387,10 +428,10 @@ function updatePowerupCharge() {
 }
 
 function showPowerupReady(powerupId) {
-    const slot = document.getElementById(`powerup-${powerupId}`);
+    const slot = powerupSlots[powerupId];
     if (slot) {
         slot.classList.add('pulse');
-        setTimeout(() => slot.classList.remove('pulse'), 600);
+        setTimeout(() => slot.classList.remove('pulse'), ANIMATION_TIMINGS.POWERUP_PULSE_MS);
     }
 }
 
@@ -424,6 +465,32 @@ export function registerMiss() {
         if (navigator.vibrate) navigator.vibrate([15, 30, 15]);
 
         // Don't break combo OR perfect streak - shield protects both
+        return;
+    }
+
+    // Sudden Death modifier - one miss ends the game immediately
+    if (state.activeModifiers.suddenDeath) {
+        // Show dramatic feedback before ending
+        state.feedbackText = 'SUDDEN DEATH!';
+        state.feedbackAlpha = 1;
+        state.feedbackSpawnTime = performance.now();
+        state.feedbackColor = '#ff0000';
+
+        playSFX('MISS');
+        if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 100]);
+
+        // Record the fatal miss
+        if (_recordInput && state.isRecording) {
+            const relativeTime = performance.now() - state.gameStartTime;
+            const beatIndex = state.activeBeat?.index ?? -1;
+            _recordInput(relativeTime, beatIndex, 'miss', 0);
+        }
+
+        // End game immediately via callback
+        if (_onSuddenDeathEnd) {
+            // Small delay for feedback to show
+            setTimeout(() => _onSuddenDeathEnd(), ANIMATION_TIMINGS.SUDDEN_DEATH_DELAY_MS);
+        }
         return;
     }
 
@@ -533,7 +600,7 @@ function showPerfectStreakMilestone(streak, bonus) {
     state.feedbackText = `PERFECT x${streak}! +${bonus}`;
     state.feedbackAlpha = 1;
     state.feedbackSpawnTime = performance.now();
-    state.feedbackColor = '#ffd700';  // Gold for milestones
+    state.feedbackColor = DEFAULT_COLORS.PERFECT_STREAK_MILESTONE;  // Gold for milestones
 
     // Update perfect streak display
     updatePerfectStreakDisplay(streak, true);
@@ -563,7 +630,7 @@ function showPerfectStreakBreak(brokenStreak) {
  * @param {boolean} isMilestone - Whether this is a milestone
  */
 function updatePerfectStreakDisplay(streak, isMilestone) {
-    const display = document.getElementById('perfect-streak-display');
+    const display = elements.perfectStreakDisplay;
     if (!display) return;
 
     if (streak < PERFECT_STREAK.MIN_DISPLAY) {
@@ -586,27 +653,9 @@ function updatePerfectStreakDisplay(streak, isMilestone) {
 // Screen Shake & Flash Effects
 // ============================================
 
-const SHAKE_PRESETS = {
-    perfect: { intensity: 3, duration: 120, decay: 'exponential' },
-    combo10: { intensity: 5, duration: 180, decay: 'bounce' },
-    combo25: { intensity: 7, duration: 220, decay: 'bounce' },
-    combo50: { intensity: 9, duration: 280, decay: 'explosion' },
-    combo100: { intensity: 12, duration: 350, decay: 'explosion' },
-    comboBreak: { intensity: 6, duration: 200, decay: 'snap' }
-};
-
-const FLASH_PRESETS = {
-    combo10: { color: '#ffd700', intensity: 0.15, duration: 200 },
-    combo20: { color: '#ff8800', intensity: 0.2, duration: 250 },
-    combo25: { color: '#ffaa00', intensity: 0.22, duration: 280 },
-    combo50: { color: '#ff4400', intensity: 0.28, duration: 320 },
-    combo100: { color: '#ffffff', intensity: 0.35, duration: 400 },
-    comboBreak: { color: '#ff0000', intensity: 0.3, duration: 250 }
-};
-
 export function triggerScreenShake(type) {
     if (state.settings?.reducedEffects) return;
-    const preset = SHAKE_PRESETS[type];
+    const preset = SCREEN_EFFECTS.SHAKE_PRESETS[type];
     if (!preset) return;
 
     state.screenShake = {
@@ -620,7 +669,7 @@ export function triggerScreenShake(type) {
 
 export function triggerScreenFlash(type) {
     if (state.settings?.reducedEffects) return;
-    const preset = FLASH_PRESETS[type];
+    const preset = SCREEN_EFFECTS.FLASH_PRESETS[type];
     if (!preset) return;
 
     state.screenFlash = {
@@ -634,30 +683,46 @@ export function triggerScreenFlash(type) {
 
 // Check for combo milestones and trigger effects
 function checkComboMilestone(combo) {
-    if (state.settings?.reducedEffects) return;
-
     // Only trigger milestone effects once per milestone
     const lastMilestone = state.lastMilestoneCombo || 0;
 
     if (combo >= 100 && lastMilestone < 100 && combo % 100 === 0) {
-        triggerScreenShake('combo100');
-        triggerScreenFlash('combo100');
+        if (!state.settings?.reducedEffects) {
+            triggerScreenShake('combo100');
+            triggerScreenFlash('combo100');
+        }
         state.lastMilestoneCombo = combo;
+        announce(`Combo ${combo}! Maximum multiplier!`, 'assertive');
     } else if (combo === 50) {
-        triggerScreenShake('combo50');
-        triggerScreenFlash('combo50');
+        if (!state.settings?.reducedEffects) {
+            triggerScreenShake('combo50');
+            triggerScreenFlash('combo50');
+        }
         state.lastMilestoneCombo = 50;
+        announce('Combo 50!', 'assertive');
     } else if (combo === 25) {
-        triggerScreenShake('combo25');
-        triggerScreenFlash('combo25');
+        if (!state.settings?.reducedEffects) {
+            triggerScreenShake('combo25');
+            triggerScreenFlash('combo25');
+        }
         state.lastMilestoneCombo = 25;
+        announce('Combo 25!');
     } else if (combo === 20 && lastMilestone < 20) {
-        triggerScreenFlash('combo20');
+        if (!state.settings?.reducedEffects) {
+            triggerScreenFlash('combo20');
+        }
         state.lastMilestoneCombo = 20;
+        announce('Combo 20, max multiplier!');
     } else if (combo === 10 && lastMilestone < 10) {
-        triggerScreenShake('combo10');
-        triggerScreenFlash('combo10');
+        if (!state.settings?.reducedEffects) {
+            triggerScreenShake('combo10');
+            triggerScreenFlash('combo10');
+        }
         state.lastMilestoneCombo = 10;
+        announce('Combo 10!');
+    } else if (combo === 6 && lastMilestone < 6) {
+        state.lastMilestoneCombo = 6;
+        announce('Fever mode!', 'assertive');
     }
 }
 
@@ -682,113 +747,111 @@ export function showHitEffect(rating) {
     elements.gameCanvas.classList.add(hitClass);
     setTimeout(() => {
         elements.gameCanvas.classList.remove(hitClass);
-    }, 100);
+    }, INPUT_CONFIG.HIT_EFFECT_DURATION_MS);
 }
 
-export function simulateAI() {
-    let accuracy = AI_ACCURACY;
-    const personality = state.aiPersonality;
+// ============================================
+// AI Simulation Helper Functions (extracted for maintainability)
+// ============================================
 
-    // Use personality-based accuracy in matchday mode
-    if (state.gameMode === 'matchday' && personality) {
-        accuracy = personality.baseAccuracy;
-
-        // Calculate game progress (0-1)
-        const totalBeats = state.detectedBeats.length;
-        const progress = totalBeats > 0 ? state.nextBeatIndex / totalBeats : 0;
-
-        // Apply personality modifiers
-        switch (personality.id) {
-            case 'aggressive':
-                // Starts strong, loses accuracy over time
-                accuracy -= personality.accuracyDecay * progress;
-                break;
-
-            case 'comebackKing':
-                // Gets stronger when losing
-                if (state.aiScore < state.playerScore) {
-                    const deficit = state.playerScore - state.aiScore;
-                    const comebackBoost = Math.min(personality.comebackBonus, deficit / 2000 * personality.comebackBonus);
-                    accuracy += comebackBoost;
-                }
-                break;
-
-            case 'consistent':
-                // Small random variance
-                accuracy += (Math.random() - 0.5) * personality.accuracyVariance * 2;
-                break;
-
-            case 'clutch':
-                // Peaks in final moments
-                if (progress >= personality.clutchThreshold) {
-                    accuracy += personality.clutchBonus;
-                }
-                break;
-
-            case 'wildcard':
-                // Unpredictable streaks
-                if (state.aiInStreak) {
-                    accuracy = personality.streakAccuracy;
-                    state.aiStreakCounter--;
-                    if (state.aiStreakCounter <= 0) {
-                        state.aiInStreak = false;
-                    }
-                } else if (Math.random() < personality.streakChance) {
-                    state.aiInStreak = true;
-                    state.aiStreakCounter = personality.streakLength;
-                    accuracy = personality.streakAccuracy;
-                }
-                break;
-        }
-
-        // Apply rubber banding with personality strength
-        const diff = state.playerScore - state.aiScore;
-        const rubberBand = personality.rubberBandStrength || 1.0;
-        if (diff < -AI_RUBBER_BAND.SCORE_DIFF_THRESHOLD) {
-            accuracy -= AI_RUBBER_BAND.LOSING_REDUCTION * rubberBand;
-        } else if (diff > AI_RUBBER_BAND.SCORE_DIFF_THRESHOLD) {
-            accuracy += AI_RUBBER_BAND.WINNING_INCREASE * rubberBand;
-        }
-
-        // Update AI mood based on score difference
-        const prevMood = state.aiMood;
-        if (state.aiScore > state.playerScore + 300) {
-            state.aiMood = 'confident';
-        } else if (state.aiScore < state.playerScore - 300) {
-            state.aiMood = 'struggling';
-        } else {
-            state.aiMood = 'neutral';
-        }
-
-        // Update mood UI if changed
-        if (prevMood !== state.aiMood && _updateAIMoodUI) {
-            _updateAIMoodUI();
-        }
-    } else {
-        // Standard rubber banding for practice mode
-        if (state.gameMode === 'matchday') {
-            const diff = state.playerScore - state.aiScore;
-            if (diff < -AI_RUBBER_BAND.SCORE_DIFF_THRESHOLD) {
-                accuracy -= AI_RUBBER_BAND.LOSING_REDUCTION;
-            } else if (diff > AI_RUBBER_BAND.SCORE_DIFF_THRESHOLD) {
-                accuracy += AI_RUBBER_BAND.WINNING_INCREASE;
+/**
+ * Apply personality-specific accuracy modifiers
+ * @param {number} accuracy - Base accuracy
+ * @param {object} personality - AI personality config
+ * @param {number} progress - Game progress (0-1)
+ * @returns {number} Modified accuracy
+ */
+function applyPersonalityModifiers(accuracy, personality, progress) {
+    switch (personality.id) {
+        case 'aggressive':
+            accuracy -= personality.accuracyDecay * progress;
+            break;
+        case 'comebackKing':
+            if (state.aiScore < state.playerScore) {
+                const deficit = state.playerScore - state.aiScore;
+                const comebackBoost = Math.min(personality.comebackBonus, deficit / 2000 * personality.comebackBonus);
+                accuracy += comebackBoost;
             }
-        }
+            break;
+        case 'consistent':
+            accuracy += (Math.random() - 0.5) * personality.accuracyVariance * 2;
+            break;
+        case 'clutch':
+            if (progress >= personality.clutchThreshold) {
+                accuracy += personality.clutchBonus;
+            }
+            break;
+        case 'wildcard':
+            if (state.aiInStreak) {
+                accuracy = personality.streakAccuracy;
+                state.aiStreakCounter--;
+                if (state.aiStreakCounter <= 0) {
+                    state.aiInStreak = false;
+                }
+            } else if (Math.random() < personality.streakChance) {
+                state.aiInStreak = true;
+                state.aiStreakCounter = personality.streakLength;
+                accuracy = personality.streakAccuracy;
+            }
+            break;
     }
+    return accuracy;
+}
 
-    // Clamp accuracy
-    accuracy = Math.max(0.3, Math.min(0.95, accuracy));
-
-    // Miss roll
-    const rand = Math.random();
-    if (rand > accuracy) {
-        // AI missed - reset combo
-        state.aiCombo = 0;
-        elements.aiScore.textContent = state.aiScore;
-        return;
+/**
+ * Apply rubber banding based on score difference
+ * @param {number} accuracy - Current accuracy
+ * @param {number} rubberBandStrength - Personality rubber band multiplier (1.0 = standard)
+ * @returns {number} Modified accuracy
+ */
+function applyRubberBanding(accuracy, rubberBandStrength = 1.0) {
+    const diff = state.playerScore - state.aiScore;
+    if (diff < -AI_RUBBER_BAND.SCORE_DIFF_THRESHOLD) {
+        accuracy -= AI_RUBBER_BAND.LOSING_REDUCTION * rubberBandStrength;
+    } else if (diff > AI_RUBBER_BAND.SCORE_DIFF_THRESHOLD) {
+        accuracy += AI_RUBBER_BAND.WINNING_INCREASE * rubberBandStrength;
     }
+    return accuracy;
+}
 
-    // AI hit - increment combo
+/**
+ * Update AI mood based on score difference
+ */
+function updateAIMood() {
+    const prevMood = state.aiMood;
+    if (state.aiScore > state.playerScore + AI_THRESHOLDS.MOOD_CONFIDENT_LEAD) {
+        state.aiMood = 'confident';
+    } else if (state.aiScore < state.playerScore - AI_THRESHOLDS.MOOD_STRUGGLING_DEFICIT) {
+        state.aiMood = 'struggling';
+    } else {
+        state.aiMood = 'neutral';
+    }
+    if (prevMood !== state.aiMood && _updateAIMoodUI) {
+        _updateAIMoodUI();
+    }
+}
+
+/**
+ * Calculate AI accuracy for matchday mode with personality
+ * @param {number} baseAccuracy - Base accuracy from personality
+ * @param {object} personality - AI personality config
+ * @returns {number} Final accuracy value
+ */
+function calculateMatchdayAccuracy(baseAccuracy, personality) {
+    const totalBeats = state.detectedBeats.length;
+    const progress = totalBeats > 0 ? state.nextBeatIndex / totalBeats : 0;
+
+    let accuracy = applyPersonalityModifiers(baseAccuracy, personality, progress);
+    accuracy = applyRubberBanding(accuracy, personality.rubberBandStrength || 1.0);
+    updateAIMood();
+
+    return accuracy;
+}
+
+/**
+ * Process a successful AI hit - update score and trigger effects
+ */
+function processAIHit() {
     state.aiCombo++;
     if (state.aiCombo > state.aiMaxCombo) {
         state.aiMaxCombo = state.aiCombo;
@@ -804,7 +867,6 @@ export function simulateAI() {
     const scoringRoll = Math.random();
     if (scoringRoll < 0.40) {
         scoreGained = SCORE.PERFECT;
-        // Occasionally trigger AI perfect trash talk
         if (Math.random() < 0.15) {
             triggerTrashTalk('aiPerfect');
         }
@@ -817,16 +879,16 @@ export function simulateAI() {
     state.aiScore += scoreGained;
     elements.aiScore.textContent = state.aiScore;
 
-    // Track comeback potential (for Comeback King achievement)
+    // Track comeback potential
     const deficit = state.aiScore - state.playerScore;
     if (deficit > state.maxDeficit) {
         state.maxDeficit = deficit;
     }
-    if (deficit >= 500) {
+    if (deficit >= AI_THRESHOLDS.COMEBACK_ACHIEVEMENT) {
         state.wasEverBehind500 = true;
     }
 
-    // Periodic score check for winning/losing trash talk
+    // Periodic score check for trash talk
     if (Math.random() < 0.05) {
         triggerTrashTalk('scoreCheck');
     }
@@ -837,8 +899,34 @@ export function simulateAI() {
         popup.className = 'ai-score-popup';
         popup.textContent = `+${scoreGained}`;
         elements.aiScorePopupContainer.appendChild(popup);
-        setTimeout(() => popup.remove(), 800);
+        setTimeout(() => popup.remove(), UI_TIMINGS.AI_SCORE_POPUP_MS);
     }
+}
+
+export function simulateAI() {
+    let accuracy = AI_ACCURACY;
+    const personality = state.aiPersonality;
+
+    // Calculate accuracy based on game mode and personality
+    if (state.gameMode === 'matchday' && personality) {
+        accuracy = calculateMatchdayAccuracy(personality.baseAccuracy, personality);
+    } else if (state.gameMode === 'matchday') {
+        // Standard rubber banding for matchday without personality
+        accuracy = applyRubberBanding(accuracy);
+    }
+
+    // Clamp accuracy to valid range
+    accuracy = Math.max(0.3, Math.min(0.95, accuracy));
+
+    // Miss roll
+    if (Math.random() > accuracy) {
+        state.aiCombo = 0;
+        elements.aiScore.textContent = state.aiScore;
+        return;
+    }
+
+    // AI hit - process scoring and effects
+    processAIHit();
 }
 
 // ============================================
@@ -1113,11 +1201,11 @@ function calculateHoldScore(releaseTime) {
     let holdScore = SCORE.PERFECT;
     if (holdState.wasBroken) {
         holdScore = SCORE.PERFECT * HOLD_SCORING.HOLD_BREAK_PENALTY * holdRatio;
-    } else if (holdRatio >= 0.9) {
+    } else if (holdRatio >= HOLD_SCORING.THRESHOLDS.PERFECT) {
         holdScore = SCORE.PERFECT;
-    } else if (holdRatio >= 0.7) {
+    } else if (holdRatio >= HOLD_SCORING.THRESHOLDS.OK) {
         holdScore = SCORE.GOOD;
-    } else if (holdRatio >= 0.5) {
+    } else if (holdRatio >= HOLD_SCORING.THRESHOLDS.MINIMUM_HOLD) {
         holdScore = SCORE.OK;
     } else {
         holdScore = 0;
@@ -1165,11 +1253,11 @@ function calculateHoldScore(releaseTime) {
     const scoreRatio = totalScore / maxPossible;
 
     let overallRating;
-    if (scoreRatio >= 0.8 && !holdState.wasBroken) {
+    if (scoreRatio >= HOLD_SCORING.THRESHOLDS.GOOD && !holdState.wasBroken) {
         overallRating = 'perfect';
-    } else if (scoreRatio >= 0.5) {
+    } else if (scoreRatio >= HOLD_SCORING.THRESHOLDS.MINIMUM_HOLD) {
         overallRating = 'good';
-    } else if (scoreRatio >= 0.25) {
+    } else if (scoreRatio >= HOLD_SCORING.THRESHOLDS.EARLY_RELEASE) {
         overallRating = 'ok';
     } else {
         overallRating = 'miss';
@@ -1351,7 +1439,7 @@ export function simulateAIHoldBeat(beatData) {
         popup.className = 'ai-score-popup';
         popup.textContent = `+${totalScore}`;
         elements.aiScorePopupContainer.appendChild(popup);
-        setTimeout(() => popup.remove(), 800);
+        setTimeout(() => popup.remove(), UI_TIMINGS.AI_SCORE_POPUP_MS);
     }
 }
 
@@ -1412,11 +1500,14 @@ export function showTrashTalk(category, force = false) {
  * @param {string} message - The message text to display
  */
 function displayTrashTalkMessage(message) {
-    const container = document.getElementById('ai-trash-talk');
-    const textEl = document.getElementById('trash-talk-text');
-    const bubble = document.getElementById('trash-talk-bubble');
+    const container = elements.aiTrashTalk;
+    const textEl = elements.trashTalkText;
+    const bubble = elements.trashTalkBubble;
 
     if (!container || !textEl || !bubble) return;
+
+    // Announce to screen readers
+    announce(`Rival says: ${message}`);
 
     // Clear any existing hide timeout
     if (state.trashTalk.hideTimeoutId) {
@@ -1472,7 +1563,7 @@ function isColorLight(hex) {
  * Hide the trash talk message with animation
  */
 export function hideTrashTalk() {
-    const container = document.getElementById('ai-trash-talk');
+    const container = elements.aiTrashTalk;
     if (!container) return;
 
     container.classList.add('hiding');
@@ -1482,7 +1573,7 @@ export function hideTrashTalk() {
         container.classList.add('hidden');
         container.classList.remove('hiding');
         state.trashTalk.messageVisible = false;
-    }, 300);
+    }, UI_TIMINGS.TRASH_TALK_HIDE_MS);
 }
 
 /**
@@ -1531,9 +1622,9 @@ export function triggerTrashTalk(event, context = {}) {
 
         case 'scoreCheck':
             // Periodic check during gameplay
-            if (scoreDiff > 500) {
+            if (scoreDiff > AI_THRESHOLDS.TRASH_TALK_WINNING_LEAD) {
                 showTrashTalk('winning');
-            } else if (scoreDiff < -500) {
+            } else if (scoreDiff < -AI_THRESHOLDS.TRASH_TALK_LOSING_DEFICIT) {
                 showTrashTalk('losing');
             }
             break;

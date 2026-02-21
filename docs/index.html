@@ -7,24 +7,26 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <canvas id="crowd-bg"></canvas>
+    <canvas id="crowd-bg" aria-hidden="true"></canvas>
+    <!-- Screen reader announcements (live region) -->
+    <div id="sr-announcements" class="sr-only" aria-live="polite" aria-atomic="true"></div>
     <div id="game-container">
         <!-- Global Settings Button -->
         <div id="global-settings">
-            <button id="settings-btn" class="icon-btn" title="Settings">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Open Settings" aria-expanded="false" aria-controls="settings-panel">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96a7.09 7.09 0 00-1.62-.94l-.36-2.54a.48.48 0 00-.48-.41h-3.84a.48.48 0 00-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87a.48.48 0 00.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.57 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 00-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/>
                 </svg>
             </button>
             <div id="settings-panel" class="hidden">
                 <div class="settings-header">Settings</div>
                 <label>
-                    <span>Music</span>
-                    <input type="range" id="volume-slider" min="0" max="100" value="100">
+                    <span id="volume-label">Music</span>
+                    <input type="range" id="volume-slider" min="0" max="100" value="100" aria-labelledby="volume-label" aria-valuemin="0" aria-valuemax="100">
                 </label>
                 <label>
-                    <span>SFX</span>
-                    <input type="range" id="sfx-volume-slider" min="0" max="100" value="50">
+                    <span id="sfx-volume-label">SFX</span>
+                    <input type="range" id="sfx-volume-slider" min="0" max="100" value="50" aria-labelledby="sfx-volume-label" aria-valuemin="0" aria-valuemax="100">
                 </label>
                 <div class="settings-divider"></div>
                 <label class="toggle-label" title="Play a click sound on each beat to help learn timing">
@@ -50,27 +52,27 @@
 
         <!-- Global Navigation -->
         <div id="global-nav" class="hidden">
-            <button id="nav-back-btn" class="nav-btn" title="Back">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <button id="nav-back-btn" class="nav-btn" title="Back" aria-label="Go Back">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
                 </svg>
             </button>
-            <button id="nav-home-btn" class="nav-btn" title="Main Menu">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <button id="nav-home-btn" class="nav-btn" title="Main Menu" aria-label="Main Menu">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
                 </svg>
             </button>
-            <button id="nav-profile-btn" class="nav-btn" title="Profile">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <button id="nav-profile-btn" class="nav-btn" title="Profile" aria-label="View Profile">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
                 </svg>
             </button>
         </div>
 
         <!-- Abandon Match Confirmation Modal -->
-        <div id="abandon-match-modal" class="modal hidden">
+        <div id="abandon-match-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="abandon-match-title">
             <div class="modal-content">
-                <h3>Abandon Match?</h3>
+                <h3 id="abandon-match-title">Abandon Match?</h3>
                 <p>Your match progress will be lost.</p>
                 <div class="modal-actions">
                     <button id="abandon-confirm-btn">LEAVE</button>
@@ -80,9 +82,9 @@
         </div>
 
         <!-- Input Calibration Modal -->
-        <div id="calibration-modal" class="modal hidden">
+        <div id="calibration-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="calibration-title">
             <div class="modal-content calibration-content">
-                <h2>Input Calibration</h2>
+                <h2 id="calibration-title">Input Calibration</h2>
                 <p id="calibration-instruction">Tap along with the beat</p>
                 <div id="calibration-circle"></div>
                 <p id="calibration-progress">Warming up...</p>
@@ -108,22 +110,22 @@
         <div id="mode-select-screen" class="screen">
             <h2>Select Mode</h2>
             <div id="mode-grid">
-                <div class="mode-card" id="mode-practice">
+                <div class="mode-card" id="mode-practice" role="button" tabindex="0" aria-label="Practice Mode - Pick any chant and perfect your rhythm at your own pace">
                     <div class="mode-corner mode-corner-tl"></div>
                     <div class="mode-corner mode-corner-br"></div>
                     <span class="mode-badge">Free Play</span>
                     <div class="mode-icon-wrapper">
-                        <div class="mode-icon">&#9835;</div>
+                        <div class="mode-icon" aria-hidden="true">&#9835;</div>
                     </div>
                     <div class="mode-title">Practice</div>
                     <div class="mode-desc">Pick any chant and perfect your rhythm at your own pace</div>
                 </div>
-                <div class="mode-card" id="mode-matchday">
+                <div class="mode-card" id="mode-matchday" role="button" tabindex="0" aria-label="Match Day Mode - Full match experience with 6 chants, 2 halves, goals on the line">
                     <div class="mode-corner mode-corner-tl"></div>
                     <div class="mode-corner mode-corner-br"></div>
                     <span class="mode-badge">Competitive</span>
                     <div class="mode-icon-wrapper">
-                        <div class="mode-icon">&#9917;</div>
+                        <div class="mode-icon" aria-hidden="true">&#9917;</div>
                     </div>
                     <div class="mode-title">Match Day</div>
                     <div class="mode-desc">Full match experience — 6 chants, 2 halves, goals on the line</div>
@@ -132,25 +134,44 @@
             <div id="difficulty-selector">
                 <span>Difficulty:</span>
                 <div id="difficulty-options">
-                    <button class="difficulty-btn" data-difficulty="easy">Easy</button>
-                    <button class="difficulty-btn active" data-difficulty="normal">Normal</button>
-                    <button class="difficulty-btn" data-difficulty="hard">Hard</button>
+                    <button class="difficulty-btn" data-difficulty="easy" aria-pressed="false">Easy</button>
+                    <button class="difficulty-btn active" data-difficulty="normal" aria-pressed="true">Normal</button>
+                    <button class="difficulty-btn" data-difficulty="hard" aria-pressed="false">Hard</button>
                 </div>
             </div>
             <div id="modifier-selector">
                 <span>Modifiers:</span>
                 <div id="modifier-options">
-                    <button class="modifier-btn" data-modifier="doubleTime" title="1.5x speed, 2x score">
-                        <span class="modifier-icon">⏩</span>
+                    <!-- Standard Challenge (Yellow) -->
+                    <button class="modifier-btn modifier-challenge" data-modifier="doubleTime" title="1.5x speed, +50% score" aria-pressed="false">
+                        <span class="modifier-icon" aria-hidden="true">⏩</span>
                         <span class="modifier-name">Double Time</span>
                     </button>
-                    <button class="modifier-btn" data-modifier="hidden" title="Beats fade before hit line">
-                        <span class="modifier-icon">👁</span>
+                    <button class="modifier-btn modifier-challenge" data-modifier="hidden" title="Beats fade before hit line, +30% score" aria-pressed="false">
+                        <span class="modifier-icon" aria-hidden="true">👁</span>
                         <span class="modifier-name">Hidden</span>
                     </button>
-                    <button class="modifier-btn" data-modifier="mirror" title="Reverse scroll direction">
-                        <span class="modifier-icon">🪞</span>
+                    <button class="modifier-btn modifier-challenge" data-modifier="mirror" title="Reverse scroll direction, +20% score" aria-pressed="false">
+                        <span class="modifier-icon" aria-hidden="true">🪞</span>
                         <span class="modifier-name">Mirror</span>
+                    </button>
+                    <!-- Extreme Challenge (Red) -->
+                    <button class="modifier-btn modifier-extreme" data-modifier="suddenDeath" title="One miss = game over, +50% score" aria-pressed="false">
+                        <span class="modifier-icon" aria-hidden="true">💀</span>
+                        <span class="modifier-name">Sudden Death</span>
+                    </button>
+                    <button class="modifier-btn modifier-extreme" data-modifier="flash" title="Beats appear late, +30% score" aria-pressed="false">
+                        <span class="modifier-icon" aria-hidden="true">⚡</span>
+                        <span class="modifier-name">Flash</span>
+                    </button>
+                    <button class="modifier-btn modifier-extreme" data-modifier="random" title="Beats shift position, +20% score" aria-pressed="false">
+                        <span class="modifier-icon" aria-hidden="true">🎲</span>
+                        <span class="modifier-name">Random</span>
+                    </button>
+                    <!-- Training (Green) -->
+                    <button class="modifier-btn modifier-training" data-modifier="noFail" title="Cannot fail, -50% score" aria-pressed="false">
+                        <span class="modifier-icon" aria-hidden="true">🛟</span>
+                        <span class="modifier-name">No Fail</span>
                     </button>
                 </div>
                 <div id="modifier-bonus"></div>
@@ -170,13 +191,13 @@
             <h2>Match Day</h2>
             <p class="submode-subtitle">Choose your match type</p>
             <div id="submode-grid">
-                <div class="submode-card" id="submode-random">
-                    <div class="submode-icon">🎲</div>
+                <div class="submode-card" id="submode-random" role="button" tabindex="0" aria-label="All Random - Random rival and chants, jump straight into the action">
+                    <div class="submode-icon" aria-hidden="true">🎲</div>
                     <div class="submode-title">All Random</div>
                     <div class="submode-desc">Random rival and chants — jump straight into the action</div>
                 </div>
-                <div class="submode-card" id="submode-custom">
-                    <div class="submode-icon">⚙️</div>
+                <div class="submode-card" id="submode-custom" role="button" tabindex="0" aria-label="Custom - Choose your rival and select 6 chants for the match">
+                    <div class="submode-icon" aria-hidden="true">⚙️</div>
                     <div class="submode-title">Custom</div>
                     <div class="submode-desc">Choose your rival and select 6 chants for the match</div>
                 </div>
@@ -226,9 +247,9 @@
         </div>
 
         <!-- Copyright Disclaimer Modal -->
-        <div id="copyright-modal" class="modal hidden">
+        <div id="copyright-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="copyright-title">
             <div class="modal-content">
-                <h3>Copyright Disclaimer</h3>
+                <h3 id="copyright-title">Copyright Disclaimer</h3>
                 <div class="modal-body">
                     <p>By uploading audio files, you acknowledge:</p>
                     <ul>
@@ -250,9 +271,9 @@
         </div>
 
         <!-- Upload Progress Modal -->
-        <div id="upload-modal" class="modal hidden">
+        <div id="upload-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="upload-title">
             <div class="modal-content">
-                <h3>Processing Chant</h3>
+                <h3 id="upload-title">Processing Chant</h3>
                 <div class="modal-body">
                     <div id="upload-status">
                         <span id="upload-status-text">Reading file...</span>
@@ -298,8 +319,8 @@
 
         <!-- Gameplay Screen -->
         <div id="gameplay-screen" class="screen">
-            <button id="pause-btn" class="icon-btn" title="Pause (ESC)">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <button id="pause-btn" class="icon-btn" title="Pause (ESC)" aria-label="Pause Game">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <rect x="6" y="4" width="4" height="16" rx="1"/>
                     <rect x="14" y="4" width="4" height="16" rx="1"/>
                 </svg>
@@ -353,7 +374,7 @@
             <!-- Perfect Streak Display -->
             <div id="perfect-streak-display" class="hidden"></div>
 
-            <canvas id="game-canvas"></canvas>
+            <canvas id="game-canvas" role="img" aria-label="Beat track visualizer showing incoming beats"></canvas>
 
             <div id="input-hint">
                 <span class="key-badge">SPACE</span>
@@ -400,9 +421,9 @@
         </div>
 
         <!-- Pause Overlay -->
-        <div id="pause-overlay" class="hidden">
+        <div id="pause-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="pause-title">
             <div id="pause-content">
-                <h2>PAUSED</h2>
+                <h2 id="pause-title">PAUSED</h2>
                 <button id="resume-btn" class="btn-primary">RESUME</button>
                 <button id="quit-btn" class="btn-secondary">QUIT TO MENU</button>
             </div>
@@ -618,7 +639,7 @@
         </div>
 
         <!-- Replay Share Modal -->
-        <div id="replay-modal" class="hidden">
+        <div id="replay-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="replay-modal-title">
             <div id="replay-modal-content">
                 <h3 id="replay-modal-title">Share Replay</h3>
                 <p id="replay-modal-desc">Copy this code to share your replay:</p>
@@ -633,9 +654,9 @@
         </div>
 
         <!-- Name Modal -->
-        <div id="name-modal" class="hidden">
+        <div id="name-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="name-modal-title">
             <div id="name-modal-content">
-                <h3>Enter Your Name</h3>
+                <h3 id="name-modal-title">Enter Your Name</h3>
                 <p>Choose a name for the leaderboard</p>
                 <input type="text" id="player-name-input" maxlength="16" placeholder="Your name...">
                 <p id="name-error" class="hidden"></p>

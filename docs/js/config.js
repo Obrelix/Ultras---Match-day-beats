@@ -218,45 +218,100 @@ export const LEADERBOARD = {
         authDomain: "ultras---match-day-beats.firebaseapp.com",
         projectId: "ultras---match-day-beats",
         databaseURL: "https://ultras---match-day-beats-default-rtdb.europe-west1.firebasedatabase.app"
-    }
+    },
+    // UI constants (Phase 2)
+    UI: {
+        ROWS_PER_PAGE: 10,            // Entries per leaderboard page
+        HIGHLIGHT_DURATION_MS: 2000,  // How long to highlight player's entry
+        SCROLL_ANIMATION_MS: 300,     // Scroll animation duration
+        RANK_BADGE_THRESHOLDS: [1, 2, 3, 10],  // Ranks that get special badges
+    },
 };
 
 // ============================================
-// Game Modifiers (Double Time, Hidden, Mirror)
+// Game Modifiers
 // ============================================
 
 export const MODIFIERS = {
+    // === Standard Challenge Modifiers (Yellow) ===
     doubleTime: {
         id: 'doubleTime',
         name: 'Double Time',
         icon: '⏩',
-        description: '1.5x speed, 2x score',
+        description: '1.5x speed',
         speedMultiplier: 1.5,
-        scoreMultiplier: 2.0
+        scoreMultiplier: 1.5,
+        category: 'challenge'
     },
     hidden: {
         id: 'hidden',
         name: 'Hidden',
         icon: '👁',
         description: 'Beats fade before hit line',
-        fadeStartPercent: 0.6,  // Start fading at 60% of approach
-        fadeEndPercent: 0.85    // Fully hidden at 85%
+        fadeStartPercent: 0.5,   // Start fading at 50% of approach (earlier for challenge)
+        fadeEndPercent: 0.8,     // Fully hidden at 80%
+        scoreMultiplier: 1.3,
+        category: 'challenge'
     },
     mirror: {
         id: 'mirror',
         name: 'Mirror',
         icon: '🪞',
         description: 'Reverse scroll direction',
-        reversed: true
+        reversed: true,
+        scoreMultiplier: 1.2,
+        category: 'challenge'
+    },
+
+    // === Extreme Challenge Modifiers (Red) ===
+    suddenDeath: {
+        id: 'suddenDeath',
+        name: 'Sudden Death',
+        icon: '💀',
+        description: 'One miss = game over',
+        scoreMultiplier: 1.5,
+        endsOnMiss: true,
+        category: 'extreme'
+    },
+    flash: {
+        id: 'flash',
+        name: 'Flash',
+        icon: '⚡',
+        description: 'Beats appear late',
+        approachMultiplier: 0.4,   // 40% of normal approach time
+        scoreMultiplier: 1.3,
+        category: 'extreme'
+    },
+    random: {
+        id: 'random',
+        name: 'Random',
+        icon: '🎲',
+        description: 'Beats shift position',
+        wobbleAmount: 15,          // Pixels of random shift
+        wobbleSpeed: 3,            // Oscillation speed
+        scoreMultiplier: 1.2,
+        category: 'extreme'
+    },
+
+    // === Training Modifier (Green) ===
+    noFail: {
+        id: 'noFail',
+        name: 'No Fail',
+        icon: '🛟',
+        description: 'Cannot fail, but -50% score',
+        scoreMultiplier: 0.5,      // 50% penalty
+        preventsFail: true,
+        category: 'training'
     }
 };
 
-// Score bonus for using modifiers
-export const MODIFIER_BONUSES = {
-    none: 1.0,
-    one: 1.2,    // 20% bonus for 1 modifier
-    two: 1.5,    // 50% bonus for 2 modifiers
-    three: 2.0   // 100% bonus for all 3
+// Modifier display order (for UI)
+export const MODIFIER_ORDER = ['doubleTime', 'hidden', 'mirror', 'suddenDeath', 'flash', 'random', 'noFail'];
+
+// Modifier incompatibilities (modifiers that cannot be used together)
+export const MODIFIER_CONFLICTS = {
+    suddenDeath: ['noFail'],   // Can't have sudden death with no fail
+    noFail: ['suddenDeath']    // Vice versa
 };
 
 // ============================================
@@ -387,6 +442,13 @@ export const XP_CONFIG = {
     MATCHDAY_DRAW: 200,             // XP for drawing a match day
     PERFECT_HIT_BONUS: 2,           // Extra XP per perfect hit
     CHALLENGE_MULTIPLIER: 1.5,      // XP multiplier for challenge completion
+    // Visual/animation timings (Phase 2)
+    VISUALS: {
+        LEVEL_UP_FLASH_MS: 1500,        // Level up celebration flash duration
+        XP_BAR_ANIMATION_MS: 800,       // XP bar fill animation duration
+        ACHIEVEMENT_POPUP_MS: 3000,     // Achievement notification duration
+        XP_POPUP_FADE_MS: 500,          // XP gain popup fade duration
+    },
 
     // Level thresholds (cumulative XP needed) - 100 levels
     LEVEL_THRESHOLDS: [
@@ -868,6 +930,9 @@ export const ANALYTICS = {
     MIN_GAMES_FOR_TRENDS: 3,       // Minimum games needed to show trends
     CHART_ANIMATION_DURATION: 500, // Chart animation in ms
     SESSION_TIMEOUT: 30 * 60 * 1000, // 30 min session timeout
+    TREND_LOOKBACK_GAMES: 20,      // Games to consider for trend charts
+    TOP_CLUBS_DISPLAY_COUNT: 5,    // Number of top clubs to show in bar chart
+    BAR_HEIGHT: 18,                // Height of bars in bar chart
     COLORS: {
         perfect: '#00ff88',
         good: '#88ff00',
@@ -877,7 +942,57 @@ export const ANALYTICS = {
         trendFill: 'rgba(0, 170, 255, 0.15)',
         grid: 'rgba(255, 255, 255, 0.1)',
         label: 'rgba(255, 255, 255, 0.7)'
-    }
+    },
+    // Chart rendering constants (Phase 2)
+    CHART: {
+        PADDING_RATIO: 0.1,       // Padding as ratio of chart dimensions
+        LABEL_FONT_SIZE: 12,      // Font size for axis labels
+        AXIS_COLOR: '#666666',    // Color of chart axes
+        GRID_COLOR: '#333333',    // Color of chart grid lines
+        LINE_WIDTH: 2,            // Width of line chart lines
+        POINT_RADIUS: 4,          // Radius of data points
+        LEGEND_SPACING: 20,       // Spacing between legend items
+    },
+    PIE: {
+        INNER_RADIUS_RATIO: 0.4,  // Inner radius for donut charts
+        LABEL_OFFSET: 20,         // Offset for pie chart labels
+        SLICE_GAP: 2,             // Gap between pie slices in degrees
+    },
+};
+
+// ============================================
+// UI Layout Constants
+// ============================================
+
+export const UI_LAYOUT = {
+    MAX_NAVIGATION_HISTORY: 20,
+    HOLD_BEAT_DOT_SPACING: 20,
+    HOLD_BEAT_LABEL_MIN_WIDTH: 80,
+};
+
+// ============================================
+// Default Colors
+// ============================================
+
+export const DEFAULT_COLORS = {
+    PRIMARY: '#006633',
+    RIVAL: '#cc0000',
+    RIVAL_SECONDARY: '#990000',
+    FALLBACK_RGB: '0, 102, 51',
+    PERFECT_STREAK_MILESTONE: '#ffd700',
+};
+
+// ============================================
+// Stadium Layout Configuration
+// ============================================
+
+export const STADIUM_LAYOUT = {
+    EDGE_MARGIN: 30,
+    AISLE_WIDTH: 40,
+    SECTION_DIVISOR: 500,
+    BARRIER_COLOR: '#1a1a2e',
+    BARRIER_HIGHLIGHT: '#2a2a4e',
+    RAILING_COLOR: '#444466',
 };
 
 // ============================================
@@ -890,7 +1005,10 @@ export const CALIBRATION = {
     RECORD_BEATS: 8,         // Beats to record for calibration
     MIN_OFFSET: -150,        // Minimum offset (ms) - player taps early
     MAX_OFFSET: 150,         // Maximum offset (ms) - player taps late
-    OUTLIER_THRESHOLD: 250   // Ignore mistaps beyond this deviation (ms)
+    OUTLIER_THRESHOLD: 250,  // Ignore mistaps beyond this deviation (ms)
+    INITIAL_DELAY_MS: 500,   // Delay before first calibration beat
+    CHECK_INTERVAL_MS: 10,   // Interval for checking beat timing
+    MIN_VALID_TAPS: 3,       // Minimum taps needed for valid calibration
 };
 
 // ============================================
@@ -902,6 +1020,8 @@ export const TRASH_TALK = {
     MIN_INTERVAL: 4000,      // Minimum ms between trash talk messages
     DISPLAY_DURATION: 2500,  // How long message stays visible
     MISS_STREAK_THRESHOLD: 3, // Misses in a row to trigger taunt
+    NEAR_END_THRESHOLD: 0.8, // Game progress threshold for near-end taunts
+    SCORE_DIFF_THRESHOLD: 300, // Score difference threshold for winning/losing taunts
 
     // Message categories with weighted random selection
     MESSAGES: {
@@ -1034,13 +1154,22 @@ export const TRASH_TALK_PERSONALITIES = {
 
 export const HOLD_BEAT = {
     MIN_DURATION: 0.3,           // Minimum hold duration (seconds)
-    MAX_DURATION: 15.0,           // Maximum hold duration (seconds)
+    MAX_DURATION: 15.0,          // Maximum hold duration (seconds)
     RELEASE_WINDOW: 300,         // Release timing tolerance (ms)
     HOLD_GRACE_PERIOD: 100,      // Grace before hold counts as broken (ms)
     // Auto-generation settings
     AUTO_GENERATE: true,         // Enable auto-generation of hold beats
     COMBINE_THRESHOLD: 0.30,     // Combine beats closer than this (seconds)
     MIN_CLUSTER_SIZE: 2,         // Minimum consecutive beats to form a hold
+    // Visual thresholds
+    COLOR_SHIFT_THRESHOLD: 0.5,  // Progress at which hue shifts from blue
+    NEAR_END_THRESHOLD: 0.85,    // Progress at which end marker pulses
+    BUBBLE_WIDTHS: { default: 28, small: 22, large: 36 },
+    COLORS: {
+        BROKEN_START: '#661111',
+        BROKEN_END: '#aa2222',
+        NORMAL_END: '#1a1a2e',
+    },
 };
 
 export const HOLD_SCORING = {
@@ -1050,6 +1179,267 @@ export const HOLD_SCORING = {
     HOLD_BREAK_PENALTY: 0.5,     // 50% penalty if hold was broken
     COMBO_TICK_INTERVAL: 0.2,    // Increment combo every 20% of hold progress
     SCORE_PER_TICK: 15,          // Score awarded per combo tick during hold
+    // Score quality thresholds based on hold progress
+    THRESHOLDS: {
+        PERFECT: 0.9,            // 90%+ hold = PERFECT
+        GOOD: 0.8,               // 80%+ hold = GOOD
+        OK: 0.7,                 // 70%+ hold = OK
+        MINIMUM_HOLD: 0.5,       // Below 50% = minimal credit
+        EARLY_RELEASE: 0.25,     // Very early release penalty threshold
+    },
+};
+
+// ============================================
+// Input & Timing Constants
+// ============================================
+
+export const INPUT_CONFIG = {
+    COOLDOWN_MS: 50,              // Debounce for duplicate touch+click
+    SHIELD_COOLDOWN_MS: 3000,     // Shield recharge after use
+    HIT_EFFECT_DURATION_MS: 100,  // CSS hit effect class duration
+};
+
+// ============================================
+// Particle & Visual Effects
+// ============================================
+
+export const PARTICLE_CONFIG = {
+    MAX_POOL_SIZE: 100,           // Object pool limit for GC optimization
+    EFFECT_DURATION_MS: 450,      // Particle lifetime
+    HIT_EFFECT_DURATION_MS: 500,  // Beat hit glow duration
+};
+
+// ============================================
+// Combo Visual Effects
+// ============================================
+
+export const COMBO_VISUALS = {
+    MILESTONES: [10, 15, 20, 25, 50, 75, 100],
+    MILESTONE_NAMES: {
+        10: 'SMALL',
+        15: 'MEDIUM',
+        20: 'LARGE',
+        25: 'HUGE',
+        50: 'MEGA',
+        75: 'ULTRA',
+        100: 'LEGENDARY',
+    },
+    PULSE_INTERVALS: {
+        10: 500,   // ms between pulses at combo 10
+        15: 400,
+        20: 300,
+        25: 250,
+        50: 200,
+        100: 150,  // Fastest pulse at legendary combo
+    },
+    CONFETTI: {
+        SMALL: 12,    // For 25, 75 combos
+        MEDIUM: 20,   // For 50 combo
+        LARGE: 30,    // For 100+ combos
+    },
+    MULTIPLIER_THRESHOLDS: [
+        { combo: 5, multiplier: 1.5 },
+        { combo: 10, multiplier: 2 },
+        { combo: 15, multiplier: 2.5 },
+        { combo: 20, multiplier: 3 },
+    ],
+    SCREEN_SHAKE_COMBO_THRESHOLD: 10,
+    CONFETTI_MILESTONES: [10, 50, 100],  // Combos that trigger confetti
+    HAPTIC_PATTERNS: {
+        COMBO_100: [15, 40, 15, 40, 15, 40, 25],
+        COMBO_50: [10, 30, 10, 30, 15],
+        COMBO_SMALL: [8, 25, 12],
+    },
+    TINT_THRESHOLDS: {
+        10: { pulseMs: 300, alpha: 0.05 },
+        25: { pulseMs: 200, alpha: 0.08 },
+        50: { pulseMs: 150, alpha: 0.05 },
+        100: { pulseMs: 100, rainbow: true, alpha: 0.04, hueDiv: 20 }
+    },
+};
+
+// ============================================
+// Animation Timing Constants
+// ============================================
+
+export const ANIMATION_TIMINGS = {
+    // Math.sin divisors for pulse effects (lower = faster)
+    HOLD_GLOW_PULSE: 150,
+    HOLD_START_PULSE: 100,
+    HOLD_END_PULSE: 80,
+    DOT_PULSE: 300,
+    HIT_LINE_PULSE: 150,
+    SUDDEN_DEATH_PULSE: 800,
+    // Duration timings
+    MILESTONE_ANIMATION_MS: 400,
+    POWERUP_PULSE_MS: 600,
+    SUDDEN_DEATH_DELAY_MS: 300,
+    // UI transition timings
+    POWERUP_FLASH_MS: 300,
+    SETTINGS_TRANSITION_MS: 500,
+    CALIBRATION_COMPLETE_DELAY_MS: 2000,
+    NOTIFICATION_STAGGER_MS: 3500,
+    CALIBRATION_TAP_FEEDBACK_MS: 100,
+    AUDIO_TRANSITION_DELAY_MS: 800,
+};
+
+// ============================================
+// Screen Effects (Shake & Flash)
+// ============================================
+
+export const SCREEN_EFFECTS = {
+    SHAKE_PRESETS: {
+        perfect: { intensity: 3, duration: 120, decay: 'exponential' },
+        combo10: { intensity: 5, duration: 180, decay: 'bounce' },
+        combo25: { intensity: 7, duration: 220, decay: 'bounce' },
+        combo50: { intensity: 9, duration: 280, decay: 'explosion' },
+        combo100: { intensity: 12, duration: 350, decay: 'explosion' },
+        comboBreak: { intensity: 6, duration: 200, decay: 'snap' },
+    },
+    FLASH_PRESETS: {
+        combo10: { color: '#ffd700', intensity: 0.15, duration: 200 },
+        combo20: { color: '#ff8800', intensity: 0.2, duration: 250 },
+        combo25: { color: '#ffaa00', intensity: 0.22, duration: 280 },
+        combo50: { color: '#ff4400', intensity: 0.28, duration: 320 },
+        combo100: { color: '#ffffff', intensity: 0.35, duration: 400 },
+        comboBreak: { color: '#ff0000', intensity: 0.3, duration: 250 },
+    },
+    VIGNETTE_WIDTH: 40,
+};
+
+// ============================================
+// SFX Duration Constants
+// ============================================
+
+export const SFX_DURATIONS = {
+    PERFECT_MS: 200,
+    GOOD_MS: 150,
+    OK_MS: 100,
+    MISS_MS: 250,
+};
+
+// ============================================
+// AI Score/Mood Thresholds
+// ============================================
+
+export const AI_THRESHOLDS = {
+    MOOD_CONFIDENT_LEAD: 300,
+    MOOD_STRUGGLING_DEFICIT: 300,
+    TRASH_TALK_WINNING_LEAD: 500,
+    TRASH_TALK_LOSING_DEFICIT: 500,
+    COMEBACK_ACHIEVEMENT: 500,
+};
+
+// ============================================
+// UI Timing Constants
+// ============================================
+
+export const UI_TIMINGS = {
+    POPUP_DURATION_MS: 3000,      // XP/achievement popups
+    AI_SCORE_POPUP_MS: 800,       // AI score +N popup
+    NOTIFICATION_DELAY_MS: 1000,
+    TRASH_TALK_HIDE_MS: 300,
+    REPLAY_COPY_FEEDBACK_MS: 2000,
+    CALIBRATION_TAP_FEEDBACK_MS: 100,
+};
+
+// ============================================
+// Game Loop Timing Constants
+// ============================================
+
+export const GAME_TIMINGS = {
+    WORKER_TIMEOUT_MS: 30000,
+    WORKER_YIELD_MS: 50,
+    TRASH_TALK_START_DELAY_MS: 500,
+};
+
+// ============================================
+// Game Loop Core Constants (Phase 2)
+// ============================================
+
+export const GAME_LOOP = {
+    COUNTDOWN_STEP_MS: 800,        // Interval between countdown numbers
+    SYNC_DELAY_MS: 1000,           // Delay before audio starts after countdown
+    BEAT_TRIGGER_THRESHOLD: 0.05,  // Seconds before beat time to trigger it
+    MIN_INPUT_COOLDOWN_MS: 80,     // Minimum time between input events
+};
+
+// ============================================
+// Toast & Popup Timing Constants
+// ============================================
+
+export const TOAST_TIMINGS = {
+    FADE_IN_MS: 500,               // Toast fade-in animation duration
+    DISPLAY_MS: 2000,              // How long toasts remain visible
+    POPUP_REMOVE_MS: 800,          // Delay before removing popup from DOM
+    AI_POPUP_DURATION_MS: 1200,    // AI score popup visibility duration
+};
+
+// ============================================
+// Render Configuration
+// ============================================
+
+export const RENDER_CONFIG = {
+    WAVEFORM_SAMPLE_STEP: 2,
+    TIMELINE_TICK_INTERVAL: 0.5,
+    GRADIENT_CACHE_RESET_FRAMES: 1800,  // ~30 seconds at 60fps
+    HOLD_BEAT: {
+        HEIGHT_MULTIPLIER: 1.2,
+        MIN_WIDTH_MULTIPLIER: 3,
+    },
+    HIT_LINE_COLORS: [
+        { threshold: 3, color: '#ff3300', glow: '#ff6600' },
+        { threshold: 2.5, color: '#ff6600', glow: '#ff8800' },
+        { threshold: 2, color: '#ffaa00', glow: '#ffcc00' },
+        { threshold: 1.5, color: '#ffcc00', glow: '#ffdd44' },
+    ],
+};
+
+// ============================================
+// Renderer Visual Constants (Phase 2)
+// ============================================
+
+export const RENDERER_VISUALS = {
+    DOT_RADIUS: {
+        STANDARD: 6,          // Normal beat dot radius
+        HOLD: 8,              // Hold beat start/end dot radius
+        ACTIVE: 10,           // Currently active/hit beat radius
+    },
+    ARROW_OFFSET: 15,         // Horizontal offset for directional arrows
+    LABEL_Y_OFFSET: 25,       // Vertical offset for beat labels
+    WAVE_AMPLITUDE: 3,        // Wave animation height variance
+    GLOW_RADIUS: 12,          // Glow effect spread radius
+    APPROACH_RING_MAX: 30,    // Maximum radius for approach ring animation
+    HIT_LINE_WIDTH: 3,        // Width of the hit line
+    TIMING_ZONE_ALPHA: 0.15,  // Opacity of timing zone bands
+};
+
+// ============================================
+// Crowd Visual Constants (Phase 2)
+// ============================================
+
+export const CROWD_VISUALS = {
+    SUPPORTER_ROWS: 5,        // Number of supporter rows
+    SUPPORTER_BASE_COUNT: 60, // Base number of supporters per row
+    JUMP_HEIGHT: 8,           // Supporter jump animation height
+    WAVE_SPEED: 0.002,        // Wave propagation speed
+    FLAG_WAVE_SPEED: 0.1,     // Flag waving animation speed
+    FLARE_PARTICLE_COUNT: 20, // Number of flare particles
+    SMOKE_OPACITY: 0.3,       // Smoke effect base opacity
+    BANNER_HEIGHT: 40,        // Club banner height in pixels
+    SCARF_LENGTH: 12,         // Scarf animation length
+};
+
+// ============================================
+// Screen Flash Constants (Phase 2)
+// ============================================
+
+export const SCREEN_FLASH = {
+    MISS_ALPHA: 0.15,         // Flash opacity on miss
+    PERFECT_ALPHA: 0.1,       // Flash opacity on perfect hit
+    FADE_RATE: 0.02,          // Flash fade rate per frame
+    COMBO_BREAK_ALPHA: 0.2,   // Flash opacity on combo break
+    FRENZY_FLASH_ALPHA: 0.08, // Frenzy mode pulsing opacity
 };
 
 /**
@@ -1178,4 +1568,102 @@ export function autoGenerateHoldBeats(beats) {
     }
 
     return result;
+}
+
+// ============================================
+// Logging Utilities (consistent error handling)
+// ============================================
+
+/**
+ * Log levels for consistent categorization
+ */
+export const LogLevel = {
+    ERROR: 'error',
+    WARN: 'warn',
+    INFO: 'info',
+    DEBUG: 'debug'
+};
+
+/**
+ * Create a namespaced logger for a module
+ * @param {string} moduleName - Name of the module (e.g., 'Audio', 'Storage')
+ * @returns {Object} Logger object with error, warn, info, debug methods
+ */
+export function createLogger(moduleName) {
+    const prefix = `[${moduleName}]`;
+
+    return {
+        /**
+         * Log an error with optional error object
+         * @param {string} message - Error message
+         * @param {Error|any} [error] - Optional error object
+         */
+        error(message, error) {
+            if (error) {
+                console.error(prefix, message, error);
+            } else {
+                console.error(prefix, message);
+            }
+        },
+
+        /**
+         * Log a warning with optional details
+         * @param {string} message - Warning message
+         * @param {any} [details] - Optional details
+         */
+        warn(message, details) {
+            if (details !== undefined) {
+                console.warn(prefix, message, details);
+            } else {
+                console.warn(prefix, message);
+            }
+        },
+
+        /**
+         * Log info (only in development)
+         * @param {string} message - Info message
+         * @param {any} [details] - Optional details
+         */
+        info(message, details) {
+            // Info logs are typically verbose, could be disabled in production
+            if (details !== undefined) {
+                console.info(prefix, message, details);
+            } else {
+                console.info(prefix, message);
+            }
+        },
+
+        /**
+         * Log debug info (only when debugging)
+         * @param {string} message - Debug message
+         * @param {any} [details] - Optional details
+         */
+        debug(message, details) {
+            // Debug logs can be enabled via localStorage flag
+            if (localStorage.getItem('ultras_debug') === 'true') {
+                if (details !== undefined) {
+                    console.debug(prefix, message, details);
+                } else {
+                    console.debug(prefix, message);
+                }
+            }
+        }
+    };
+}
+
+/**
+ * Safe wrapper for operations that might fail silently
+ * Logs the error but doesn't throw
+ * @param {Function} fn - Function to execute
+ * @param {Object} logger - Logger instance
+ * @param {string} context - Context message for error
+ * @returns {any} Result of fn, or undefined if error
+ */
+export function safeExecute(fn, logger, context) {
+    try {
+        return fn();
+    } catch (e) {
+        logger.warn(`${context} (non-critical)`, e.message);
+        return undefined;
+    }
 }

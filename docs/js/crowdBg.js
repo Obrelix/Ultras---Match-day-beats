@@ -4,20 +4,13 @@
 
 import { state } from './state.js';
 import { drawGameVisuals, drawAmbientCrowd, initSupporters, generateTifoMap, resetDrawBatch } from './crowd.js';
+import { STADIUM_LAYOUT, DEFAULT_COLORS, createLogger } from './config.js';
+
+const log = createLogger('CrowdBg');
 
 let _resizeHandler = null;
 let _lastIdleFrame = 0;
 const IDLE_FRAME_INTERVAL = 50;  // ~20fps for idle animations (saves CPU)
-
-// Stadium layout configuration (shared with crowd.js via state)
-const STADIUM_CONFIG = {
-    edgeMargin: 30,
-    aisleWidth: 40,
-    sectionDivisor: 500,  // canvasWidth / this = numSections
-    barrierColor: '#1a1a2e',
-    barrierHighlight: '#2a2a4e',
-    railingColor: '#444466'
-};
 
 export function initCrowdBg() {
     const canvas = document.getElementById('crowd-bg');
@@ -56,7 +49,9 @@ export function initCrowdBg() {
 function calculateStadiumLayout() {
     const w = state.crowdBgCanvas.width;
 
-    const { edgeMargin, aisleWidth, sectionDivisor } = STADIUM_CONFIG;
+    const edgeMargin = STADIUM_LAYOUT.EDGE_MARGIN;
+    const aisleWidth = STADIUM_LAYOUT.AISLE_WIDTH;
+    const sectionDivisor = STADIUM_LAYOUT.SECTION_DIVISOR;
     const numSections = Math.max(1, Math.floor(w / sectionDivisor));
     const numAisles = numSections - 1;
     const availableWidth = w - (2 * edgeMargin) - (numAisles * aisleWidth);
@@ -130,12 +125,12 @@ export function updateCrowdClub() {
                 // tifoReady is set inside generateTifoMap on success
             })
             .catch((err) => {
-                console.warn('Failed to generate tifo map:', err);
+                log.warn('Failed to generate tifo map', err);
                 state.tifoReady = false;
                 state.tifoMap = null;
             });
     } else {
-        state.cachedColors = { primary: '#006633', secondary: '#FFFFFF' };
+        state.cachedColors = { primary: DEFAULT_COLORS.PRIMARY, secondary: '#FFFFFF' };
         state.tifoReady = false;
         state.tifoMap = null;
     }

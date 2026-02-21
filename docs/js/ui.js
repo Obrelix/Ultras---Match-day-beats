@@ -2,7 +2,9 @@
 // ui.js — Screen management, navigation, DOM elements
 // ============================================
 
-import { GameState, clubs, MATCHDAY, ACHIEVEMENTS, LOYALTY_CONFIG, ANALYTICS, CALIBRATION } from './config.js';
+import { GameState, clubs, MATCHDAY, ACHIEVEMENTS, LOYALTY_CONFIG, ANALYTICS, CALIBRATION, UI_TIMINGS, UI_LAYOUT, DEFAULT_COLORS, ANIMATION_TIMINGS, createLogger } from './config.js';
+
+const log = createLogger('UI');
 import { state, resetMatchState } from './state.js';
 import { stopAudio, initAudio } from './audio.js';
 import { saveHighScore, loadHighScore, saveMatchdayStats, loadMatchdayStats, saveGameRecord, loadGameHistory, getOrCreateSession, loadSettings, saveSettings } from './storage.js';
@@ -39,6 +41,115 @@ export const screens = {
     replay: document.getElementById('replay-screen'),
     profile: document.getElementById('profile-screen')
 };
+
+// ============================================
+// Accessibility: Screen Focus Configuration
+// Maps screen names to the element that should receive focus
+// ============================================
+
+const SCREEN_FOCUS = {
+    title: 'start-btn',
+    modeSelect: 'mode-practice',
+    clubSelect: '.club-card',
+    chantSelect: '.chant-item',
+    matchdaySubmode: 'submode-random',
+    rivalSelect: '.club-card',
+    matchdayChantSelect: '.chant-item',
+    matchdayIntro: 'kickoff-btn',
+    gameplay: null, // No focus trap during gameplay
+    chantResult: 'next-chant-btn',
+    halftime: 'second-half-btn',
+    results: 'play-again-btn',
+    fulltime: 'fulltime-play-again-btn',
+    leaderboard: 'leaderboard-back-btn',
+    replay: 'replay-play-pause-btn',
+    profile: 'profile-back-btn'
+};
+
+// Screen labels for screen reader announcements
+const SCREEN_LABELS = {
+    title: 'Main menu',
+    modeSelect: 'Select game mode',
+    clubSelect: 'Choose your club',
+    chantSelect: 'Select a chant',
+    matchdaySubmode: 'Select match type',
+    rivalSelect: 'Choose your rival',
+    matchdayChantSelect: 'Select 6 chants for the match',
+    matchdayIntro: 'Match day, ready to kick off',
+    gameplay: 'Now playing',
+    chantResult: 'Chant results',
+    halftime: 'Half time',
+    results: 'Game results',
+    fulltime: 'Full time results',
+    leaderboard: 'Leaderboard',
+    replay: 'Replay viewer',
+    profile: 'Player profile'
+};
+
+// ============================================
+// Accessibility: Screen Reader Announcements
+// ============================================
+
+/**
+ * Announce a message to screen readers via the live region
+ * @param {string} message - The message to announce
+ * @param {string} priority - 'polite' (default) or 'assertive' for urgent messages
+ */
+export function announce(message, priority = 'polite') {
+    const el = document.getElementById('sr-announcements');
+    if (!el) return;
+    el.setAttribute('aria-live', priority);
+    el.textContent = '';
+    void el.offsetHeight; // Force reflow to ensure announcement
+    el.textContent = message;
+}
+
+/**
+ * Get the screen label for announcements
+ * @param {string} screenName - The screen identifier
+ * @returns {string} Human-readable screen label
+ */
+function getScreenLabel(screenName) {
+    return SCREEN_LABELS[screenName] || screenName.replace(/([A-Z])/g, ' $1').trim();
+}
+
+// ============================================
+// Accessibility: Focus Trap for Modals
+// ============================================
+
+/**
+ * Trap focus within a modal element
+ * @param {HTMLElement} modal - The modal element to trap focus in
+ * @returns {Function} Cleanup function to remove the trap
+ */
+export function trapFocus(modal) {
+    const focusableSelectors = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), a[href]';
+    const focusable = modal.querySelectorAll(focusableSelectors);
+    if (focusable.length === 0) return () => {};
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    const handler = (e) => {
+        if (e.key !== 'Tab') return;
+
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+        }
+    };
+
+    modal.addEventListener('keydown', handler);
+    first.focus();
+
+    return () => modal.removeEventListener('keydown', handler);
+}
+
+// Track active focus trap cleanup functions
+const activeFocusTraps = new Map();
 
 export const elements = {
     startBtn: document.getElementById('start-btn'),
@@ -178,6 +289,14 @@ export const elements = {
     powerupScoreBurst: document.getElementById('powerup-scoreBurst'),
     powerupSlowMotion: document.getElementById('powerup-slowMotion'),
 
+    // Perfect Streak Display
+    perfectStreakDisplay: document.getElementById('perfect-streak-display'),
+
+    // AI Trash Talk (hot path - cached)
+    aiTrashTalk: document.getElementById('ai-trash-talk'),
+    trashTalkText: document.getElementById('trash-talk-text'),
+    trashTalkBubble: document.getElementById('trash-talk-bubble'),
+
     // AI Mood
     aiMoodIndicator: document.getElementById('ai-mood-indicator'),
     aiMoodIcon: document.getElementById('ai-mood-icon'),
@@ -259,6 +378,9 @@ export const elements = {
     currentOffset: document.getElementById('current-offset'),
     calibrationModal: document.getElementById('calibration-modal'),
     calibrationCancel: document.getElementById('calibration-cancel'),
+    calibrationCircle: document.getElementById('calibration-circle'),
+    calibrationProgress: document.getElementById('calibration-progress'),
+    calibrationInstruction: document.getElementById('calibration-instruction'),
 
     // Profile Tabs & Analytics Dashboard
     profileTabStats: document.getElementById('profile-tab-stats'),
@@ -314,12 +436,19 @@ export const elements = {
     uploadSaveBtn: document.getElementById('upload-save-btn'),
 };
 
+// Powerup slot lookup map for dynamic access (avoids DOM queries in hot paths)
+export const powerupSlots = {
+    shield: elements.powerupShield,
+    scoreBurst: elements.powerupScoreBurst,
+    slowMotion: elements.powerupSlowMotion
+};
+
 export function showScreen(screenName, addToHistory = true) {
     // Push current screen to history before switching (if not already there)
     if (addToHistory && state.currentState && state.currentState !== screenName) {
         state.navigationHistory.push(state.currentState);
         // Limit history size to prevent memory issues
-        if (state.navigationHistory.length > 20) state.navigationHistory.shift();
+        if (state.navigationHistory.length > UI_LAYOUT.MAX_NAVIGATION_HISTORY) state.navigationHistory.shift();
     }
 
     Object.values(screens).forEach(screen => screen.classList.remove('active'));
@@ -327,6 +456,20 @@ export function showScreen(screenName, addToHistory = true) {
     state.currentState = screenName;
 
     updateNavVisibility();
+
+    // Accessibility: Focus management and screen announcement
+    requestAnimationFrame(() => {
+        const focusTarget = SCREEN_FOCUS[screenName];
+        if (focusTarget) {
+            const el = focusTarget.startsWith('.')
+                ? screens[screenName].querySelector(focusTarget)
+                : document.getElementById(focusTarget);
+            if (el) el.focus();
+        }
+
+        // Announce screen change to screen readers
+        announce(getScreenLabel(screenName));
+    });
 }
 
 /**
@@ -383,12 +526,22 @@ function showAbandonMatchConfirm(onConfirm) {
     _abandonCallback = onConfirm;
     if (elements.abandonMatchModal) {
         elements.abandonMatchModal.classList.remove('hidden');
+        // Trap focus in modal
+        const cleanup = trapFocus(elements.abandonMatchModal);
+        activeFocusTraps.set('abandonMatch', cleanup);
+        announce('Abandon match confirmation dialog');
     }
 }
 
 export function hideAbandonMatchConfirm() {
     if (elements.abandonMatchModal) {
         elements.abandonMatchModal.classList.add('hidden');
+        // Release focus trap
+        const cleanup = activeFocusTraps.get('abandonMatch');
+        if (cleanup) {
+            cleanup();
+            activeFocusTraps.delete('abandonMatch');
+        }
     }
     _abandonCallback = null;
 }
@@ -423,7 +576,7 @@ function hexToRgb(hex) {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
     return result
         ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}`
-        : '0, 102, 51';
+        : DEFAULT_COLORS.FALLBACK_RGB;
 }
 
 export function applyClubTheme(club) {
@@ -433,7 +586,7 @@ export function applyClubTheme(club) {
     if (state.rivalClub) {
         document.documentElement.style.setProperty('--rival-color', state.rivalClub.colors.primary);
     } else {
-        document.documentElement.style.setProperty('--rival-color', '#cc0000');
+        document.documentElement.style.setProperty('--rival-color', DEFAULT_COLORS.RIVAL);
     }
 }
 
@@ -455,7 +608,7 @@ export function updateScoreboardTeams() {
         elements.aiScoreBadge.src = '';
         elements.aiScoreBadge.style.display = 'none';
         elements.aiScoreLabel.textContent = 'RIVAL';
-        document.documentElement.style.setProperty('--rival-color', '#cc0000');
+        document.documentElement.style.setProperty('--rival-color', DEFAULT_COLORS.RIVAL);
     }
 }
 
@@ -469,6 +622,11 @@ export function renderClubSelection(onSelectClub, minChants = 0) {
 
         const card = document.createElement('div');
         card.className = 'club-card';
+
+        // Accessibility attributes
+        card.setAttribute('role', 'button');
+        card.setAttribute('tabindex', '0');
+        card.setAttribute('aria-label', `${club.name}, ${uniqueChants.size} chants available`);
 
         // Build DOM safely to prevent XSS
         const badgeDiv = document.createElement('div');
@@ -487,6 +645,13 @@ export function renderClubSelection(onSelectClub, minChants = 0) {
         card.appendChild(badgeDiv);
         card.appendChild(nameDiv);
         card.addEventListener('click', () => onSelectClub(club));
+        // Keyboard activation
+        card.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelectClub(club);
+            }
+        });
         elements.clubGrid.appendChild(card);
     });
 }
@@ -506,6 +671,11 @@ export function renderRivalSelection(playerClub, minChants, onSelectRival) {
         const card = document.createElement('div');
         card.className = 'club-card rival-card';
 
+        // Accessibility attributes
+        card.setAttribute('role', 'button');
+        card.setAttribute('tabindex', '0');
+        card.setAttribute('aria-label', `${club.name} as rival`);
+
         // Build DOM safely to prevent XSS
         const badgeDiv = document.createElement('div');
         badgeDiv.className = 'club-badge';
@@ -523,6 +693,13 @@ export function renderRivalSelection(playerClub, minChants, onSelectRival) {
         card.appendChild(badgeDiv);
         card.appendChild(nameDiv);
         card.addEventListener('click', () => onSelectRival(club));
+        // Keyboard activation
+        card.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelectRival(club);
+            }
+        });
         elements.rivalGrid.appendChild(card);
     });
 }
@@ -561,10 +738,17 @@ export function renderMatchdayChantSelection(playerClub, requiredCount, onConfir
         item.dataset.chantIndex = index;
         item.style.cssText = 'position: relative; display: flex; align-items: center; background: rgba(30, 30, 30, 0.95); border-radius: 12px; padding: 10px 14px; cursor: pointer; border: 2px solid rgba(255,255,255,0.1); transition: all 0.2s ease; min-height: 60px;';
 
+        // Accessibility attributes
+        item.setAttribute('role', 'checkbox');
+        item.setAttribute('tabindex', '0');
+        item.setAttribute('aria-checked', 'false');
+        const highScoreStr = highScore > 0 ? `, best score ${highScore.toLocaleString()}` : '';
+        item.setAttribute('aria-label', `${chant.name}${highScoreStr}`);
+
         // Checkbox indicator
         const checkbox = document.createElement('div');
         checkbox.className = 'chant-checkbox';
-        checkbox.innerHTML = '<span class="checkbox-icon"></span>';
+        checkbox.innerHTML = '<span class="checkbox-icon" aria-hidden="true"></span>';
         checkbox.style.cssText = 'position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 24px; height: 24px; border-radius: 6px; background: rgba(40, 40, 40, 0.9); border: 2px solid #555; display: flex; align-items: center; justify-content: center; z-index: 2;';
 
         // Left accent bar
@@ -634,6 +818,14 @@ export function renderMatchdayChantSelection(playerClub, requiredCount, onConfir
             toggleChantSelection(item, chant, uniqueChants, requiredCount);
         });
 
+        // Keyboard activation
+        item.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggleChantSelection(item, chant, uniqueChants, requiredCount);
+            }
+        });
+
         elements.matchdayChantList.appendChild(item);
     });
 
@@ -654,11 +846,13 @@ function toggleChantSelection(item, chant, allChants, requiredCount) {
     if (isSelected) {
         // Deselect
         item.classList.remove('selected');
+        item.setAttribute('aria-checked', 'false');
         selectedMatchdayChants = selectedMatchdayChants.filter(c => c.id !== chant.id);
     } else {
         // Select (if under limit)
         if (selectedMatchdayChants.length < requiredCount) {
             item.classList.add('selected');
+            item.setAttribute('aria-checked', 'true');
             selectedMatchdayChants.push(chant);
         }
     }
@@ -670,6 +864,9 @@ function toggleChantSelection(item, chant, allChants, requiredCount) {
     if (elements.startMatchBtn) {
         elements.startMatchBtn.disabled = selectedMatchdayChants.length !== requiredCount;
     }
+
+    // Announce selection state for screen readers
+    announce(`${chant.name} ${selectedMatchdayChants.includes(chant) ? 'selected' : 'deselected'}. ${selectedMatchdayChants.length} of ${requiredCount} chants selected.`);
 }
 
 function updateChantCounter(count, required) {
@@ -698,6 +895,15 @@ export function renderChantSelection(onSelectChant) {
         const item = document.createElement('div');
         item.className = 'chant-item';
 
+        // Accessibility attributes
+        item.setAttribute('role', 'button');
+        item.setAttribute('tabindex', '0');
+        const durationStr = chant.duration
+            ? `${Math.floor(chant.duration / 60)} minutes ${Math.floor(chant.duration % 60)} seconds`
+            : '';
+        const highScoreStr = highScore > 0 ? `, best score ${highScore.toLocaleString()}` : '';
+        item.setAttribute('aria-label', `${chant.name}${durationStr ? ', ' + durationStr : ''}${highScoreStr}`);
+
         // Left accent bar
         const accent = document.createElement('div');
         accent.className = 'chant-accent';
@@ -710,6 +916,7 @@ export function renderChantSelection(onSelectChant) {
         const icon = document.createElement('div');
         icon.className = 'chant-icon';
         icon.textContent = '♫';
+        icon.setAttribute('aria-hidden', 'true');
 
         // Text content wrapper
         const textWrapper = document.createElement('div');
@@ -738,7 +945,7 @@ export function renderChantSelection(onSelectChant) {
         const scoreText = document.createElement('span');
         if (highScore > 0) {
             scoreText.className = 'chant-high-score-text';
-            scoreText.innerHTML = `<span style="color: var(--accent-gold);">★</span> Best: ${highScore.toLocaleString()}`;
+            scoreText.innerHTML = `<span style="color: var(--accent-gold);" aria-hidden="true">★</span> Best: ${highScore.toLocaleString()}`;
         } else {
             scoreText.textContent = 'Tap to play';
         }
@@ -751,6 +958,7 @@ export function renderChantSelection(onSelectChant) {
         const playBtn = document.createElement('div');
         playBtn.className = 'chant-play';
         playBtn.textContent = '▶';
+        playBtn.setAttribute('aria-hidden', 'true');
 
         content.appendChild(icon);
         content.appendChild(textWrapper);
@@ -759,6 +967,13 @@ export function renderChantSelection(onSelectChant) {
         item.appendChild(accent);
         item.appendChild(content);
         item.addEventListener('click', () => onSelectChant(chant));
+        // Keyboard activation
+        item.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelectChant(chant);
+            }
+        });
         elements.chantList.appendChild(item);
     });
 }
@@ -1466,10 +1681,10 @@ export function showXPGained(xpResult) {
 
     elements.xpPopup.classList.remove('hidden');
 
-    // Auto-hide after 3 seconds
+    // Auto-hide after configured duration
     setTimeout(() => {
         elements.xpPopup.classList.add('hidden');
-    }, 3000);
+    }, UI_TIMINGS.POPUP_DURATION_MS);
 }
 
 /**
@@ -1530,10 +1745,10 @@ export function showLevelUpPopup(notification) {
 
     elements.xpPopup.classList.remove('hidden');
 
-    // Auto-hide after 3 seconds
+    // Auto-hide after configured duration
     setTimeout(() => {
         elements.xpPopup.classList.add('hidden');
-    }, 3000);
+    }, UI_TIMINGS.POPUP_DURATION_MS);
 }
 
 /**
@@ -1551,10 +1766,10 @@ export function showAchievementPopup(achievement) {
 
     elements.achievementPopup.classList.remove('hidden');
 
-    // Auto-hide after 3 seconds
+    // Auto-hide after configured duration
     setTimeout(() => {
         elements.achievementPopup.classList.add('hidden');
-    }, 3000);
+    }, UI_TIMINGS.POPUP_DURATION_MS);
 }
 
 /**
@@ -1592,7 +1807,7 @@ export function showPendingNotifications() {
                 });
             }
         }, delay);
-        delay += 3500;  // Stagger notifications
+        delay += ANIMATION_TIMINGS.NOTIFICATION_STAGGER_MS;  // Stagger notifications
     });
 }
 
@@ -1711,7 +1926,7 @@ export function renderAnalyticsDashboard() {
 
     // Accuracy trend chart
     if (elements.analyticsAccuracyCanvas) {
-        const accuracyData = calculateAccuracyTrend(20);
+        const accuracyData = calculateAccuracyTrend(ANALYTICS.TREND_LOOKBACK_GAMES);
         renderLineChart(elements.analyticsAccuracyCanvas, {
             values: accuracyData.values,
             labels: accuracyData.labels
@@ -1733,7 +1948,7 @@ export function renderAnalyticsDashboard() {
 
     // Score trend chart
     if (elements.analyticsScoreCanvas) {
-        const scoreData = calculateScoreTrend(20);
+        const scoreData = calculateScoreTrend(ANALYTICS.TREND_LOOKBACK_GAMES);
         renderLineChart(elements.analyticsScoreCanvas, {
             values: scoreData.values,
             labels: scoreData.labels
@@ -1766,13 +1981,13 @@ export function renderAnalyticsDashboard() {
     // Club performance bar chart
     if (elements.analyticsClubCanvas) {
         const clubStats = getClubStats();
-        const chartData = clubStats.slice(0, 5).map(club => ({
+        const chartData = clubStats.slice(0, ANALYTICS.TOP_CLUBS_DISPLAY_COUNT).map(club => ({
             label: club.clubId?.toUpperCase() || 'Unknown',
             value: club.avgAccuracy,
             color: ANALYTICS.COLORS.trend
         }));
         renderBarChart(elements.analyticsClubCanvas, chartData, {
-            barHeight: 18,
+            barHeight: ANALYTICS.BAR_HEIGHT,
             showValues: true
         });
     }
@@ -1833,11 +2048,17 @@ let calibrationState = {
  * Start the calibration process
  */
 export async function startCalibration() {
+    // Guard against duplicate calls - prevents listener accumulation
+    if (calibrationState.isActive) {
+        log.warn('Calibration already in progress');
+        return;
+    }
+
     // Initialize audio context if needed
     try {
         await initAudio();
     } catch (e) {
-        console.warn('Failed to init audio for calibration:', e);
+        log.warn('Failed to init audio for calibration', e);
     }
 
     // Reset calibration state
@@ -1851,20 +2072,26 @@ export async function startCalibration() {
         intervalId: null
     };
 
-    // Show calibration modal
-    const modal = document.getElementById('calibration-modal');
-    const circle = document.getElementById('calibration-circle');
-    const progress = document.getElementById('calibration-progress');
-    const instruction = document.getElementById('calibration-instruction');
+    // Show calibration modal (use cached elements)
+    const modal = elements.calibrationModal;
+    const circle = elements.calibrationCircle;
+    const progress = elements.calibrationProgress;
+    const instruction = elements.calibrationInstruction;
 
-    if (modal) modal.classList.remove('hidden');
+    if (modal) {
+        modal.classList.remove('hidden');
+        // Trap focus in calibration modal
+        const cleanup = trapFocus(modal);
+        activeFocusTraps.set('calibration', cleanup);
+        announce('Input calibration started. Listen to the beat.');
+    }
     if (instruction) instruction.textContent = 'Listen to the beat...';
     if (progress) progress.textContent = 'Warming up...';
     if (circle) circle.classList.remove('pulse');
 
     // Start metronome
     const tempo = CALIBRATION.TEMPO_MS;
-    calibrationState.nextBeatTime = performance.now() + 500; // Small delay before first beat
+    calibrationState.nextBeatTime = performance.now() + CALIBRATION.INITIAL_DELAY_MS; // Small delay before first beat
 
     calibrationState.intervalId = setInterval(() => {
         if (!calibrationState.isActive) {
@@ -1902,7 +2129,7 @@ export async function startCalibration() {
 
             calibrationState.nextBeatTime += tempo;
         }
-    }, 10); // Check every 10ms for precise timing
+    }, CALIBRATION.CHECK_INTERVAL_MS); // Check frequently for precise timing
 
     // Add input listeners for calibration
     document.addEventListener('keydown', handleCalibrationKeyDown);
@@ -1934,7 +2161,7 @@ function playCalibrationClick() {
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.1);
     } catch (e) {
-        console.warn('Failed to play calibration click:', e);
+        log.warn('Failed to play calibration click', e);
     }
 }
 
@@ -1950,11 +2177,11 @@ function handleCalibrationTap() {
     const now = performance.now();
     calibrationState.tapTimes.push(now);
 
-    // Visual feedback
-    const circle = document.getElementById('calibration-circle');
+    // Visual feedback (use cached element)
+    const circle = elements.calibrationCircle;
     if (circle) {
         circle.classList.add('tapped');
-        setTimeout(() => circle.classList.remove('tapped'), 100);
+        setTimeout(() => circle.classList.remove('tapped'), ANIMATION_TIMINGS.CALIBRATION_TAP_FEEDBACK_MS);
     }
 }
 
@@ -1994,6 +2221,13 @@ function finishCalibration() {
     document.removeEventListener('touchstart', handleCalibrationTouch);
     document.removeEventListener('mousedown', handleCalibrationMouse);
 
+    // Release focus trap
+    const cleanup = activeFocusTraps.get('calibration');
+    if (cleanup) {
+        cleanup();
+        activeFocusTraps.delete('calibration');
+    }
+
     // Get beats from recording phase only (skip warmup)
     const recordingBeatTimes = calibrationState.beatTimes.slice(CALIBRATION.WARMUP_BEATS);
     const tapTimes = calibrationState.tapTimes;
@@ -2019,10 +2253,10 @@ function finishCalibration() {
     }
 
     let finalOffset = 0;
-    const progress = document.getElementById('calibration-progress');
-    const instruction = document.getElementById('calibration-instruction');
+    const progress = elements.calibrationProgress;
+    const instruction = elements.calibrationInstruction;
 
-    if (offsets.length >= 3) {
+    if (offsets.length >= CALIBRATION.MIN_VALID_TAPS) {
         // Calculate average offset
         const avgOffset = offsets.reduce((a, b) => a + b, 0) / offsets.length;
 
@@ -2041,9 +2275,8 @@ function finishCalibration() {
         if (progress) progress.textContent = `Offset: ${sign}${finalOffset}ms`;
 
         // Update the current offset display
-        const offsetDisplay = document.getElementById('current-offset');
-        if (offsetDisplay) {
-            offsetDisplay.textContent = `${sign}${finalOffset}ms`;
+        if (elements.currentOffset) {
+            elements.currentOffset.textContent = `${sign}${finalOffset}ms`;
         }
     } else {
         if (instruction) instruction.textContent = 'Not enough taps recorded';
@@ -2052,9 +2285,8 @@ function finishCalibration() {
 
     // Auto-close after delay
     setTimeout(() => {
-        const modal = document.getElementById('calibration-modal');
-        if (modal) modal.classList.add('hidden');
-    }, 2000);
+        if (elements.calibrationModal) elements.calibrationModal.classList.add('hidden');
+    }, ANIMATION_TIMINGS.CALIBRATION_COMPLETE_DELAY_MS);
 }
 
 /**
@@ -2069,7 +2301,13 @@ export function cancelCalibration() {
     document.removeEventListener('touchstart', handleCalibrationTouch);
     document.removeEventListener('mousedown', handleCalibrationMouse);
 
+    // Release focus trap
+    const cleanup = activeFocusTraps.get('calibration');
+    if (cleanup) {
+        cleanup();
+        activeFocusTraps.delete('calibration');
+    }
+
     // Hide modal
-    const modal = document.getElementById('calibration-modal');
-    if (modal) modal.classList.add('hidden');
+    if (elements.calibrationModal) elements.calibrationModal.classList.add('hidden');
 }

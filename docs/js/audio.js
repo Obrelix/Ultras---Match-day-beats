@@ -2,8 +2,39 @@
 // audio.js — Audio pipeline (Web Audio API)
 // ============================================
 
-import { GameState } from './config.js';
+import { GameState, SFX_DURATIONS, createLogger } from './config.js';
 import { state } from './state.js';
+
+const log = createLogger('Audio');
+
+/**
+ * Safely disconnect an audio node (expected to fail if not connected)
+ * @param {AudioNode} node - Node to disconnect
+ * @param {string} nodeName - Name for debug logging
+ */
+function safeDisconnect(node, nodeName) {
+    if (!node) return;
+    try {
+        node.disconnect();
+    } catch (e) {
+        // Expected when node isn't connected - only log in debug mode
+        log.debug(`${nodeName} disconnect skipped (not connected)`);
+    }
+}
+
+/**
+ * Safely stop an audio source (expected to fail if already stopped)
+ * @param {AudioBufferSourceNode} source - Source to stop
+ */
+function safeStop(source) {
+    if (!source) return;
+    try {
+        source.stop();
+    } catch (e) {
+        // Expected when source already stopped or never started
+        log.debug('Audio source stop skipped (already stopped)');
+    }
+}
 
 export async function initAudio() {
     if (!state.audioContext) {
@@ -16,15 +47,15 @@ export async function initAudio() {
 
     // Disconnect and clean up old nodes to prevent memory leaks
     if (state.analyser) {
-        try { state.analyser.disconnect(); } catch (e) {}
+        safeDisconnect(state.analyser, 'analyser');
         state.analyser = null;
     }
     if (state.masterGain) {
-        try { state.masterGain.disconnect(); } catch (e) {}
+        safeDisconnect(state.masterGain, 'masterGain');
         state.masterGain = null;
     }
     if (state.sfxGain) {
-        try { state.sfxGain.disconnect(); } catch (e) {}
+        safeDisconnect(state.sfxGain, 'sfxGain');
         state.sfxGain = null;
     }
 
@@ -48,12 +79,12 @@ export async function loadAudio(url) {
     try {
         const response = await fetch(url);
         if (!response.ok) {
-            throw new Error(`Failed to fetch audio: ${response.status} ${response.statusText}`);
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         const arrayBuffer = await response.arrayBuffer();
         state.audioBuffer = await state.audioContext.decodeAudioData(arrayBuffer);
     } catch (error) {
-        console.error('Audio load error:', error);
+        log.error('Failed to load audio:', error);
         throw error; // Re-throw so caller can handle
     }
 }
@@ -65,8 +96,8 @@ export async function loadAudio(url) {
  */
 export function playAudio(onEnded, startTime = 0) {
     if (state.audioSource) {
-        try { state.audioSource.stop(); } catch (e) {}
-        try { state.audioSource.disconnect(); } catch (e) {}
+        safeStop(state.audioSource);
+        safeDisconnect(state.audioSource, 'audioSource');
     }
 
     state.audioSource = state.audioContext.createBufferSource();
@@ -89,12 +120,8 @@ export function playAudio(onEnded, startTime = 0) {
 
 export function stopAudio() {
     if (state.audioSource) {
-        try {
-            state.audioSource.stop();
-        } catch (e) {}
-        try {
-            state.audioSource.disconnect();
-        } catch (e) {}
+        safeStop(state.audioSource);
+        safeDisconnect(state.audioSource, 'audioSource');
         state.audioSource = null;
     }
 }
@@ -174,7 +201,7 @@ export function playSFX(type) {
             osc4.start(now + 0.03);
             osc4.stop(now + 0.09);
 
-            setTimeout(() => masterGain.disconnect(), 200);
+            setTimeout(() => masterGain.disconnect(), SFX_DURATIONS.PERFECT_MS);
             break;
         }
 
@@ -211,7 +238,7 @@ export function playSFX(type) {
             osc3.start(now);
             osc3.stop(now + 0.06);
 
-            setTimeout(() => masterGain.disconnect(), 150);
+            setTimeout(() => masterGain.disconnect(), SFX_DURATIONS.GOOD_MS);
             break;
         }
 
@@ -239,7 +266,7 @@ export function playSFX(type) {
             osc2.start(now);
             osc2.stop(now + 0.02);
 
-            setTimeout(() => masterGain.disconnect(), 100);
+            setTimeout(() => masterGain.disconnect(), SFX_DURATIONS.OK_MS);
             break;
         }
 
@@ -278,7 +305,7 @@ export function playSFX(type) {
             osc3.start(now);
             osc3.stop(now + 0.1);
 
-            setTimeout(() => masterGain.disconnect(), 250);
+            setTimeout(() => masterGain.disconnect(), SFX_DURATIONS.MISS_MS);
             break;
         }
     }

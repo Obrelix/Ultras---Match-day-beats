@@ -2,14 +2,16 @@
 // main.js — Entry point, game loop, event wiring
 // ============================================
 
-import { GameState, MATCHDAY, DIFFICULTY_PRESETS, BEAT_DETECTION, clubs, MODIFIERS, MODIFIER_BONUSES, POWERUPS, POWERUP_KEY, AI_PERSONALITIES, CLUB_AI_PERSONALITIES, normalizeBeats, autoGenerateHoldBeats } from './config.js';
+import { GameState, MATCHDAY, DIFFICULTY_PRESETS, BEAT_DETECTION, clubs, MODIFIERS, MODIFIER_ORDER, MODIFIER_CONFLICTS, POWERUPS, POWERUP_KEY, AI_PERSONALITIES, CLUB_AI_PERSONALITIES, normalizeBeats, autoGenerateHoldBeats, GAME_TIMINGS, GAME_LOOP, createLogger } from './config.js';
+
+const log = createLogger('Game');
 import { state, resetGameState, resetMatchState } from './state.js';
 import { initAudio, loadAudio, playAudio, stopAudio, setVolume, setSFXVolume, playMetronomeClick } from './audio.js';
 import {
     initCustomChantDB, getAllCustomChants, saveCustomChant, deleteCustomChant,
     processUploadedFile, decodeCustomChantAudio
 } from './customChants.js';
-import { handleInput, handleInputRelease, registerMiss, simulateAI, simulateAIHoldBeat, updateHoldProgress, setMainCallbacks, triggerTrashTalk, hideTrashTalk } from './input.js';
+import { handleInput, handleInputRelease, registerMiss, simulateAI, simulateAIHoldBeat, updateHoldProgress, setMainCallbacks, triggerTrashTalk, hideTrashTalk, setSuddenDeathCallback } from './input.js';
 import { initVisualizer, computeWaveformPeaks, buildWaveformCache, drawVisualizer } from './renderer.js';
 import { initCrowdBg, setCrowdMode, updateCrowdClub } from './crowdBg.js';
 import {
@@ -19,7 +21,7 @@ import {
     setMatchdayChantStarter, setScoreSubmitHandler, endGame, elements, screens,
     updateTitleLevelBadge, renderProfileScreen, switchProfileTab, initAnalyticsSession,
     navigateBack, navigateHome, hideAbandonMatchConfirm, confirmAbandonMatch,
-    startCalibration, cancelCalibration
+    startCalibration, cancelCalibration, powerupSlots, announce
 } from './ui.js';
 import { loadProgression, toggleChoreoDebug } from './progression.js';
 import { loadSettings, saveSettings, hasTutorialSeen, markTutorialSeen } from './storage.js';
@@ -40,7 +42,6 @@ let beatWorker = null;
 let beatWorkerRequestId = 0;  // Track request IDs to prevent race conditions
 
 function analyzeBeatsAsync(audioBuffer) {
-    const WORKER_TIMEOUT_MS = 30000; // 30 second timeout
     const currentRequestId = ++beatWorkerRequestId;  // Unique ID for this request
 
     const workerPromise = new Promise((resolve, reject) => {
@@ -76,7 +77,7 @@ function analyzeBeatsAsync(audioBuffer) {
         };
 
         beatWorker.onerror = (e) => {
-            console.error('Beat worker error:', e);
+            log.error('Beat worker error', e);
             reject(e);
         };
 
@@ -93,7 +94,7 @@ function analyzeBeatsAsync(audioBuffer) {
 
     // Race against timeout to prevent indefinite hanging
     const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Beat analysis timed out')), WORKER_TIMEOUT_MS);
+        setTimeout(() => reject(new Error('Beat analysis timed out')), GAME_TIMINGS.WORKER_TIMEOUT_MS);
     });
 
     return Promise.race([workerPromise, timeoutPromise]);
@@ -133,7 +134,7 @@ function selectClub(club) {
 
 function selectChant(chant) {
     state.selectedChant = chant;
-    startGame();
+    startGame().catch(err => log.error('Failed to start game after chant selection', err));
 }
 
 // ============================================
@@ -270,7 +271,7 @@ async function startMatchdayChant() {
         await loadAudio(chant.audio);
 
         // Yield for render
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise(resolve => setTimeout(resolve, GAME_TIMINGS.WORKER_YIELD_MS));
 
         // Use manual beats if defined in chant config, otherwise detect automatically
         if (state.selectedChant.beats && state.selectedChant.beats.length > 0) {
@@ -288,7 +289,7 @@ async function startMatchdayChant() {
 
         // Bug #24 fix: Guard against empty beat detection
         if (!state.detectedBeats || state.detectedBeats.length === 0) {
-            console.warn('No beats detected in audio - gameplay may not work correctly');
+            log.warn('No beats detected in audio - gameplay may not work correctly');
             // Generate fallback beats at regular intervals based on audio duration
             const duration = state.audioBuffer?.duration || 60;
             const fallbackBPM = 120;
@@ -326,11 +327,11 @@ async function startMatchdayChant() {
         initGameProgress();
 
         // Trigger game start trash talk
-        setTimeout(() => triggerTrashTalk('gameStart'), 500);
+        setTimeout(() => triggerTrashTalk('gameStart'), GAME_TIMINGS.TRASH_TALK_START_DELAY_MS);
 
         gameLoop();
     } catch (error) {
-        console.error('Failed to start chant:', error);
+        log.error('Failed to start chant', error);
         elements.loadingOverlay.classList.add('hidden');
         // Show error and return to menu
         alert('Failed to load audio. Please try again.');
@@ -383,7 +384,7 @@ async function startGame() {
         await loadAudio(state.selectedChant.audio);
 
         // Yield for render
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise(resolve => setTimeout(resolve, GAME_TIMINGS.WORKER_YIELD_MS));
 
         // Use manual beats if defined in chant config, otherwise detect automatically
         if (state.selectedChant.beats && state.selectedChant.beats.length > 0) {
@@ -401,7 +402,7 @@ async function startGame() {
 
         // Bug #24 fix: Guard against empty beat detection
         if (!state.detectedBeats || state.detectedBeats.length === 0) {
-            console.warn('No beats detected in audio - gameplay may not work correctly');
+            log.warn('No beats detected in audio - gameplay may not work correctly');
             // Generate fallback beats at regular intervals based on audio duration
             const duration = state.audioBuffer?.duration || 60;
             const fallbackBPM = 120;
@@ -439,11 +440,11 @@ async function startGame() {
         initGameProgress();
 
         // Trigger game start trash talk
-        setTimeout(() => triggerTrashTalk('gameStart'), 500);
+        setTimeout(() => triggerTrashTalk('gameStart'), GAME_TIMINGS.TRASH_TALK_START_DELAY_MS);
 
         gameLoop();
     } catch (error) {
-        console.error('Failed to start game:', error);
+        log.error('Failed to start game', error);
         elements.loadingOverlay.classList.add('hidden');
         // Show error and return to menu
         alert('Failed to load audio. Please try again.');
@@ -492,7 +493,7 @@ async function countdown() {
                 overlay.remove();
                 resolve();
             }
-        }, 800);
+        }, GAME_LOOP.COUNTDOWN_STEP_MS);
     });
 }
 
@@ -715,7 +716,7 @@ async function resumeGame() {
     const MAX_ALLOWED_DRIFT = 0.1; // 100ms tolerance
 
     if (drift > MAX_ALLOWED_DRIFT) {
-        console.warn(`Timing drift detected on resume: ${(drift * 1000).toFixed(1)}ms. Correcting gameStartTime.`);
+        log.warn(`Timing drift detected on resume: ${(drift * 1000).toFixed(1)}ms. Correcting gameStartTime.`);
         // Correct gameStartTime to match audio time
         state.gameStartTime = performance.now() - (audioElapsed * 1000);
     }
@@ -815,12 +816,12 @@ elements.backToRivalSelect?.addEventListener('click', () => {
 
 // Match Day intro → Kick Off
 elements.kickoffBtn.addEventListener('click', () => {
-    startMatchdayChant();
+    startMatchdayChant().catch(err => log.error('Failed to start matchday chant', err));
 });
 
 // Halftime → Second Half
 elements.secondHalfBtn.addEventListener('click', () => {
-    startMatchdayChant();
+    startMatchdayChant().catch(err => log.error('Failed to start second half', err));
 });
 
 // Fulltime buttons
@@ -836,7 +837,7 @@ elements.fulltimeMainMenuBtn.addEventListener('click', () => {
 
 // Practice results buttons
 elements.playAgainBtn.addEventListener('click', () => {
-    startGame();
+    startGame().catch(err => log.error('Failed to restart game', err));
 });
 
 elements.changeChantBtn.addEventListener('click', () => {
@@ -919,18 +920,109 @@ function triggerHaptic(type = 'light') {
 
 // Input - Spacebar (keydown for press, keyup for release)
 document.addEventListener('keydown', (e) => {
+    // Escape key handling
     if (e.code === 'Escape') {
         if (state.isPaused) resumeGame();
         else if (state.currentState === GameState.PLAYING) pauseGame();
+        else if (state.currentState !== 'title') {
+            // Navigate back on Escape when not playing
+            e.preventDefault();
+            navigateBack();
+        }
         return;
     }
-    if (e.code === 'Space' || e.key === ' ') {
-        e.preventDefault();
-        if (state.isPaused) return;
-        handleInput();
-        triggerHaptic('light');
+
+    // Gameplay input handling
+    if (state.currentState === GameState.PLAYING) {
+        if (e.code === 'Space' || e.key === ' ') {
+            e.preventDefault();
+            if (state.isPaused) return;
+            handleInput();
+            triggerHaptic('light');
+        }
+        return;
     }
+
+    // Menu keyboard navigation (when not playing)
+    handleMenuKeyboard(e);
 });
+
+/**
+ * Handle keyboard navigation in menus
+ * @param {KeyboardEvent} e - The keyboard event
+ */
+function handleMenuKeyboard(e) {
+    // Enter or Space activates focused element
+    if (e.key === 'Enter' || e.key === ' ') {
+        if (document.activeElement && document.activeElement.matches('[role="button"], .mode-card, .club-card, .chant-item, .submode-card, button')) {
+            e.preventDefault();
+            document.activeElement.click();
+            return;
+        }
+    }
+
+    // Arrow key navigation
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        handleArrowNavigation(e.key);
+    }
+}
+
+/**
+ * Handle arrow key navigation for grid layouts
+ * @param {string} key - The arrow key pressed
+ */
+function handleArrowNavigation(key) {
+    const screen = screens[state.currentState];
+    if (!screen) return;
+
+    // Find all focusable elements in current screen
+    const focusable = screen.querySelectorAll(
+        '[role="button"]:not([disabled]), button:not([disabled]), .mode-card, .club-card, .chant-item, .submode-card, input:not([disabled]), select:not([disabled])'
+    );
+    if (focusable.length === 0) return;
+
+    const focusableArray = Array.from(focusable);
+    const currentIndex = focusableArray.indexOf(document.activeElement);
+
+    // If nothing focused, focus first element
+    if (currentIndex === -1) {
+        focusableArray[0]?.focus();
+        return;
+    }
+
+    // Determine grid columns based on screen type
+    let cols = 1;
+    if (state.currentState === 'clubSelect' || state.currentState === 'rivalSelect') {
+        // Club grids are typically 4 columns on desktop
+        cols = Math.min(4, focusableArray.length);
+    } else if (state.currentState === 'modeSelect') {
+        cols = 2;
+    } else if (state.currentState === 'matchdaySubmode') {
+        cols = 2;
+    }
+
+    let nextIndex = currentIndex;
+
+    switch (key) {
+        case 'ArrowRight':
+            nextIndex = Math.min(currentIndex + 1, focusableArray.length - 1);
+            break;
+        case 'ArrowLeft':
+            nextIndex = Math.max(currentIndex - 1, 0);
+            break;
+        case 'ArrowDown':
+            nextIndex = Math.min(currentIndex + cols, focusableArray.length - 1);
+            break;
+        case 'ArrowUp':
+            nextIndex = Math.max(currentIndex - cols, 0);
+            break;
+    }
+
+    if (nextIndex !== currentIndex) {
+        focusableArray[nextIndex]?.focus();
+    }
+}
 
 // Input release - for hold beats
 document.addEventListener('keyup', (e) => {
@@ -1154,12 +1246,17 @@ document.getElementById('trash-talk-toggle')?.addEventListener('change', (e) => 
 // Difficulty buttons
 document.querySelectorAll('.difficulty-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-        document.querySelectorAll('.difficulty-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.difficulty-btn').forEach(b => {
+            b.classList.remove('active');
+            b.setAttribute('aria-pressed', 'false');
+        });
         btn.classList.add('active');
+        btn.setAttribute('aria-pressed', 'true');
         state.settings.difficulty = btn.dataset.difficulty;
         const p = DIFFICULTY_PRESETS[state.settings.difficulty] || DIFFICULTY_PRESETS.normal;
         state.activeTiming = { PERFECT: p.PERFECT, GOOD: p.GOOD, OK: p.OK };
         saveSettings(state.settings);
+        announce(`Difficulty set to ${btn.dataset.difficulty}`);
     });
 });
 
@@ -1168,25 +1265,40 @@ document.querySelectorAll('.difficulty-btn').forEach(btn => {
 // ============================================
 
 function updateModifierBonus() {
-    const activeCount = Object.values(state.activeModifiers).filter(v => v).length;
-    let bonus;
-    switch (activeCount) {
-        case 0: bonus = MODIFIER_BONUSES.none; break;
-        case 1: bonus = MODIFIER_BONUSES.one; break;
-        case 2: bonus = MODIFIER_BONUSES.two; break;
-        default: bonus = MODIFIER_BONUSES.three;
+    // Calculate multiplicative score multiplier from all active modifiers
+    let multiplier = 1.0;
+    const activeModNames = [];
+
+    for (const [modId, isActive] of Object.entries(state.activeModifiers)) {
+        if (isActive && MODIFIERS[modId]?.scoreMultiplier) {
+            multiplier *= MODIFIERS[modId].scoreMultiplier;
+            activeModNames.push(MODIFIERS[modId].name);
+        }
     }
-    state.modifierScoreMultiplier = bonus;
+
+    state.modifierScoreMultiplier = multiplier;
 
     // Update UI
     const bonusEl = elements.modifierBonus;
     if (bonusEl) {
-        if (activeCount > 0) {
-            bonusEl.textContent = `Score Bonus: ${Math.round((bonus - 1) * 100)}%`;
-            bonusEl.classList.add('active');
+        if (multiplier !== 1.0) {
+            // Color code: red for penalty, green for bonus
+            const isBonus = multiplier > 1.0;
+            const percentage = Math.round((multiplier - 1) * 100);
+            const sign = percentage >= 0 ? '+' : '';
+
+            // Show calculation breakdown for multiple modifiers
+            if (activeModNames.length > 1) {
+                bonusEl.textContent = `Score: ${multiplier.toFixed(2)}x (${sign}${percentage}%)`;
+            } else {
+                bonusEl.textContent = `Score: ${sign}${percentage}%`;
+            }
+
+            bonusEl.classList.remove('bonus', 'penalty');
+            bonusEl.classList.add('active', isBonus ? 'bonus' : 'penalty');
         } else {
             bonusEl.textContent = '';
-            bonusEl.classList.remove('active');
+            bonusEl.classList.remove('active', 'bonus', 'penalty');
         }
     }
 }
@@ -1195,9 +1307,31 @@ document.querySelectorAll('.modifier-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         const mod = btn.dataset.modifier;
         if (mod && state.activeModifiers.hasOwnProperty(mod)) {
-            state.activeModifiers[mod] = !state.activeModifiers[mod];
-            btn.classList.toggle('active', state.activeModifiers[mod]);
+            const newState = !state.activeModifiers[mod];
+
+            // Check for conflicts before activating
+            if (newState && MODIFIER_CONFLICTS[mod]) {
+                // Deactivate conflicting modifiers
+                for (const conflictMod of MODIFIER_CONFLICTS[mod]) {
+                    if (state.activeModifiers[conflictMod]) {
+                        state.activeModifiers[conflictMod] = false;
+                        const conflictBtn = document.querySelector(`.modifier-btn[data-modifier="${conflictMod}"]`);
+                        if (conflictBtn) {
+                            conflictBtn.classList.remove('active');
+                            conflictBtn.setAttribute('aria-pressed', 'false');
+                        }
+                    }
+                }
+            }
+
+            state.activeModifiers[mod] = newState;
+            btn.classList.toggle('active', newState);
+            btn.setAttribute('aria-pressed', newState ? 'true' : 'false');
             updateModifierBonus();
+
+            // Announce modifier state
+            const modName = MODIFIERS[mod]?.name || mod;
+            announce(`${modName} modifier ${newState ? 'enabled' : 'disabled'}`);
         }
     });
 });
@@ -1246,7 +1380,7 @@ function activateNextPowerup() {
 }
 
 function updatePowerupUI(powerupId, status) {
-    const slot = document.getElementById(`powerup-${powerupId}`);
+    const slot = powerupSlots[powerupId];
     if (!slot) return;
 
     slot.classList.remove('charged', 'active', 'empty', 'charging');
@@ -1323,7 +1457,7 @@ function showActiveModifiers() {
         if (!config) continue;
 
         const badge = document.createElement('span');
-        badge.className = 'modifier-badge';
+        badge.className = `modifier-badge modifier-${config.category || 'challenge'}`;
         badge.innerHTML = `<span class="modifier-badge-icon">${config.icon}</span>${config.name}`;
         container.appendChild(badge);
     }
@@ -1333,7 +1467,11 @@ function resetModifiers() {
     state.activeModifiers = {
         doubleTime: false,
         hidden: false,
-        mirror: false
+        mirror: false,
+        suddenDeath: false,
+        flash: false,
+        random: false,
+        noFail: false
     };
     state.modifierScoreMultiplier = 1.0;
 
@@ -1433,6 +1571,28 @@ initLeaderboard().then(() => {
 // Wire up input.js callbacks to avoid circular imports
 setMainCallbacks(updatePowerupUI, updateAIMoodUI, recordInput);
 
+// Set up sudden death callback - ends game immediately on miss
+setSuddenDeathCallback(() => {
+    // Stop the game loop
+    if (state.gameLoopId) {
+        cancelAnimationFrame(state.gameLoopId);
+        state.gameLoopId = null;
+    }
+    stopAudio();
+
+    // Add dramatic visual effect before showing results
+    const gameplayScreen = document.getElementById('gameplay-screen');
+    if (gameplayScreen) {
+        gameplayScreen.classList.add('sudden-death-end');
+        setTimeout(() => {
+            gameplayScreen.classList.remove('sudden-death-end');
+            endGame();
+        }, 500);
+    } else {
+        endGame();
+    }
+});
+
 // ============================================
 // Replay System Event Handlers
 // ============================================
@@ -1474,7 +1634,7 @@ elements.watchReplayBtn?.addEventListener('click', () => {
         return;
     }
 
-    startReplayPlayback(replayData);
+    startReplayPlayback(replayData).catch(err => log.error('Failed to start replay playback', err));
 });
 
 // Import Replay button (on title screen)
@@ -1560,7 +1720,7 @@ elements.replayImportBtn?.addEventListener('click', () => {
     applyClubTheme(club);
     updateCrowdClub();
 
-    startReplayPlayback(replayData);
+    startReplayPlayback(replayData).catch(err => log.error('Failed to start imported replay', err));
 });
 
 // Close modal button
@@ -1597,7 +1757,7 @@ elements.replayRestartBtn?.addEventListener('click', () => {
     const replayData = getReplayData();
     if (replayData) {
         stopReplayPlayback();
-        startReplayPlayback(replayData);
+        startReplayPlayback(replayData).catch(err => log.error('Failed to restart replay', err));
     }
 });
 
@@ -1788,7 +1948,7 @@ async function startReplayPlayback(replayData) {
 
         replayLoop();
     } catch (error) {
-        console.error('Failed to start replay:', error);
+        log.error('Failed to start replay', error);
         elements.loadingOverlay.classList.add('hidden');
         alert('Failed to load replay audio');
         showScreen('title');
@@ -2241,7 +2401,7 @@ async function renderCustomChants() {
         item.appendChild(playBtn);
         item.appendChild(deleteBtn);
 
-        item.onclick = () => playCustomChant(chant);
+        item.onclick = () => playCustomChant(chant).catch(err => log.error('Failed to play custom chant', err));
 
         elements.customChantList.appendChild(item);
     });
@@ -2319,7 +2479,7 @@ async function startCustomChantGame(chantId) {
 
         gameLoop();
     } catch (error) {
-        console.error('Failed to start custom chant:', error);
+        log.error('Failed to start custom chant', error);
         elements.loadingOverlay.classList.add('hidden');
         alert('Failed to load custom chant. ' + error.message);
         quitToMenu();
@@ -2420,7 +2580,7 @@ elements.chantFileInput?.addEventListener('change', async (e) => {
         }, 300);
 
     } catch (error) {
-        console.error('Upload error:', error);
+        log.error('Upload error', error);
         elements.uploadError.textContent = error.message || 'Failed to process file';
         elements.uploadError?.classList.remove('hidden');
         elements.uploadStatus?.classList.add('hidden');
@@ -2452,7 +2612,7 @@ elements.uploadSaveBtn?.addEventListener('click', async () => {
         pendingUploadData = null;
         renderCustomChants();
     } catch (error) {
-        console.error('Save error:', error);
+        log.error('Save error', error);
         elements.uploadError.textContent = 'Failed to save chant: ' + error.message;
         elements.uploadError?.classList.remove('hidden');
     }
@@ -2477,7 +2637,7 @@ initAnalyticsSession();
 
 // Initialize custom chant database
 initCustomChantDB().catch(err => {
-    console.warn('Failed to initialize custom chants DB:', err);
+    log.warn('Failed to initialize custom chants DB', err);
 });
 
 // Apply audio settings from storage
@@ -2498,7 +2658,7 @@ if (trashTalkToggle) {
 // Calibrate button click
 document.getElementById('calibrate-btn')?.addEventListener('click', (e) => {
     e.stopPropagation();
-    startCalibration();
+    startCalibration().catch(err => log.error('Failed to start calibration', err));
 });
 
 // Calibration cancel button

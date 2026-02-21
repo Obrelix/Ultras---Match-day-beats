@@ -2,7 +2,9 @@
 // leaderboardUI.js — Leaderboard UI rendering
 // ============================================
 
-import { LEADERBOARD } from './config.js';
+import { LEADERBOARD, createLogger } from './config.js';
+
+const log = createLogger('LeaderboardUI');
 import { state } from './state.js';
 import {
     initLeaderboard, submitScore, fetchLeaderboard, getPlayerRank,
@@ -128,7 +130,7 @@ export async function handleScoreSubmission(scoreData) {
     try {
         await doSubmitScore(scoreData);
     } catch (error) {
-        console.warn('Score submission failed:', error);
+        log.warn('Score submission failed', error);
         // Silently fail - the offline queue in leaderboard.js will retry later
     }
 }
@@ -142,7 +144,7 @@ async function doSubmitScore(scoreData) {
             await updatePlayerRankDisplay(scoreData);
         }
     } catch (error) {
-        console.warn('Score submission error:', error);
+        log.warn('Score submission error', error);
         // Don't rethrow - the offline queue will handle retries
     } finally {
         pendingScoreSubmission = null;
@@ -166,7 +168,7 @@ async function updatePlayerRankDisplay(scoreData) {
             els.playerRank.classList.remove('hidden');
         }
     } catch (error) {
-        console.warn('Failed to get player rank:', error);
+        log.warn('Failed to get player rank', error);
         // Silently fail - rank display is non-critical
     }
 }
@@ -218,7 +220,7 @@ async function handleNameSubmit() {
         try {
             await doSubmitScore(pendingScoreSubmission);
         } catch (error) {
-            console.warn('Score submission after name entry failed:', error);
+            log.warn('Score submission after name entry failed', error);
             // Silently fail - offline queue will retry
         }
     }

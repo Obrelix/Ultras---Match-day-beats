@@ -2,6 +2,9 @@
 // customChants.js — Custom chant upload and IndexedDB storage
 // ============================================
 
+import { createLogger } from './config.js';
+
+const log = createLogger('CustomChants');
 const DB_NAME = 'ultras_custom_chants';
 const DB_VERSION = 1;
 const STORE_NAME = 'chants';
@@ -20,7 +23,7 @@ export async function initCustomChantDB() {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
 
         request.onerror = () => {
-            console.error('Failed to open IndexedDB:', request.error);
+            log.error('Failed to open IndexedDB', request.error);
             reject(request.error);
         };
 

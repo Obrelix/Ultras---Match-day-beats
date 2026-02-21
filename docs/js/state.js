@@ -4,6 +4,18 @@
 
 import { GameState } from './config.js';
 
+// Lazy DOM cache (avoids circular import with ui.js)
+const _domCache = {
+    perfectStreakDisplay: null
+};
+
+function getCachedElement(key, id) {
+    if (!_domCache[key]) {
+        _domCache[key] = document.getElementById(id);
+    }
+    return _domCache[key];
+}
+
 export const state = {
     // Navigation
     currentState: GameState.TITLE,
@@ -137,11 +149,15 @@ export const state = {
     aiMaxCombo: 0,        // AI best combo this game
     aiScorePopups: [],
 
-    // Game Modifiers (Double Time, Hidden, Mirror)
+    // Game Modifiers
     activeModifiers: {
         doubleTime: false,
         hidden: false,
-        mirror: false
+        mirror: false,
+        suddenDeath: false,
+        flash: false,
+        random: false,
+        noFail: false
     },
     modifierScoreMultiplier: 1.0,  // Combined score multiplier from modifiers
 
@@ -216,8 +232,8 @@ export function resetGameState() {
     state.wasEverBehind500 = false;
     state.maxDeficit = 0;
 
-    // Hide perfect streak display
-    const streakDisplay = document.getElementById('perfect-streak-display');
+    // Hide perfect streak display (uses lazy cache to avoid repeated DOM queries)
+    const streakDisplay = getCachedElement('perfectStreakDisplay', 'perfect-streak-display');
     if (streakDisplay) {
         streakDisplay.classList.add('hidden');
         streakDisplay.classList.remove('milestone');

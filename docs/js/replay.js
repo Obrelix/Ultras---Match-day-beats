@@ -2,8 +2,10 @@
 // replay.js — Replay recording, playback, and sharing
 // ============================================
 
-import { REPLAY } from './config.js';
+import { REPLAY, createLogger } from './config.js';
 import { state } from './state.js';
+
+const log = createLogger('Replay');
 
 // ============================================
 // Replay Data Structure
@@ -24,7 +26,11 @@ export function createReplayData() {
         modifiers: {
             doubleTime: false,
             hidden: false,
-            mirror: false
+            mirror: false,
+            suddenDeath: false,
+            flash: false,
+            random: false,
+            noFail: false
         },
         beats: [],           // Array of beat times from detection
         inputs: [],          // Array of input events with timing data
@@ -239,7 +245,11 @@ export function encodeReplay(replayData) {
             m: [
                 replayData.modifiers.doubleTime ? 1 : 0,
                 replayData.modifiers.hidden ? 1 : 0,
-                replayData.modifiers.mirror ? 1 : 0
+                replayData.modifiers.mirror ? 1 : 0,
+                replayData.modifiers.suddenDeath ? 1 : 0,
+                replayData.modifiers.flash ? 1 : 0,
+                replayData.modifiers.random ? 1 : 0,
+                replayData.modifiers.noFail ? 1 : 0
             ],
             i: compressInputs(replayData.inputs),
             s: replayData.finalStats
@@ -250,10 +260,10 @@ export function encodeReplay(replayData) {
         // Encode to base64
         const base64 = btoa(unescape(encodeURIComponent(json)));
 
-        // Add prefix for identification (version 2 with compression)
-        return 'UMB2_' + base64;
+        // Add prefix for identification (version 3 with 7 modifiers)
+        return 'UMB3_' + base64;
     } catch (e) {
-        console.error('Failed to encode replay:', e);
+        log.error('Failed to encode replay', e);
         return null;
     }
 }
@@ -267,16 +277,22 @@ export function decodeReplay(code) {
     if (!code || typeof code !== 'string') return null;
 
     try {
-        // Check prefix (support both old and new formats)
-        let base64, useCompression = false;
-        if (code.startsWith('UMB2_')) {
+        // Check prefix (support all format versions)
+        let base64, useCompression = false, hasExtendedModifiers = false;
+        if (code.startsWith('UMB3_')) {
             base64 = code.slice(5);
             useCompression = true;
+            hasExtendedModifiers = true;
+        } else if (code.startsWith('UMB2_')) {
+            base64 = code.slice(5);
+            useCompression = true;
+            hasExtendedModifiers = false;
         } else if (code.startsWith('UMB1_')) {
             base64 = code.slice(5);
             useCompression = false;
+            hasExtendedModifiers = false;
         } else {
-            console.error('Invalid replay code format');
+            log.error('Invalid replay code format');
             return null;
         }
 
@@ -285,13 +301,14 @@ export function decodeReplay(code) {
 
         // Validate version
         if (minimal.v !== REPLAY.VERSION) {
-            console.warn('Replay version mismatch');
+            log.warn('Replay version mismatch - playback may not be accurate');
         }
 
         // Decompress inputs if needed
         const inputs = useCompression ? decompressInputs(minimal.i) : minimal.i;
 
-        // Reconstruct full replay data
+        // Reconstruct full replay data with all modifiers
+        // For older replays, extended modifiers default to false
         return {
             version: minimal.v,
             timestamp: Date.now(),
@@ -302,7 +319,11 @@ export function decodeReplay(code) {
             modifiers: {
                 doubleTime: minimal.m[0] === 1,
                 hidden: minimal.m[1] === 1,
-                mirror: minimal.m[2] === 1
+                mirror: minimal.m[2] === 1,
+                suddenDeath: hasExtendedModifiers && minimal.m[3] === 1,
+                flash: hasExtendedModifiers && minimal.m[4] === 1,
+                random: hasExtendedModifiers && minimal.m[5] === 1,
+                noFail: hasExtendedModifiers && minimal.m[6] === 1
             },
             beats: [],  // Will be regenerated from audio
             inputs: inputs,
@@ -310,7 +331,7 @@ export function decodeReplay(code) {
             duration: 0
         };
     } catch (e) {
-        console.error('Failed to decode replay:', e);
+        log.error('Failed to decode replay', e);
         return null;
     }
 }
@@ -323,7 +344,7 @@ export function decodeReplay(code) {
 export function validateReplayCode(code) {
     if (!code || typeof code !== 'string') return false;
     if (code.length > REPLAY.MAX_CODE_LENGTH) return false;
-    if (!code.startsWith('UMB1_') && !code.startsWith('UMB2_')) return false;
+    if (!code.startsWith('UMB1_') && !code.startsWith('UMB2_') && !code.startsWith('UMB3_')) return false;
 
     // Try to decode it
     const decoded = decodeReplay(code);

@@ -5,9 +5,11 @@
 import {
     XP_CONFIG, LEVEL_UNLOCKS, ACHIEVEMENTS,
     CHALLENGE_TYPES, WEEKLY_CHALLENGES, SEASON_CHALLENGES,
-    LOYALTY_CONFIG, CHOREO_UNLOCKS, clubs
+    LOYALTY_CONFIG, CHOREO_UNLOCKS, clubs, createLogger
 } from './config.js';
 import { state } from './state.js';
+
+const log = createLogger('Progression');
 
 // ============================================
 // Storage Keys
@@ -130,7 +132,7 @@ export function loadProgression() {
         }
 
     } catch (e) {
-        console.warn('Failed to load progression data:', e);
+        log.warn('Failed to load progression data', e);
         _progressionData = getDefaultProgressionData();
     }
 
@@ -178,7 +180,7 @@ export function saveProgression() {
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(_progressionData));
     } catch (e) {
-        console.warn('Failed to save progression data:', e);
+        log.warn('Failed to save progression data', e);
     }
 }
 
