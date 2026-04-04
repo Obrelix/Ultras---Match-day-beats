@@ -122,19 +122,25 @@ function findBestMatchingBeat(adjustedNow) {
 }
 
 /**
+ * Get the slow motion timing multiplier (accounts for Double Time interaction)
+ * @returns {number} Multiplier (1 when inactive, >1 when Slow Motion is active)
+ */
+function getSlowMotionMultiplier() {
+    if (!state.powerups.slowMotion.active) return 1;
+    const baseMultiplier = 1 / POWERUPS.slowMotion.speedMultiplier;
+    return state.activeModifiers.doubleTime ? baseMultiplier * 1.5 : baseMultiplier;
+}
+
+/**
  * Calculate effective timing windows (considering Slow Motion powerup)
  * @returns {{ PERFECT: number, GOOD: number, OK: number }} Timing windows in ms
  */
 function calculateEffectiveTiming() {
-    let slowMotionMultiplier = 1;
-    if (state.powerups.slowMotion.active) {
-        const baseMultiplier = 1 / POWERUPS.slowMotion.speedMultiplier;
-        slowMotionMultiplier = state.activeModifiers.doubleTime ? baseMultiplier * 1.5 : baseMultiplier;
-    }
+    const m = getSlowMotionMultiplier();
     return {
-        PERFECT: state.activeTiming.PERFECT * slowMotionMultiplier,
-        GOOD: state.activeTiming.GOOD * slowMotionMultiplier,
-        OK: state.activeTiming.OK * slowMotionMultiplier
+        PERFECT: state.activeTiming.PERFECT * m,
+        GOOD: state.activeTiming.GOOD * m,
+        OK: state.activeTiming.OK * m
     };
 }
 
@@ -151,6 +157,25 @@ function rateHitTiming(diff, timing) {
         return { rating: 'GOOD', score: SCORE.GOOD };
     } else {
         return { rating: 'OK', score: SCORE.OK };
+    }
+}
+
+/**
+ * Break the perfect streak — shows break feedback if streak was displayable, then resets to 0
+ */
+function breakPerfectStreak() {
+    if (state.perfectStreak >= PERFECT_STREAK.MIN_DISPLAY) {
+        showPerfectStreakBreak(state.perfectStreak);
+    }
+    state.perfectStreak = 0;
+}
+
+/**
+ * Update playerMaxCombo if current combo exceeds it
+ */
+function updateMaxCombo() {
+    if (state.playerCombo > state.playerMaxCombo) {
+        state.playerMaxCombo = state.playerCombo;
     }
 }
 
@@ -173,17 +198,11 @@ function processTapBeatRating(rating) {
     } else if (rating === 'GOOD') {
         state.playerStats.good++;
         state.playerCombo++;
-        if (state.perfectStreak >= PERFECT_STREAK.MIN_DISPLAY) {
-            showPerfectStreakBreak(state.perfectStreak);
-        }
-        state.perfectStreak = 0;
+        breakPerfectStreak();
     } else {
         state.playerStats.ok++;
         state.playerCombo++;
-        if (state.perfectStreak >= PERFECT_STREAK.MIN_DISPLAY) {
-            showPerfectStreakBreak(state.perfectStreak);
-        }
-        state.perfectStreak = 0;
+        breakPerfectStreak();
     }
 }
 
@@ -353,9 +372,7 @@ export function handleInput() {
     const scoreGained = Math.floor(score * totalMultiplier);
     state.playerScore += scoreGained;
 
-    if (state.playerCombo > state.playerMaxCombo) {
-        state.playerMaxCombo = state.playerCombo;
-    }
+    updateMaxCombo();
 
     // Record input for replay
     if (_recordInput && state.isRecording) {
@@ -525,10 +542,7 @@ export function registerMiss() {
     state.powerupChargeProgress = 0;  // Reset power-up charge on miss
 
     // Reset perfect streak on miss
-    if (state.perfectStreak >= PERFECT_STREAK.MIN_DISPLAY) {
-        showPerfectStreakBreak(state.perfectStreak);
-    }
-    state.perfectStreak = 0;
+    breakPerfectStreak();
 
     // Record miss for replay
     if (_recordInput && state.isRecording) {
@@ -946,9 +960,7 @@ function initiateHoldBeat(beat, beatData, pressRating, now) {
 
     // Award initial combo for successful press
     state.playerCombo++;
-    if (state.playerCombo > state.playerMaxCombo) {
-        state.playerMaxCombo = state.playerCombo;
-    }
+    updateMaxCombo();
 
     state.holdState = {
         isHolding: true,
@@ -973,29 +985,10 @@ function initiateHoldBeat(beat, beatData, pressRating, now) {
         navigator.vibrate([10, 50, 10]);  // Distinct pattern for hold
     }
 
-    // If this was an early hit, advance past the beat
-    // NOTE: When a player hits a hold beat early, the skipped active beat is marked
-    // as 'miss' for VISUALIZATION ONLY (grayed out in beat track). This is intentional:
-    // - The player successfully initiated a hold beat, so they got a valid hit
-    // - We don't call registerMiss() or increment miss stats - the player isn't penalized
-    // - The visual marking helps show which beat was skipped in the track display
-    // This is consistent with how early tap beat hits work (see handleInput lines 224-244)
+    // If this was an early hit, reuse the same side-effects as early tap hits
+    // (marks skipped beat as visual-only miss, advances index, triggers beat flash + AI)
     if (beat.isEarly) {
-        if (state.activeBeat) {
-            if (state.activeBeat.index !== undefined) {
-                state.beatResults[state.activeBeat.index] = 'miss';  // Visual only, not stats
-            }
-        }
-        state.nextBeatIndex = beat.index + 1;
-        state.activeBeat = null;
-
-        state.totalBeats++;
-        state.crowdBeatTime = now;
-        state.beatFlashIntensity = 1;
-        elements.gameCanvas.classList.remove('beat-pulse');
-        void elements.gameCanvas.offsetWidth;
-        elements.gameCanvas.classList.add('beat-pulse');
-        simulateAI();
+        processEarlyHit(beat, now);
     } else {
         state.activeBeat = null;
     }
@@ -1029,9 +1022,7 @@ export function handleInputRelease() {
         state.playerStats.perfect++;
         // Bonus combo for perfect release
         state.playerCombo++;
-        if (state.playerCombo > state.playerMaxCombo) {
-            state.playerMaxCombo = state.playerCombo;
-        }
+        updateMaxCombo();
 
         // Perfect streak tracking for hold beats
         state.perfectStreak++;
@@ -1049,19 +1040,11 @@ export function handleInputRelease() {
         checkComboMilestone(state.playerCombo);
     } else if (overallRating === 'good') {
         state.playerStats.good++;
-        // Break perfect streak on non-perfect hit
-        if (state.perfectStreak >= PERFECT_STREAK.MIN_DISPLAY) {
-            showPerfectStreakBreak(state.perfectStreak);
-        }
-        state.perfectStreak = 0;
+        breakPerfectStreak();
         // Combo maintained, no bonus
     } else if (overallRating === 'ok') {
         state.playerStats.ok++;
-        // Break perfect streak on non-perfect hit
-        if (state.perfectStreak >= PERFECT_STREAK.MIN_DISPLAY) {
-            showPerfectStreakBreak(state.perfectStreak);
-        }
-        state.perfectStreak = 0;
+        breakPerfectStreak();
         // Combo maintained, no bonus
     } else {
         // Check if Shield can absorb this hold beat miss
@@ -1088,11 +1071,7 @@ export function handleInputRelease() {
             state.playerStats.miss++;
             state.playerCombo = 0;
             state.powerupChargeProgress = 0;
-            // Break perfect streak on miss
-            if (state.perfectStreak >= PERFECT_STREAK.MIN_DISPLAY) {
-                showPerfectStreakBreak(state.perfectStreak);
-            }
-            state.perfectStreak = 0;
+            breakPerfectStreak();
         }
     }
 
@@ -1105,9 +1084,7 @@ export function handleInputRelease() {
     const scoreGained = Math.floor(result.totalScore * totalMultiplier);
     state.playerScore += scoreGained;
 
-    if (state.playerCombo > state.playerMaxCombo) {
-        state.playerMaxCombo = state.playerCombo;
-    }
+    updateMaxCombo();
 
     // Mark beat result
     if (holdState.currentBeatIndex !== null) {
@@ -1213,12 +1190,7 @@ function calculateHoldScore(releaseTime) {
 
     // Release timing score (use adjusted time and Slow Motion multiplier)
     const releaseError = Math.abs(adjustedReleaseTime - holdState.expectedEndTime);
-    // When Double Time modifier is active, boost Slow Motion effect to compensate
-    let slowMotionMultiplier = 1;
-    if (state.powerups.slowMotion.active) {
-        const baseMultiplier = 1 / POWERUPS.slowMotion.speedMultiplier; // ~1.43x
-        slowMotionMultiplier = state.activeModifiers.doubleTime ? baseMultiplier * 1.5 : baseMultiplier;
-    }
+    const slowMotionMultiplier = getSlowMotionMultiplier();
     const effectivePerfect = state.activeTiming.PERFECT * slowMotionMultiplier;
     const effectiveGood = state.activeTiming.GOOD * slowMotionMultiplier;
     const effectiveReleaseWindow = HOLD_BEAT.RELEASE_WINDOW * slowMotionMultiplier;
@@ -1304,9 +1276,7 @@ export function updateHoldProgress() {
             const newTicks = currentTick - previousTicks;
             for (let i = 0; i < newTicks; i++) {
                 state.playerCombo++;
-                if (state.playerCombo > state.playerMaxCombo) {
-                    state.playerMaxCombo = state.playerCombo;
-                }
+                updateMaxCombo();
 
                 // Award incremental score
                 const comboMultiplier = getComboMultiplier();
@@ -1370,18 +1340,11 @@ export function simulateAIHoldBeat(beatData) {
     let accuracy = AI_ACCURACY;
     const personality = state.aiPersonality;
 
-    // Use personality-based accuracy in matchday mode
+    // Reuse the same accuracy pipeline as simulateAI()
     if (state.gameMode === 'matchday' && personality) {
-        accuracy = personality.baseAccuracy;
-
-        // Apply rubber banding
-        const diff = state.playerScore - state.aiScore;
-        const rubberBand = personality.rubberBandStrength || 1.0;
-        if (diff < -AI_RUBBER_BAND.SCORE_DIFF_THRESHOLD) {
-            accuracy -= AI_RUBBER_BAND.LOSING_REDUCTION * rubberBand;
-        } else if (diff > AI_RUBBER_BAND.SCORE_DIFF_THRESHOLD) {
-            accuracy += AI_RUBBER_BAND.WINNING_INCREASE * rubberBand;
-        }
+        accuracy = calculateMatchdayAccuracy(personality.baseAccuracy, personality);
+    } else if (state.gameMode === 'matchday') {
+        accuracy = applyRubberBanding(accuracy);
     }
 
     accuracy = Math.max(0.3, Math.min(0.95, accuracy));
