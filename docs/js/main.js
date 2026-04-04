@@ -244,6 +244,35 @@ async function startMatchdayChant() {
     // Show AI mood indicator in matchday mode
     updateAIMoodUI();
 
+    await initAndStartGameplay(chant, { isMatchday: true });
+}
+
+// Register the chant starter with ui.js so it can auto-advance
+setMatchdayChantStarter(startMatchdayChant);
+
+// ============================================
+// Game Logic (Practice)
+// ============================================
+
+async function startGame() {
+    showScreen('gameplay');
+    setCrowdMode('gameplay');
+    updateScoreboardTeams();
+
+    // Hide match info in practice mode
+    elements.matchInfo.classList.add('hidden');
+
+    // Hide AI mood indicator in practice mode
+    elements.aiMoodIndicator?.classList.add('hidden');
+
+    await initAndStartGameplay(state.selectedChant, { isMatchday: false });
+}
+
+// ============================================
+// Shared gameplay initialization (practice + matchday)
+// ============================================
+
+async function initAndStartGameplay(chant, { isMatchday }) {
     // Show active modifiers if any
     showActiveModifiers();
 
@@ -331,120 +360,7 @@ async function startMatchdayChant() {
 
         gameLoop();
     } catch (error) {
-        log.error('Failed to start chant', error);
-        elements.loadingOverlay.classList.add('hidden');
-        // Show error and return to menu
-        alert('Failed to load audio. Please try again.');
-        quitToMenu();
-    }
-}
-
-// Register the chant starter with ui.js so it can auto-advance
-setMatchdayChantStarter(startMatchdayChant);
-
-// ============================================
-// Game Logic (Practice)
-// ============================================
-
-async function startGame() {
-    showScreen('gameplay');
-    setCrowdMode('gameplay');
-    updateScoreboardTeams();
-
-    // Hide match info in practice mode
-    elements.matchInfo.classList.add('hidden');
-
-    // Hide AI mood indicator in practice mode
-    elements.aiMoodIndicator?.classList.add('hidden');
-
-    // Show active modifiers if any
-    showActiveModifiers();
-
-    resetGameState();
-
-    // Apply difficulty preset
-    const diffPreset = DIFFICULTY_PRESETS[state.settings.difficulty] || DIFFICULTY_PRESETS.normal;
-    state.activeTiming = { PERFECT: diffPreset.PERFECT, GOOD: diffPreset.GOOD, OK: diffPreset.OK };
-
-    // Update UI
-    elements.playerScore.textContent = '0';
-    elements.aiScore.textContent = '0';
-    elements.currentChantName.textContent = state.selectedChant.name;
-
-    // Clear canvas effects
-    elements.gameCanvas.classList.remove('beat-pulse', 'hit-perfect', 'hit-good', 'hit-ok', 'hit-miss');
-
-    // Show loading overlay
-    elements.loadingOverlay.classList.remove('hidden');
-
-    try {
-        // Initialize audio and visualizer
-        await initAudio();
-        initVisualizer();
-        await loadAudio(state.selectedChant.audio);
-
-        // Yield for render
-        await new Promise(resolve => setTimeout(resolve, GAME_TIMINGS.WORKER_YIELD_MS));
-
-        // Use manual beats if defined in chant config, otherwise detect automatically
-        if (state.selectedChant.beats && state.selectedChant.beats.length > 0) {
-            // Normalize manual beats (supports mixed tap/hold format)
-            state.detectedBeats = normalizeBeats(state.selectedChant.beats);
-            console.log('Using manual beats:', state.detectedBeats.length);
-        } else {
-            // Pre-analyze beats in Web Worker (non-blocking)
-            // Auto-generate hold beats from closely-spaced detected beats
-            const rawBeats = await analyzeBeatsAsync(state.audioBuffer);
-            state.detectedBeats = autoGenerateHoldBeats(rawBeats);
-            const holdCount = state.detectedBeats.filter(b => b.type === 'hold').length;
-            console.log(`Auto-detected ${rawBeats.length} beats, generated ${holdCount} hold beats`);
-        }
-
-        // Bug #24 fix: Guard against empty beat detection
-        if (!state.detectedBeats || state.detectedBeats.length === 0) {
-            log.warn('No beats detected in audio - gameplay may not work correctly');
-            // Generate fallback beats at regular intervals based on audio duration
-            const duration = state.audioBuffer?.duration || 60;
-            const fallbackBPM = 120;
-            const interval = 60 / fallbackBPM;
-            state.detectedBeats = [];
-            for (let t = 0.5; t < duration - 0.5; t += interval) {
-                state.detectedBeats.push({ time: t, type: 'tap' });
-            }
-            console.log(`Generated ${state.detectedBeats.length} fallback beats at ${fallbackBPM} BPM`);
-        }
-
-        computeWaveformPeaks();
-        buildWaveformCache();
-
-        elements.loadingOverlay.classList.add('hidden');
-
-        // Tutorial on first play
-        if (!hasTutorialSeen()) {
-            await showTutorial();
-        }
-
-        // Start countdown then game
-        await countdown();
-
-        // Start recording replay (only in practice mode, not replay playback)
-        if (!state.isReplaying) {
-            startRecording();
-        }
-
-        playAudio(endGame);
-        state.audioStartTime = state.audioContext.currentTime;
-        state.gameStartTime = performance.now();
-
-        // Initialize game progress bar
-        initGameProgress();
-
-        // Trigger game start trash talk
-        setTimeout(() => triggerTrashTalk('gameStart'), GAME_TIMINGS.TRASH_TALK_START_DELAY_MS);
-
-        gameLoop();
-    } catch (error) {
-        log.error('Failed to start game', error);
+        log.error(isMatchday ? 'Failed to start chant' : 'Failed to start game', error);
         elements.loadingOverlay.classList.add('hidden');
         // Show error and return to menu
         alert('Failed to load audio. Please try again.');
